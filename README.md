@@ -12,6 +12,10 @@ mvn spring-boot:run
 
 浏览器访问：**http://localhost:8080/**（C1）和 **http://localhost:8080/c2.html**（C2）。左侧导航可在 C1 / C2 间切换。
 
+静态页面、JS、CSS 由服务端返回 `Cache-Control: no-cache`（`application.yml` 的 `spring.web.resources.cache.cachecontrol`）：浏览器每次打开
+页面都会向服务端确认是否有更新，未变化返回 304。否则浏览器会按 `Last-Modified` 自行判定旧页面仍可使用，页面更新后继续显示旧菜单；若遇到这种情况，强制刷新一次（macOS
+⌘⇧R）即可。
+
 默认 H2 文件数据库：`./data/relaydb`；自动建表，第一次启动自动灌入示例合作方、C1 准入规则、客户、个案审批、MTD、C2
 限制规则、监管规则、能力标签。
 

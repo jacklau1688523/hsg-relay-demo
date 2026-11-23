@@ -13,6 +13,13 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  # 静态页面 / JS 每次都向服务端确认是否有更新（未变化返回 304），
+  # 避免浏览器按 Last-Modified 启发式缓存、在页面更新后仍显示旧菜单
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
 management:
   endpoints:
     web:
