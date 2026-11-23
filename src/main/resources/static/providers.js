@@ -1,63 +1,42 @@
 'use strict';
-// 合作方管理：列表 + 新增 / 编辑面板。与详情页共用的接口、字典和展示规则在 provider-common.js（须先引入）。
-const state={views:[],tags:[],code:null,version:null,checks:[],request:0};
-function options(all,selected){return Object.entries(all).map(([v,label])=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)} · ${esc(label)}</option>`).join('');}
-function render(){const views=state.views.filter(({provider:p})=>(!$('search').value||[p.code,p.name,p.bic].some(v=>String(v||'').toLowerCase().includes($('search').value.trim().toLowerCase())))&&(!$('filterType').value||type(p)===$('filterType').value)&&(!$('filterStatus').value||p.status===$('filterStatus').value));$('rows').innerHTML=views.map(v=>{const p=v.provider;return `<tr><td class="${state.code===p.code?'selected':''}"><b>${esc(p.code)}</b><br>${esc(p.name)}</td><td>${esc(types[type(p)]||p.providerType)}</td><td><span class="badge ${p.status==='LIVE'?'pass':'pending'}">${esc(p.status)}</span></td><td>${esc(p.channel)}<br>${esc(p.bic||'未设置')}</td><td>${p.fundingCheckEnabled?'ON':'OFF'}</td><td>${v.capabilityTags.map(esc).join('<br>')||'—'}</td><td>${esc(p.priority)}</td><td>${esc(p.relationshipOwner||'未设置')}<br>${esc(p.appetiteReviewDate||'未设置')}<br><span class="${v.reviewStatus==='OVERDUE'?'err':v.reviewStatus==='DUE_SOON'?'pending':'muted'}">${esc(reviewLabel(v.reviewStatus))}</span></td><td><span class="badge ${v.ready?'pass':'pending'}">${v.ready?'已齐备':'待完善'}</span></td><td class="nowrap"><a class="btn secondary tiny" href="/provider-detail.html?code=${encodeURIComponent(p.code)}">详情</a><button class="btn secondary tiny" data-edit="${esc(p.code)}">编辑</button></td></tr>`;}).join('')||'<tr><td colspan="10">暂无符合条件的合作方</td></tr>';const metrics=[['合作方总数',state.views.length],['已上线 LIVE',state.views.filter(v=>v.provider.status==='LIVE').length],['未上线 NOT_LIVE',state.views.filter(v=>v.provider.status==='NOT_LIVE').length],['临期 / 逾期复核',state.views.filter(v=>['DUE_SOON','OVERDUE'].includes(v.reviewStatus)).length]];$('metrics').innerHTML=metrics.map(([title,count])=>`<div class="metric"><span>${title}</span><b>${count}</b></div>`).join('');}
-function baseChecks(){return ['reach','fee','appetite','nostro','gl','bic'].map((key,i)=>({key,label:['业务覆盖','手续费','业务准入','HSG 往来账号','HSG 总账编码','SWIFT BIC'][i],passed:false,detail:['至少一条启用覆盖行','至少一条手续费配置','至少一条当前生效准入行','状态为 LIVE 时必填','状态为 LIVE 时必填','SWIFT 通道需8或11位 BIC'][i]}));}
-function readiness(){const checks=state.checks.map(c=>({...c}));for(const c of checks){if(c.key==='nostro')c.passed=!!$('nostroAccount').value.trim();if(c.key==='gl')c.passed=!!$('glCode').value.trim();if(c.key==='bic')c.passed=$('channel').value!=='SWIFT'||/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test($('bic').value.trim());}renderReadiness(checks);$('bic').required=$('channel').value==='SWIFT';$('nostroAccount').required=$('status').value==='LIVE';$('glCode').required=$('status').value==='LIVE';$('reviewInfo').textContent=reviewText($('appetiteReviewDate').value,$('relationshipOwner').value);}
-let restrictEditing=null;
-function nowLocal(){return new Date().toLocaleString('sv-SE',{timeZone:'Asia/Hong_Kong',hour12:false}).replace(' ','T').slice(0,16);}
-async function loadRestrictions(code,token,selectId,goodMsg){
- const box=$('restrictionsView');box.innerHTML='<p class="muted">正在加载…</p>';
- try{
-  const all=await api('/c2/restrictions');
-  if(token!==state.request||code!==state.code)return;
-  const rows=all.filter(r=>r.providerCode===code);
-  restrictEditing=null;
-  box.innerHTML=`<div class="panel"><div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 合作方限制（制裁及监管屏蔽）· ${rows.length} 条</div><button class="btn" onclick="restrictNew()">＋ 新增限制</button></div>
-  <div class="tablewrap"><table><thead><tr><th>ID</th><th>限制类型</th><th>屏蔽值</th><th>生效时间</th><th>失效时间</th><th>版本</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(r=>`<tr><td>#${r.id}</td><td title="${esc(r.restrictionType)}">${esc(restrictTypes[r.restrictionType]?.[0]||r.restrictionType)}</td><td>${esc(r.blockedValues)}</td><td>${esc((r.effectiveFrom||'').replace('T',' ').slice(0,16))}</td><td>${esc((r.effectiveTo||'—').replace('T',' ').slice(0,16))}</td><td>v${r.versionNo}</td><td>${r.enabled?'启用':'停用'}</td><td><a onclick="restrictEditRow(${r.id})">编辑</a><a onclick="restrictToggle(${r.id})">${r.enabled?'停用':'启用'}</a></td></tr>`).join('')||'<tr><td colspan="8">该合作方暂无限制记录。</td></tr>'}</tbody></table></div>
-  <div class="notice">合作方限制按合作方独立配置，C2 校验实时读取：受益行国家/地址国家、客户国家/发起方国家、扣账币种/交易币种分别采用 OR 匹配；董事及 UBO 国籍遍历全部值；中间行为空时不触发该项。</div>${goodMsg?`<div class="good">${esc(goodMsg)}</div>`:''}</div>
-  <div class="panel" id="restrictFormPanel"></div>`;
-  if(selectId!=null)restrictFill(selectId,all);else restrictForm(null);
- }catch(e){if(token===state.request)box.innerHTML=`<p class="err">${esc(e.message)}</p>`;}
+// 合作方管理：列表与筛选。新增 / 编辑在独立页面 /provider-edit.html，只读详情在 /provider-detail.html；
+// 共用的接口、字典和展示规则在 provider-common.js（须先引入）。
+const state = {views: []};
+
+function render() {
+    const views = state.views.filter(({provider: p}) => (!$('search').value || [p.code, p.name, p.bic].some(v => String(v || '').toLowerCase().includes($('search').value.trim().toLowerCase())))
+        && (!$('filterType').value || type(p) === $('filterType').value) && (!$('filterStatus').value || p.status === $('filterStatus').value));
+    $('rows').innerHTML = views.map(v => {
+        const p = v.provider, code = encodeURIComponent(p.code);
+        return `<tr><td><b>${esc(p.code)}</b><br>${esc(p.name)}</td><td>${esc(types[type(p)] || p.providerType)}</td><td><span class="badge ${p.status === 'LIVE' ? 'pass' : 'pending'}">${esc(p.status)}</span></td><td>${esc(p.channel)}<br>${esc(p.bic || '未设置')}</td><td>${p.fundingCheckEnabled ? 'ON' : 'OFF'}</td><td>${v.capabilityTags.map(esc).join('<br>') || '—'}</td><td>${esc(p.priority)}</td><td>${esc(p.relationshipOwner || '未设置')}<br>${esc(p.appetiteReviewDate || '未设置')}<br><span class="${v.reviewStatus === 'OVERDUE' ? 'err' : v.reviewStatus === 'DUE_SOON' ? 'pending' : 'muted'}">${esc(reviewLabel(v.reviewStatus))}</span></td><td><span class="badge ${v.ready ? 'pass' : 'pending'}">${v.ready ? '已齐备' : '待完善'}</span></td><td class="nowrap"><a class="btn secondary tiny" href="/provider-detail.html?code=${code}">详情</a><a class="btn secondary tiny" href="/provider-edit.html?code=${code}">编辑</a></td></tr>`;
+    }).join('') || '<tr><td colspan="10">暂无符合条件的合作方</td></tr>';
+    const metrics = [
+        ['合作方总数', state.views.length],
+        ['已上线 LIVE', state.views.filter(v => v.provider.status === 'LIVE').length],
+        ['未上线 NOT_LIVE', state.views.filter(v => v.provider.status === 'NOT_LIVE').length],
+        ['临期 / 逾期复核', state.views.filter(v => ['DUE_SOON', 'OVERDUE'].includes(v.reviewStatus)).length]
+    ];
+    $('metrics').innerHTML = metrics.map(([title, count]) => `<div class="metric"><span>${title}</span><b>${count}</b></div>`).join('');
 }
-function restrictNew(){restrictForm(null);}
-async function restrictEditRow(id){try{const all=await api('/c2/restrictions');restrictFill(id,all);}catch(e){alert(e.message);}}
-function restrictFill(id,all){const r=all.find(x=>x.id===id);if(r)restrictForm(r);}
-function restrictForm(r){
- const f=$('restrictFormPanel');if(!f)return;
- restrictEditing=r?{id:r.id,versionNo:r.versionNo}:null;
- f.innerHTML=`<h2 style="margin:0 0 12px">${r?'编辑合作方限制 · #'+r.id:'新增合作方限制 · '+esc(state.code)}</h2>
- <div class="layout2">
-  <div class="field"><label>限制类型 *</label><select id="rType">${Object.entries(restrictTypes).map(([v,[label,reason]])=>`<option value="${v}" ${r&&r.restrictionType===v?'selected':''}>${esc(label)}（${reason}）</option>`).join('')}</select></div>
-  <div class="field"><label>屏蔽编码（逗号分隔） *</label><input id="rValues" value="${r?esc(r.blockedValues):''}" placeholder="KG,RU"></div>
-  <div class="field"><label>启用状态</label><select id="rEnabled"><option value="true" ${!r||r.enabled?'selected':''}>启用</option><option value="false" ${r&&!r.enabled?'selected':''}>停用</option></select></div>
-  <div class="field"><label>生效时间（HKT） *</label><input type="datetime-local" id="rFrom" value="${r?(r.effectiveFrom||'').slice(0,16):nowLocal()}"></div>
-  <div class="field"><label>失效时间（HKT）</label><input type="datetime-local" id="rTo" value="${r&&(r.effectiveTo||'').slice(0,16)||''}"></div>
-  <div class="field"><label>备注</label><input id="rRemark" value="${r?esc(r.remark||''):''}"></div>
- </div>
- <div class="err" id="rError"></div><div class="good" id="rGood"></div>
- <div class="actions" style="margin-top:12px"><button class="btn" onclick="restrictSave()">保存合作方限制</button></div>`;
+
+async function reload() {
+    state.views = await api('/provider-management');
+    render();
+    $('pageError').textContent = '';
 }
-async function restrictSave(){
- if(!$('rValues').value.trim()){$('rError').textContent='屏蔽编码不能为空';return;}
- $('rError').textContent='';$('rGood').textContent='';
- try{
-  const req={id:restrictEditing?.id??null,versionNo:restrictEditing?.versionNo??null,providerCode:state.code,
-   restrictionType:$('rType').value,blockedValues:$('rValues').value,enabled:$('rEnabled').value==='true',
-   effectiveFrom:$('rFrom').value||null,effectiveTo:$('rTo').value||null,remark:$('rRemark').value||null};
-  const saved=await api('/c2/restrictions',{method:'POST',body:JSON.stringify(req)});
-  await loadRestrictions(state.code,++state.request,saved.id,`保存成功 · #${saved.id} · v${saved.versionNo}`);
- }catch(e){$('rError').textContent=e.message;}
-}
-async function restrictToggle(id){
- if(!confirm('确定切换限制记录 #'+id+'？'))return;
- try{await api(`/c2/restrictions/${id}/toggle`,{method:'POST'});await loadRestrictions(state.code,++state.request);}catch(e){alert(e.message);}
-}
-async function activate(tab){document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('sel',b.dataset.tab===tab));for(const id of ['base','restrictions'])$(id+'View').classList.toggle('hidden',id!==tab);if(tab==='base')return;const container=$('restrictionsView');if(!state.code){container.innerHTML='<div class="notice">保存合作方后可配置合作方限制。关联配置和变更记录在合作方详情页查看。</div>';return;}await loadRestrictions(state.code,++state.request);}
-function edit(v=null){++state.request;const p=v?.provider||{code:'',name:'',providerType:'OTHER_BANK',status:'NOT_LIVE',channel:'SWIFT',fundingCheckEnabled:true,priority:99};state.code=v?p.code:null;state.version=v?p.version:null;state.checks=v?v.checks:baseChecks();for(const key of ['code','name','status','channel','bic','nostroAccount','glCode','relationshipOwner','appetiteReviewDate'])$(key).value=p[key]??'';$('code').readOnly=!!v;$('providerType').value=type(p);$('priority').value=Math.min(99,Math.max(1,p.priority||99));$('fundingCheckEnabled').value=String(p.fundingCheckEnabled);$('tags').innerHTML=state.tags.map(t=>`<label class="tagcheck"><input name="tag" type="checkbox" value="${esc(t.tagCode)}" ${v?.capabilityTags.includes(t.tagCode)?'checked':''}>${esc(t.tagCode)} · ${esc(t.tagName)}</label>`).join('');$('formTitle').textContent=v?`${p.code} · 编辑合作方`:'新增合作方';$('detailLink').style.display=v?'':'none';if(v)$('detailLink').href=`/provider-detail.html?code=${encodeURIComponent(p.code)}`;$('version').textContent=v?`数据版本 ${p.version}`:'编码保存后不可修改';$('formError').textContent='';$('formGood').textContent='';const legacy=v&&(p.priority>99||p.providerType==='PAYMENT_NETWORK');$('legacyHint').style.display=legacy?'block':'none';$('legacyHint').textContent='旧演示数据的支付网络类型和超范围优先级已在表单中按文档规范显示；保存后更新为 NETWORK / 1–99。';$('simulate').href=v?`/routing.html?includeProvider=${encodeURIComponent(p.code)}`:'/routing.html';activate('base');readiness();render();}
-async function reload(){const views=await api('/provider-management');state.views=views;const current=views.find(v=>v.provider.code===state.code);edit(current||null);$('pageError').textContent='';}
-$('new').onclick=()=>{edit();$('editor').scrollIntoView({behavior:'smooth'});};$('reset').onclick=()=>edit(state.views.find(v=>v.provider.code===state.code)||null);$('refresh').onclick=()=>reload().catch(e=>$('pageError').textContent=e.message);$('query').onclick=render;$('search').oninput=render;$('filterType').onchange=render;$('filterStatus').onchange=render;document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>activate(b.dataset.tab));for(const key of ['nostroAccount','glCode','channel','status','bic','relationshipOwner','appetiteReviewDate'])$(key).addEventListener('input',readiness);
-$('rows').onclick=e=>{const b=e.target.closest('[data-edit]');if(b){edit(state.views.find(v=>v.provider.code===b.dataset.edit));$('editor').scrollIntoView({behavior:'smooth'});}};
-$('providerForm').onsubmit=async e=>{e.preventDefault();$('save').disabled=true;$('formError').textContent='';$('formGood').textContent='';try{const inData={};for(const key of ['code','name','providerType','status','channel','bic','nostroAccount','glCode','relationshipOwner','appetiteReviewDate'])inData[key]=$(key).value.trim()||null;inData.priority=Number($('priority').value);inData.fundingCheckEnabled=$('fundingCheckEnabled').value==='true';inData.capabilityTags=[...document.querySelectorAll('[name="tag"]:checked')].map(c=>c.value);inData.version=state.version;const saved=await api(state.code?`/provider-management/${encodeURIComponent(state.code)}`:'/provider-management',{method:state.code?'PUT':'POST',body:JSON.stringify(inData)});state.views=await api('/provider-management');edit(saved);$('formGood').textContent=`已保存 ${saved.provider.code}，版本 ${saved.provider.version}。状态、资金开关、通道及优先级在下次路由试算生效。`;}catch(e){$('formError').textContent=e.message;}finally{$('save').disabled=false;}};
-(async()=>{try{const [views,tags]=await Promise.all([api('/provider-management'),api('/c2/capability-tags')]);state.views=views;state.tags=tags;$('providerType').innerHTML=options(types,'OTHER_BANK');$('filterType').innerHTML='<option value="">全部类型</option>'+options(types);const params=new URLSearchParams(location.search),current=views.find(v=>v.provider.code===params.get('code'));edit(current||null);if(current){if(params.get('tab')==='restrictions')activate('restrictions');if(location.hash==='#editor')$('editor').scrollIntoView();}}catch(e){$('pageError').textContent=e.message;}})();
+
+$('refresh').onclick = () => reload().catch(e => $('pageError').textContent = e.message);
+$('query').onclick = render;
+$('search').oninput = render;
+$('filterType').onchange = render;
+$('filterStatus').onchange = render;
+reloadIfChangedSinceLoad();
+
+(async () => {
+    try {
+        $('filterType').innerHTML = '<option value="">全部类型</option>' + options(types);
+        await reload();
+    } catch (e) {
+        $('pageError').textContent = e.message;
+    }
+})();

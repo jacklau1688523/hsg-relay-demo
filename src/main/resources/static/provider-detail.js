@@ -1,14 +1,14 @@
 'use strict';
 // 合作方详情：/provider-detail.html?code=合作方编码[&tab=related|restrictions|audit]
-// 只读展示，数据来自 /api/provider-management/{code}；写操作在合作方管理页的编辑面板完成。
+// 只读展示，数据来自 /api/provider-management/{code}；写操作在独立的编辑页 /provider-edit.html 完成。
 const state = {view: null, tags: [], tab: 'base', request: 0};
 const params = new URLSearchParams(location.search);
 const code = params.get('code');
 const TABS = ['base', 'related', 'restrictions', 'audit'];
 
-// 回到合作方管理页的编辑面板；带 tab 时直接切到对应页签
-function listHref(tab) {
-    return `/providers.html?code=${encodeURIComponent(state.view.provider.code)}${tab ? `&tab=${tab}` : ''}#editor`;
+// 打开独立编辑页；带 tab 时直接切到对应页签
+function editHref(tab) {
+    return `/provider-edit.html?code=${encodeURIComponent(state.view.provider.code)}${tab ? `&tab=${tab}` : ''}`;
 }
 
 function table(headers, rows) {
@@ -88,7 +88,7 @@ function renderRelated(d) {
             ['交易币种', '扣费方式', '费用币种', '固定费', '比例费率', '最低 / 最高', '电报费', '中间行费'],
             d.fees.map(f => [f.currency, f.charge, f.feeCurrency, f.fixed, `${f.rate * 100}%`, `${f.minimum} / ${f.maximum ?? '无上限'}`, f.cable, f.intermediary])))
         + `<div class="subheading">C2 合作方限制 · ${d.restrictions.length} 条</div>`
-        + `<div class="notice">合作方限制明细见本页「合作方限制」页签；新增 / 编辑 / 启停在合作方管理页的编辑面板中操作。</div>`
+        + `<div class="notice">合作方限制明细见本页「合作方限制」页签；新增 / 编辑 / 启停在编辑页的「合作方限制」页签操作。</div>`
         + section('C10 可配置外汇渠道', '/routing.html#configPanel', table(
             ['渠道', '扣账 / 交易', '星期', '香港窗口', '点差 bps'],
             d.fxWindows.map(w => [w.provider, `${w.debit} / ${w.payment}`, w.days.join(','), `${w.start}–${w.end}`, `${w.spreadBps} + ${w.extraBps}`])));
@@ -104,7 +104,7 @@ function renderRestrictions(rows) {
             + `<td>${esc(r.remark || '—')}</td></tr>`;
     }).join('') : '<tr><td colspan="8">该合作方暂无限制记录。</td></tr>';
     $('restrictionsView').innerHTML = `<div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 合作方限制（制裁及监管屏蔽）· ${rows.length} 条</div>`
-        + `<a class="btn secondary tiny" href="${listHref('restrictions')}">前往维护 ↗</a></div>`
+        + `<a class="btn secondary tiny" href="${editHref('restrictions')}">前往维护 ↗</a></div>`
         + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>限制类型</th><th>屏蔽值</th><th>生效时间</th><th>失效时间</th><th>版本</th><th>状态</th><th>备注</th></tr></thead>`
         + `<tbody>${list}</tbody></table></div>`
         + `<div class="notice">合作方限制按合作方独立配置，C2 校验实时读取：受益行国家/地址国家、客户国家/发起方国家、扣账币种/交易币种分别采用 OR 匹配；董事及 UBO 国籍遍历全部值；中间行为空时不触发该项。</div>`;
@@ -144,7 +144,7 @@ async function load() {
     renderBase(view);
     renderReadiness(view.checks);
     $('reviewInfo').textContent = reviewText(p.appetiteReviewDate, p.relationshipOwner);
-    $('edit').href = listHref();
+    $('edit').href = editHref();
     $('simulate').href = `/routing.html?includeProvider=${encodeURIComponent(code)}`;
 }
 
@@ -169,6 +169,5 @@ document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => activate(
 $('refresh').onclick = () => show();
 const initial = params.get('tab');
 state.tab = TABS.includes(initial) ? initial : 'base';
-document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => activate(b.dataset.tab));
-$('refresh').onclick = () => show();
+reloadIfChangedSinceLoad();
 show();

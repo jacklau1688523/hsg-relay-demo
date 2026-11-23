@@ -5,15 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>HSG RELAY | 合作方详情</title>
     <link rel="stylesheet" href="/hsg-style.css">
+    <link rel="stylesheet" href="/provider.css">
     <style>
-        .detail-intro {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 16px;
-            flex-wrap: wrap
-        }
-
         .profile {
             display: flex;
             justify-content: space-between;
@@ -67,20 +60,6 @@
             font-size: 15px
         }
 
-        .provider-grid {
-            display: grid;
-            grid-template-columns:minmax(0, 1fr) 330px;
-            gap: 18px
-        }
-
-        .provider-grid > section, .provider-grid > aside {
-            min-width: 0
-        }
-
-        .panel > .tabs {
-            margin-top: 0
-        }
-
         .info-grid {
             display: grid;
             grid-template-columns:repeat(2, minmax(0, 1fr));
@@ -108,12 +87,6 @@
             word-break: break-word
         }
 
-        .tag-grid {
-            display: flex;
-            gap: 9px;
-            flex-wrap: wrap
-        }
-
         .chip {
             display: inline-block;
             font-size: 12px;
@@ -124,78 +97,7 @@
             color: #243b59
         }
 
-        .rulebar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 15px
-        }
-
-        .checkrow {
-            padding: 12px 0;
-            border-bottom: 1px solid #edf1f6;
-            font-size: 13px
-        }
-
-        .checkrow small {
-            display: block;
-            color: #748298;
-            font-size: 12px;
-            margin: 6px 0 0 20px
-        }
-
-        .subheading {
-            font-weight: 700;
-            font-size: 13px;
-            margin: 19px 0 12px
-        }
-
-        .code {
-            max-height: 300px;
-            overflow: auto
-        }
-
-        .toplinks {
-            display: none
-        }
-
-        .notice {
-            line-height: 1.6
-        }
-
-        .pageerror {
-            font-size: 13px;
-            padding: 12px 0 4px
-        }
-
-        summary {
-            cursor: pointer
-        }
-
-        a.btn {
-            display: inline-block;
-            margin: 0
-        }
-
-        @media (max-width: 1250px) {
-            .provider-grid {
-                grid-template-columns:minmax(0, 1fr)
-            }
-
-            .rightPanel {
-                position: static
-            }
-        }
-
         @media (max-width: 850px) {
-            .toplinks {
-                display: flex;
-                gap: 12px;
-                margin-bottom: 12px
-            }
-
             .toplinks a {
                 font-size: 13px
             }
@@ -235,15 +137,15 @@
         </div>
         <div class="content">
             <div class="toplinks"><a href="/providers.html">← 合作方管理</a></div>
-            <div class="heading detail-intro">
+            <div class="heading page-intro">
                 <div><h1>合作方详情</h1>
                     <div class="muted">只读展示单个合作方的基础资料、关联配置、合作方限制和变更记录。修改基础资料请点「编辑合作方」；新增
-                        / 编辑 / 启停合作方限制在编辑面板的「合作方限制」页签操作。
+                        / 编辑 / 启停合作方限制在编辑页的「合作方限制」页签操作。
                     </div>
                 </div>
                 <div class="actions">
                     <a class="btn secondary" href="/providers.html">← 返回合作方管理</a>
-                    <a class="btn" id="edit" href="/providers.html" style="display:none">编辑合作方</a>
+                    <a class="btn" id="edit" href="/provider-edit.html" style="display:none">编辑合作方</a>
                     <a class="btn secondary" id="simulate" href="/routing.html" style="display:none">模拟测试</a>
                     <button type="button" class="btn secondary" id="refresh">↻ 刷新</button>
                 </div>

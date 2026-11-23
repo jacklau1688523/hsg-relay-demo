@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>HSG RELAY | 合作方管理</title>
     <link rel="stylesheet" href="/hsg-style.css">
+    <link rel="stylesheet" href="/provider.css">
     <style>
         .summarycards {
             display: grid;
@@ -38,108 +39,22 @@
             align-items: end
         }
 
-        .rulebar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 15px
-        }
-
-        .provider-grid {
-            display: grid;
-            grid-template-columns:minmax(0, 1fr) 330px;
-            gap: 18px
-        }
-
-        .provider-grid > section, .provider-grid > aside {
-            min-width: 0
-        }
-
-        .tag-grid {
-            display: flex;
-            gap: 9px;
-            flex-wrap: wrap
-        }
-
-        .tagcheck {
-            display: flex;
-            align-items: center;
-            gap: 7px;
-            font-size: 12px;
-            padding: 8px 10px;
-            background: #f5f8fc;
-            border: 1px solid #d7e2ef;
-            border-radius: 6px
-        }
-
-        .tagcheck input {
-            width: 15px;
-            min-height: 15px;
-            margin: 0
-        }
-
-        .checkrow {
-            padding: 12px 0;
-            border-bottom: 1px solid #edf1f6;
-            font-size: 13px
-        }
-
-        .checkrow small {
-            display: block;
-            color: #748298;
-            font-size: 12px;
-            margin: 6px 0 0 20px
-        }
-
         .tablewrap {
             max-height: 420px
-        }
-
-        .tablewrap td.selected {
-            background: #edf5ff
-        }
-
-        .subheading {
-            font-weight: 700;
-            font-size: 13px;
-            margin: 19px 0 12px
-        }
-
-        .code {
-            max-height: 300px;
-            overflow: auto
-        }
-
-        .toplinks {
-            display: none
-        }
-
-        summary {
-            cursor: pointer
-        }
-
-        #editor {
-            scroll-margin-top: 15px
-        }
-
-        .notice {
-            line-height: 1.6
         }
 
         .nowrap {
             white-space: nowrap
         }
 
-        @media (max-width: 1250px) {
-            .provider-grid {
-                grid-template-columns:minmax(0, 1fr)
-            }
+        /* 操作列：「详情」「编辑」是两个链接，按小按钮显示，间距沿用全局链接的 9px */
+        .nowrap a.btn {
+            display: inline-flex;
+            align-items: center
+        }
 
-            .rightPanel {
-                position: static
-            }
+        .nowrap a.btn:not(:last-child) {
+            margin-right: 9px
         }
 
         @media (max-width: 850px) {
@@ -148,16 +63,6 @@
             }
 
             .filterbar {
-                grid-template-columns:1fr 1fr
-            }
-
-            .toplinks {
-                display: flex;
-                gap: 12px;
-                margin-bottom: 12px
-            }
-
-            .layout3 {
                 grid-template-columns:1fr 1fr
             }
         }
@@ -203,7 +108,7 @@
             <div class="panel">
                 <div class="rulebar"><h2 style="margin:0">合作方列表</h2>
                     <div class="actions">
-                        <button type="button" class="btn" id="new">＋ 新增合作方</button>
+                        <a class="btn" href="/provider-edit.html" id="new">＋ 新增合作方</a>
                         <button type="button" class="btn secondary" id="refresh">↻ 刷新</button>
                     </div>
                 </div>
@@ -239,94 +144,6 @@
                     </table>
                 </div>
                 <div class="err" id="pageError" role="alert"></div>
-            </div>
-            <div class="provider-grid">
-                <section>
-                    <div class="panel" id="editor">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增合作方</h2><span id="version" style="margin-left:auto"
-                                                                                                      class="muted"></span><a id="detailLink" href="#" style="display:none;margin:0">查看详情 ↗</a>
-                        </div>
-                        <div class="tabs">
-                            <button type="button" class="tab sel" data-tab="base">基础信息</button>
-                            <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
-                        </div>
-                        <div id="baseView">
-                            <form id="providerForm">
-                                <div class="layout3">
-                                    <div class="field"><label for="code">合作方编码 *（唯一，最长12位）</label><input
-                                            id="code" required maxlength="12" placeholder="PROV-NEW"
-                                            pattern="[A-Z0-9_\-]{1,12}"></div>
-                                    <div class="field"><label for="name">合作方名称 *（最长80字符）</label><input
-                                            id="name" required maxlength="80"></div>
-                                    <div class="field"><label for="providerType">合作方类型 *</label><select
-                                            id="providerType"></select></div>
-                                    <div class="field"><label for="status">上线状态 *</label><select id="status">
-                                        <option value="NOT_LIVE">NOT_LIVE · 未上线</option>
-                                        <option value="LIVE">LIVE · 正式上线</option>
-                                    </select></div>
-                                    <div class="field"><label for="channel">报文通道 *</label><select id="channel">
-                                        <option>SWIFT</option>
-                                        <option>API</option>
-                                        <option>FILE</option>
-                                        <option>MANUAL</option>
-                                        <option>BOOK</option>
-                                    </select></div>
-                                    <div class="field"><label for="bic">BIC（SWIFT 时必填，8或11位）</label><input id="bic"
-                                                                                                                maxlength="11"
-                                                                                                                placeholder="例如 CHASUS33">
-                                    </div>
-                                    <div class="field"><label for="fundingCheckEnabled">C4 资金校验 *</label><select
-                                            id="fundingCheckEnabled">
-                                        <option value="true">ON · 校验往来账余额</option>
-                                        <option value="false">OFF · 不校验往来账余额</option>
-                                    </select></div>
-                                    <div class="field"><label for="priority">排序优先级 *（1–99，小值优先）</label><input
-                                            id="priority" type="number" min="1" max="99" value="99" required></div>
-                                    <div class="field"><label for="relationshipOwner">对接负责人（HSG
-                                        用户编码）</label><input id="relationshipOwner" maxlength="64"
-                                                                placeholder="填写 HSG 用户编码"></div>
-                                    <div class="field"><label for="nostroAccount">HSG 往来账号（LIVE
-                                        时必填）</label><input id="nostroAccount" maxlength="64"></div>
-                                    <div class="field"><label for="glCode">HSG 总账编码（LIVE 时必填）</label><input
-                                            id="glCode" maxlength="64"></div>
-                                    <div class="field"><label for="appetiteReviewDate">准入复核提醒日期</label><input
-                                            id="appetiteReviewDate" type="date"></div>
-                                </div>
-                                <div class="subheading">C2 监管能力标签</div>
-                                <div class="tag-grid" id="tags"></div>
-                                <div class="notice">合作方能力标签在本页维护（原 C2
-                                    页「合作方能力标签」配置已并入此处）。监管条件命中时，合作方必须具备规则要求的全部标签。优先级仅在总分、成本和起息日相同时参与排序。
-                                </div>
-                                <div class="notice warn" id="legacyHint" style="display:none"></div>
-                                <div class="err" id="formError" role="alert"></div>
-                                <div class="good" id="formGood" role="status"></div>
-                                <div class="actions" style="margin-top:18px">
-                                    <button class="btn" type="submit" id="save">保存合作方</button>
-                                    <button class="btn secondary" type="button" id="reset">取消编辑</button>
-                                    <a class="btn secondary" id="simulate" href="/routing.html"
-                                       style="margin:0">模拟测试</a></div>
-                            </form>
-                        </div>
-                        <div id="restrictionsView" class="hidden"></div>
-                    </div>
-                </section>
-                <aside class="rightPanel">
-                    <div class="panel">
-                        <div class="ptitle">上线准备检查</div>
-                        <div id="readiness"></div>
-                        <div class="notice warn">保存为 LIVE 前，须具备业务覆盖、手续费、有效准入行、往来账号及总账编码。SWIFT
-                            通道还须填写 BIC。
-                        </div>
-                        <div class="actions" style="margin-top:14px"><a href="/" id="c1Link">C1 业务准入 ↗</a><a
-                                href="/c2.html">C2 合规限制 ↗</a><a href="/c3.html">C3 业务覆盖 ↗</a><a
-                                href="/routing.html#configPanel">费用参考配置 ↗</a></div>
-                    </div>
-                    <div class="panel"><h2>准入复核</h2>
-                        <div id="reviewInfo" class="notice"></div>
-                        <p class="muted" style="line-height:1.6">
-                            复核日期前30天显示临期提醒，过期显示逾期。当前演示按香港日期计算提示；通知发送和负责人目录尚未接入。</p>
-                    </div>
-                </aside>
             </div>
             <div class="footer">HSG RELAY · 合作方管理 · 非生产环境</div>
         </div>
