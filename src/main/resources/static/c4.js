@@ -89,7 +89,7 @@ function venueBlock(v){
   ${step(1,'合作方资金校验开关',on?'<b>ON</b> · 继续校验头寸':'<b>OFF</b> · 直接通过',on?'开关由合作方管理维护（BRD 9.1）；开启时逐笔校验往来账可用头寸。':'后补头寸的合作方（如 Wise）设为 OFF：资金由资金部在合作方出款前补足，逻辑在 RELAY 模块之外；以下数值仅供参考，不参与判定。')}
   ${step(2,'账户币种判定',`外汇渠道 <span class="mono">${esc(c.fxVenue)}</span> → 校验 <b>${esc(acct)}</b> 往来账（交易币种 ${esc(c.paymentCurrency)} · 扣账币种 ${esc(c.debitCurrency)}）`,provider?'PROVIDER 渠道取扣账账户币种。':'NONE / TREASURY 渠道取交易币种。')}
   ${step(3,'可用头寸 ＝ 账户余额 − 未记账占用',step3,'实时读取 HSG：我行在合作方的往来账 nostro 余额，扣除尚未记账的已路由交易占用。')}
-  ${step(4,'本笔等价金额与判定',step4,provider?`等价金额＝交易金额 ${fmt(c.amount)} ${esc(c.paymentCurrency)} × HSG 当日汇率 ${fmt(c.rate,6)}（1 ${esc(c.paymentCurrency)} ＝ ${fmt(c.rate,6)} ${esc(acct)}）。`:`账户币种即交易币种：等价金额＝交易金额 ${fmt(c.amount)} ${esc(acct)}，无需换算。`)}
+  ${step(4,'本笔等价金额与判定',step4,provider?`等价金额＝交易金额 ${fmt(c.amount)} ${esc(c.paymentCurrency)} × HSG 当日汇率 ${fmt(c.rate,6)}（1 ${esc(c.paymentCurrency)} ＝ ${fmt(c.rate,6)} ${esc(acct)}）≈ ${fmt(c.required)} ${esc(acct)}。`:`账户币种即交易币种：等价金额＝交易金额 ${fmt(c.amount)} ${esc(acct)}，无需换算。`)}
   </div>`;
 }
 $('simForm').onsubmit=async e=>{

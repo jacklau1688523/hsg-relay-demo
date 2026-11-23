@@ -157,10 +157,10 @@ mvn clean test
 
 ## C1–C10 全流程 Check（路由试算）
 
-访问 `/routing.html`，侧边栏菜单为「▶ C1–C10 Check」（原名「C1–C10 全流程路由」，已更名，页面同时重构为与各配置页一致的侧边栏布局）。C1/C2 等页的工具栏也有入口。提供候选生成、全部过滤器、四项评分、主路由与两条备选、REFER 原因优先级、下一个外汇窗口和持久化决策查询。C1/C2 的规则各自存在独立数据库表并由对应页面维护，Check 时实时读取；页面内提供「C1 / C2 规则查看（只读）」面板：C1 准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（含条件树摘要、失败动作），并附各自维护页入口；「参考配置」JSON 仅覆盖 C3–C10 共享的 `relay_routing_document` CONFIG（含 C4 余额与评分权重等无独立页面的项）。
+访问 `/routing.html`，侧边栏菜单为「▶ C1–C10 Check」（原名「C1–C10 全流程路由」，已更名，页面同时重构为与各配置页一致的侧边栏布局）。C1/C2 等页的工具栏也有入口。提供候选生成、全部过滤器、四项评分、主路由与两条备选、REFER 原因优先级、下一个外汇窗口和持久化决策查询。C1/C2 的规则各自存在独立数据库表并由对应页面维护，Check 时实时读取；页面内提供「C1 / C2 规则查看（只读）」面板：C1 准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（含条件树摘要、失败动作），并附各自维护页入口；「参考配置」JSON 仅覆盖 C3–C10 共享的 `relay_routing_document` CONFIG（评分权重等尚无独立页面的项；C4 余额已可由 `/c4.html` 页面维护）。
 
 - C3：匹配币种、国家、地区、BIC8、扣费方式；优先指定地区、国家及银行列表。
-- C4：按外汇渠道选择头寸账户，扣除配置中的已占用余额。
+- C4：合作方资金校验开关 OFF 直接通过；按外汇渠道选择头寸账户（NONE/TREASURY 取交易币种，PROVIDER 取扣账账户币种），可用头寸＝账户余额−未记账占用，不足则剔除并返回 FUNDING_SHORTFALL；计算器与 `/c4.html` 页面共用。
 - C5：使用覆盖行时区、截单时间、周末及节假日计算工作日偏移和请求起息日。
 - C6：同时记录单笔及当日限额失败。
 - C7：固定及比例手续费、最低/最高费、电报费、中间行费和外汇点差折港币；用剩余候选最低成本计算得分。
@@ -225,6 +225,32 @@ mvn clean test
 - `POST /api/c3/simulate`：提交 `{providerCode,paymentCurrency,beneficiaryBankCountry,beneficiaryRegion,beneficiaryBankBic,chargeOption}`，返回 PASS/NO_REACH、selectedIndex、selectedReach、每行五项匹配依据和配置版本。
 
 2026-11-20：全套38项测试通过。C3 新增13项测试覆盖地区缺失、广东/非广东、BIC8/11、币种、国家、扣费方式、精确度排序、停用、配置编辑及版本冲突、C5/C6选中行一致性。Chrome 实测验证导航、模拟、编辑保存、BIC匹配、停用与错误校验；验证后恢复了原覆盖行。
+
+## C4 头寸资金校验页面
+
+访问 `/c4.html`；各页面左侧「C3 业务覆盖」下方新增「C4 头寸资金校验」菜单（首页、合作方管理、C2–C10、全流程 Check 及字段库页均已接入，顺序为 C3 → C4 → C5）。C4 为过滤器（BRD 6.4）：由合作方资金校验开关（9.1）、我行在合作方的往来账 nostro 余额、尚未记账的已路由交易占用金额，决定该合作方候选是否保留。
+
+- 步骤 1 资金校验开关：OFF 直接通过。后补头寸的合作方（如 Wise、GD Pay）设为 OFF，资金由资金部在合作方出款前补足，逻辑在 RELAY 模块之外；开关在合作方管理维护，本页只读展示。
+- 步骤 2 账户币种：外汇渠道 NONE / TREASURY 取交易币种；PROVIDER 取扣账账户币种。
+- 步骤 3 可用头寸 ＝ 账户余额 − 未记账的已路由交易占用；未配置该币种余额行时可用按 0 计。
+- 步骤 4 判定：可用头寸 ≥ 本笔交易账户币种等价金额 → 通过；否则 `FUNDING_SHORTFALL` 并剔除该候选。PROVIDER 渠道等价金额＝交易金额 × HSG 当日汇率（交易币种汇率 ÷ 扣账币种汇率，经港币交叉）；其余渠道即交易金额。
+
+校验开关开启且仅头寸不足导致失败时，全流程返回 REFER `FUNDING_SHORTFALL`（全部候选未通过且存在仅因 C4 失败的候选，优先级在 `CLIENT_NOT_CLASSIFIED`、`NO_FX_VENUE`、`NO_PROVIDER_ACCEPTS`、`FX_WINDOW_CLOSED` 之后）；运营审核环节，资金部确认补头寸后，运营可人工选用该合作方（示例 6b）。
+
+计算由 `C4Calculator` 供独立模拟和全流程路由共用（原 `RoutingService` 内联的头寸判定已迁入同一计算器，全流程 C4 明细即计算器结果：enabled、fxVenue、accountCurrency、rate、required、balance、reserved、available、accountFound、passed、reasons）。开关 OFF 时仍计算账户与头寸数值，仅供展示，`passed` 恒为 true。
+
+页面提供往来账余额行的新增/编辑/删除（合作方、币种、账户余额、未记账占用；同一合作方同一币种仅一行，金额须非负）、合作方/币种筛选、合作方资金校验开关只读表，以及单合作方模拟：扣账＝交易币种时按 NONE 渠道校验；扣账≠交易币种时按已配置的外汇窗口逐渠道（TREASURY / PROVIDER）校验，与全流程候选生成一致，没有任何渠道窗口时返回 `NO_FX_VENUE`。模拟可选「资金校验开关」覆盖本次试算（不落库）。示例按钮覆盖：通过、头寸不足、资金部渠道、合作方渠道开关 ON（Wise USD→AUD 7,800 万，扣账 USD 需 5,100 万 > 5,000 万可用）、同一笔开关 OFF（直接通过）、HKD→EUR 无渠道六种场景。
+
+余额行与全流程参考配置共用 `relay_routing_document` 中的 CONFIG `balances`（不另建一份数据）。保存会递增配置版本并写入配置审计；旧版本保存会被拒绝。实时 HSG 余额/占用接口尚未接入，页面数值仅用于演示；试算不占用资金。
+
+接口：
+
+- `GET /api/c4/balances`：返回配置 revision、余额行 `{index, balance:{provider,currency,balance,reserved}}`、币种清单、HSG 当日汇率（hkdRates）及各合作方资金校验开关 `{code,name,status,fundingCheckEnabled,nostroAccount}`。
+- `PUT /api/c4/balances`：提交 `{revision,index?,balance}`；index 为空新增，有值编辑。合作方须存在，币种须为三位大写且已配置汇率，余额与占用须非负，同一合作方同一币种不可重复。
+- `POST /api/c4/balances/delete`：提交 `{revision,index}` 删除余额行；删除后该币种可用头寸按 0 计。
+- `POST /api/c4/simulate`：提交 `{providerCode,debitCurrency,paymentCurrency,amount,fundingCheckEnabled?}`，返回 PASS / FUNDING_SHORTFALL / NO_FX_VENUE、各渠道分步计算结果（`venues[].calculation`）与配置版本；fundingCheckEnabled 留空用合作方已保存的开关。
+
+2026-11-23：全套168项测试通过（新增15项）。`C4CalculatorTest` 6项：开关 OFF、NONE/TREASURY 取交易币种、PROVIDER 取扣账币种与汇率折算、占用扣减与等于边界的通过、仅用本合作方余额行、非法渠道/缺汇率。`C4ServiceTest` 9项：列表、增删改与全流程共享配置并写审计、字段校验与版本冲突、六类模拟场景、试算开关覆盖不落库、与全流程 C4 明细逐字段一致、页面保存余额后全流程返回 REFER `FUNDING_SHORTFALL`。在独立端口与内存库上以 curl 验证全部接口及13个页面的侧边栏顺序，并用无头 Chrome 实测页面：六个示例、筛选与刷新保留条件、编辑/新增/删除、重复与负数校验，无前端 JavaScript 异常。
 
 ## 合作方管理（BRD 9.1）
 
@@ -371,7 +397,7 @@ mvn clean test
 
 ## 字段库与表达式页面（独立页）
 
-原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`，首页侧边栏及九个配置页（合作方管理、C2/C3/C5/C6/C7/C8/C9/C10）工具区的「字段库与表达式」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方管理页内「变更记录」标签查看。
+原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「字段库与表达式」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方管理页内「变更记录」标签查看。
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2 控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入 C2 条件编辑器，停用字段从下拉消失但历史规则表达式按原样存档）。
 
