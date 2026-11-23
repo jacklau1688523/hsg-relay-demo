@@ -1,0 +1,51 @@
+{
+  "totals": [
+    {
+      "category": "需求设计",
+      "full": 12,
+      "credit": 1.5,
+      "remaining": 10.5
+    },
+    {
+      "category": "Web",
+      "full": 45.5,
+      "credit": 11.25,
+      "remaining": 34.25
+    },
+    {
+      "category": "后端",
+      "full": 92.3,
+      "credit": 13.25,
+      "remaining": 79.05
+    },
+    {
+      "category": "数据库",
+      "full": 17.25,
+      "credit": 2,
+      "remaining": 15.25
+    },
+    {
+      "category": "数据跑数",
+      "full": 33.5,
+      "credit": 1,
+      "remaining": 32.5
+    },
+    {
+      "category": "测试联调",
+      "full": 31,
+      "credit": 1.25,
+      "remaining": 29.75
+    },
+    {
+      "category": "交付运维",
+      "full": 11,
+      "credit": 1,
+      "remaining": 10
+    }
+  ],
+  "remaining": 211.3,
+  "full": 242.55,
+  "credit": 31.25,
+  "budget": 242.995,
+  "weeks": 21.5
+}

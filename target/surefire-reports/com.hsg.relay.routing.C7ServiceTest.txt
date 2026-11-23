@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.hsg.relay.routing.C7ServiceTest
+-------------------------------------------------------------------------------
+Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.048 s -- in com.hsg.relay.routing.C7ServiceTest
