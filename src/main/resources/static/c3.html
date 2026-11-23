@@ -1,44 +1,383 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>HSG RELAY | C3 业务覆盖</title><link rel="stylesheet" href="/hsg-style.css"><style>
-.c3-grid>section,.c3-grid>aside{min-width:0}.c3-grid{display:grid;grid-template-columns:minmax(0,1fr) 370px;gap:18px}.rulebar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.filterbar{display:flex;gap:12px;flex-wrap:wrap;align-items:end}.filterbar .field{flex:1;min-width:100px}.checks{display:flex;gap:12px;flex-wrap:wrap}.checks label{display:flex;align-items:center;gap:7px;font-size:13px}.checks input{width:16px;min-height:16px;margin:0}textarea{font:inherit;width:100%;border:1px solid #cdd8e7;border-radius:6px;padding:9px;min-height:76px;color:#243b59}.section-title{margin:18px 0 12px;font-weight:700;font-size:13px}summary{cursor:pointer;font-size:13px;font-weight:650}.criteria{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px}.matchrow{border:1px solid #e1e9f4;border-radius:7px;padding:12px;margin-top:12px}.matchrow.selected{border-color:#80acdF;background:#f1f7ff}.banklist{white-space:normal;max-width:150px;word-break:break-word}.tablewrap{max-height:420px}.toplinks{display:none}.notice{line-height:1.6}#formPanel{scroll-margin-top:16px}@media(max-width:1350px){.c3-grid{grid-template-columns:minmax(0,1fr)}.rightPanel{position:static}.simgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}}@media(max-width:850px){.simgrid{display:block}.toplinks{display:flex;gap:10px;margin-bottom:16px}.toplinks a{font-size:13px}.layout3{grid-template-columns:1fr 1fr}}
-</style></head><body><div class="shell"><aside class="sidebar">
- <div class="brand">◢ HSG <small>RELAY</small></div>
- <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
- <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
- <div class="navhead">路由规则配置</div>
- <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
- <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
- <div class="nav indent sel">C3 业务覆盖</div>
- <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
- <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
- <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
- <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
- <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
- <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
- <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
- <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div><div class="navhead">工具</div>
- <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
- 
-</aside>
-<main class="main"><div class="top"><div>RELAY 支付路由配置</div><div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div></div><div class="content">
-<div class="toplinks"><a href="/">C1 业务准入</a><a href="/c2.html">C2 合规限制</a><a href="/routing.html">全流程 Check</a></div>
-<div class="heading"><h1>C3 业务覆盖配置</h1><div class="muted">按合作方维护币种、国家、地区、银行范围和扣费方式。存在一条启用覆盖行全部匹配才通过，否则返回 NO_REACH。</div></div>
-<div class="tabs"><button class="tab sel">业务覆盖表</button><span class="muted" id="revision" style="align-self:center"></span></div>
-<div class="err" id="pageError" role="alert"></div><div class="c3-grid"><section>
-<div class="panel"><div class="filterbar"><div class="field"><label for="filterProvider">合作方</label><select id="filterProvider"></select></div><div class="field"><label for="filterCurrency">交易币种</label><select id="filterCurrency"></select></div><div class="field"><label for="filterCountry">受益行国家</label><input id="filterCountry" placeholder="全部 / CN / ALL"></div><div class="field"><label for="filterStatus">状态</label><select id="filterStatus"><option value="">全部</option><option value="true">启用</option><option value="false">停用</option></select></div><button class="btn" id="query">查询</button></div></div>
-<div class="panel"><div class="rulebar"><h2 id="rowCount" style="margin:0">业务覆盖列表</h2><div class="actions"><button class="btn" id="new">＋ 新增覆盖</button><button class="btn secondary" id="refresh">↻ 刷新</button></div></div><div class="tablewrap"><table><thead><tr><th>行号 / 合作方</th><th>币种</th><th>国家 / 地区</th><th>银行范围</th><th>扣费方式</th><th>状态</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><div class="notice">最精确行优先：指定地区 ＞ ALL；再比较指定国家 ＞ ALL；再比较银行 LIST ＞ ALL。同精确度按覆盖表顺序选取。选中行同时供 C5 起息日和 C6 限额使用。</div></div>
-<div class="panel" id="formPanel"><div class="rulebar"><h2 id="formTitle" style="margin:0">新增业务覆盖</h2><span class="badge pending">C3 · NO_REACH</span></div>
-<form id="reachForm"><div class="layout3">
-<div class="field"><label for="provider">合作方 *</label><select id="provider" required></select></div>
-<div class="field"><label for="currency">交易币种 *</label><select id="currency" required></select></div>
-<div class="field"><label for="enabled">状态</label><select id="enabled"><option value="true">启用</option><option value="false">停用</option></select></div>
-<div class="field"><label for="country">受益行国家 *</label><input id="country" value="ALL" placeholder="CN / ALL" required maxlength="3" list="countries"></div>
-<div class="field"><label for="region">受益人地区 *</label><input id="region" value="ALL" placeholder="CN-GD / ALL" required maxlength="6" list="regions"></div>
-<div class="field"><label for="bankScope">银行范围 *</label><select id="bankScope"><option value="ALL">ALL · 全部银行</option><option value="LIST">LIST · 指定 BIC8</option></select></div></div>
-<div class="field section hidden" id="bicField"><label for="bics">BIC8 列表 *（逗号或换行分隔）</label><textarea id="bics" placeholder="ICBKCNBJ, BKCHCNBJ" spellcheck="false"></textarea><div class="muted">填写银行 BIC 前8位。交易中的11位 BIC 将截取前8位进行匹配。</div></div>
-<div class="section-title">支持的扣费方式 *（至少一项）</div><div class="checks"><label><input type="checkbox" name="charges" value="OUR" checked>OUR</label><label><input type="checkbox" name="charges" value="SHA" checked>SHA</label><label><input type="checkbox" name="charges" value="BEN" checked>BEN</label></div>
-<details class="section" style="margin-top:20px"><summary>C5 起息日 / C6 限额 · 此覆盖行参数</summary><div class="layout3" style="margin-top:14px">
-<div class="field"><label for="zone">截单时区 *</label><input id="zone" value="Asia/Hong_Kong" required></div><div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff" type="time" value="17:00" step="1" required></div><div class="field"><label for="offsetDays">起息偏移工作日 *</label><input id="offsetDays" type="number" min="0" max="5" value="0" required></div>
-<div class="field"><label for="perPaymentUsd">单笔上限 USD *</label><input id="perPaymentUsd" type="number" min="0" step="0.01" value="2000000" required></div><div class="field"><label for="dailyUsd">每日上限 USD *</label><input id="dailyUsd" type="number" min="0" step="0.01" value="10000000" required></div><div class="field"><label for="holidays">节假日（逗号分隔）</label><input id="holidays" placeholder="2026-12-25,2026-12-26"></div></div></details>
-<div class="notice warn">交易不带地区编码时，只有地区为 ALL 的行能够匹配。C3 通过只代表业务覆盖可达，最终路由仍须通过其他过滤器。</div><div class="err" id="formError" role="alert"></div><div class="good" id="formGood" role="status"></div><div class="actions" style="margin-top:14px"><button class="btn" id="save" type="submit">保存业务覆盖</button><button class="btn secondary" id="cancel" type="button">取消编辑</button></div></form></div>
-</section><aside class="rightPanel"><div class="simgrid"><div class="panel"><div class="ptitle">C3 规则模拟校验 ⓘ</div><form id="simForm"><div class="field section"><label for="simProvider">候选合作方 *</label><select id="simProvider"></select></div><div class="layout2">
-<div class="field"><label for="simCurrency">交易币种 *</label><select id="simCurrency"></select></div><div class="field"><label for="simCountry">受益行国家 *</label><input id="simCountry" value="CN" maxlength="2" required list="countries"></div><div class="field"><label for="simRegion">受益人地区（可为空）</label><input id="simRegion" value="CN-GD" placeholder="未提供地区" maxlength="6" list="regions"></div><div class="field"><label for="simCharge">扣费方式 *</label><select id="simCharge"><option>SHA</option><option>OUR</option><option>BEN</option></select></div></div><div class="field section"><label for="simBic">受益行 BIC *（8或11位）</label><input id="simBic" value="ICBKCNBJXXX" required maxlength="11"></div><button class="btn" id="simulate" style="width:100%" type="submit">▶ 执行 C3 校验</button></form></div><div class="panel"><div id="simResult" class="notice" role="status">默认示例：PROV-GD 的美元覆盖只面向中国广东地区；将地区清空或改为 CN-SH，可验证 NO_REACH。</div></div></div></aside></div><div class="footer">HSG RELAY · C3 业务覆盖 · 演示环境</div></div></main></div><datalist id="countries"><option value="ALL"><option value="CN"><option value="HK"><option value="US"><option value="KG"><option value="RU"></datalist><datalist id="regions"><option value="ALL"><option value="CN-GD"><option value="CN-SH"><option value="CN-ZJ"></datalist><script src="/c3.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HSG RELAY | C3 业务覆盖</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .c3-grid > section, .c3-grid > aside {
+            min-width: 0
+        }
+
+        .c3-grid {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 370px;
+            gap: 18px
+        }
+
+        .rulebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px
+        }
+
+        .filterbar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: end
+        }
+
+        .filterbar .field {
+            flex: 1;
+            min-width: 100px
+        }
+
+        .checks {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap
+        }
+
+        .checks label {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 13px
+        }
+
+        .checks input {
+            width: 16px;
+            min-height: 16px;
+            margin: 0
+        }
+
+        textarea {
+            font: inherit;
+            width: 100%;
+            border: 1px solid #cdd8e7;
+            border-radius: 6px;
+            padding: 9px;
+            min-height: 76px;
+            color: #243b59
+        }
+
+        .section-title {
+            margin: 18px 0 12px;
+            font-weight: 700;
+            font-size: 13px
+        }
+
+        summary {
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 650
+        }
+
+        .criteria {
+            margin-top: 10px;
+            display: grid;
+            grid-template-columns:1fr 1fr;
+            gap: 6px;
+            font-size: 12px
+        }
+
+        .matchrow {
+            border: 1px solid #e1e9f4;
+            border-radius: 7px;
+            padding: 12px;
+            margin-top: 12px
+        }
+
+        .matchrow.selected {
+            border-color: #80acdF;
+            background: #f1f7ff
+        }
+
+        .banklist {
+            white-space: normal;
+            max-width: 150px;
+            word-break: break-word
+        }
+
+        .tablewrap {
+            max-height: 420px
+        }
+
+        .toplinks {
+            display: none
+        }
+
+        .notice {
+            line-height: 1.6
+        }
+
+        #formPanel {
+            scroll-margin-top: 16px
+        }
+
+        @media (max-width: 1350px) {
+            .c3-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+
+            .rightPanel {
+                position: static
+            }
+
+            .simgrid {
+                display: grid;
+                grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+                gap: 18px
+            }
+        }
+
+        @media (max-width: 850px) {
+            .simgrid {
+                display: block
+            }
+
+            .toplinks {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 16px
+            }
+
+            .toplinks a {
+                font-size: 13px
+            }
+
+            .layout3 {
+                grid-template-columns:1fr 1fr
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent sel">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
+
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/">C1 业务准入</a><a href="/c2.html">C2 合规限制</a><a href="/routing.html">全流程
+                Check</a></div>
+            <div class="heading"><h1>C3 业务覆盖配置</h1>
+                <div class="muted">按合作方维护币种、国家、地区、银行范围和扣费方式。存在一条启用覆盖行全部匹配才通过，否则返回
+                    NO_REACH。
+                </div>
+            </div>
+            <div class="tabs">
+                <button class="tab sel">业务覆盖表</button>
+                <span class="muted" id="revision" style="align-self:center"></span></div>
+            <div class="err" id="pageError" role="alert"></div>
+            <div class="c3-grid">
+                <section>
+                    <div class="panel">
+                        <div class="filterbar">
+                            <div class="field"><label for="filterProvider">合作方</label><select
+                                    id="filterProvider"></select></div>
+                            <div class="field"><label for="filterCurrency">交易币种</label><select
+                                    id="filterCurrency"></select></div>
+                            <div class="field"><label for="filterCountry">受益行国家</label><input id="filterCountry"
+                                                                                                   placeholder="全部 / CN / ALL">
+                            </div>
+                            <div class="field"><label for="filterStatus">状态</label><select id="filterStatus">
+                                <option value="">全部</option>
+                                <option value="true">启用</option>
+                                <option value="false">停用</option>
+                            </select></div>
+                            <button class="btn" id="query">查询</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="rulebar"><h2 id="rowCount" style="margin:0">业务覆盖列表</h2>
+                            <div class="actions">
+                                <button class="btn" id="new">＋ 新增覆盖</button>
+                                <button class="btn secondary" id="refresh">↻ 刷新</button>
+                            </div>
+                        </div>
+                        <div class="tablewrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>行号 / 合作方</th>
+                                    <th>币种</th>
+                                    <th>国家 / 地区</th>
+                                    <th>银行范围</th>
+                                    <th>扣费方式</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                                </thead>
+                                <tbody id="rows"></tbody>
+                            </table>
+                        </div>
+                        <div class="notice">最精确行优先：指定地区 ＞ ALL；再比较指定国家 ＞ ALL；再比较银行 LIST ＞
+                            ALL。同精确度按覆盖表顺序选取。选中行同时供 C5 起息日和 C6 限额使用。
+                        </div>
+                    </div>
+                    <div class="panel" id="formPanel">
+                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增业务覆盖</h2><span
+                                class="badge pending">C3 · NO_REACH</span></div>
+                        <form id="reachForm">
+                            <div class="layout3">
+                                <div class="field"><label for="provider">合作方 *</label><select id="provider"
+                                                                                                 required></select>
+                                </div>
+                                <div class="field"><label for="currency">交易币种 *</label><select id="currency"
+                                                                                                   required></select>
+                                </div>
+                                <div class="field"><label for="enabled">状态</label><select id="enabled">
+                                    <option value="true">启用</option>
+                                    <option value="false">停用</option>
+                                </select></div>
+                                <div class="field"><label for="country">受益行国家 *</label><input id="country"
+                                                                                                   value="ALL"
+                                                                                                   placeholder="CN / ALL"
+                                                                                                   required
+                                                                                                   maxlength="3"
+                                                                                                   list="countries">
+                                </div>
+                                <div class="field"><label for="region">受益人地区 *</label><input id="region"
+                                                                                                  value="ALL"
+                                                                                                  placeholder="CN-GD / ALL"
+                                                                                                  required maxlength="6"
+                                                                                                  list="regions"></div>
+                                <div class="field"><label for="bankScope">银行范围 *</label><select id="bankScope">
+                                    <option value="ALL">ALL · 全部银行</option>
+                                    <option value="LIST">LIST · 指定 BIC8</option>
+                                </select></div>
+                            </div>
+                            <div class="field section hidden" id="bicField"><label for="bics">BIC8 列表
+                                *（逗号或换行分隔）</label><textarea id="bics" placeholder="ICBKCNBJ, BKCHCNBJ"
+                                                                   spellcheck="false"></textarea>
+                                <div class="muted">填写银行 BIC 前8位。交易中的11位 BIC 将截取前8位进行匹配。</div>
+                            </div>
+                            <div class="section-title">支持的扣费方式 *（至少一项）</div>
+                            <div class="checks"><label><input type="checkbox" name="charges" value="OUR"
+                                                              checked>OUR</label><label><input type="checkbox"
+                                                                                               name="charges"
+                                                                                               value="SHA"
+                                                                                               checked>SHA</label><label><input
+                                    type="checkbox" name="charges" value="BEN" checked>BEN</label></div>
+                            <details class="section" style="margin-top:20px">
+                                <summary>C5 起息日 / C6 限额 · 此覆盖行参数</summary>
+                                <div class="layout3" style="margin-top:14px">
+                                    <div class="field"><label for="zone">截单时区 *</label><input id="zone"
+                                                                                                  value="Asia/Hong_Kong"
+                                                                                                  required></div>
+                                    <div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff"
+                                                                                                    type="time"
+                                                                                                    value="17:00"
+                                                                                                    step="1" required>
+                                    </div>
+                                    <div class="field"><label for="offsetDays">起息偏移工作日 *</label><input
+                                            id="offsetDays" type="number" min="0" max="5" value="0" required></div>
+                                    <div class="field"><label for="perPaymentUsd">单笔上限 USD *</label><input
+                                            id="perPaymentUsd" type="number" min="0" step="0.01" value="2000000"
+                                            required></div>
+                                    <div class="field"><label for="dailyUsd">每日上限 USD *</label><input id="dailyUsd"
+                                                                                                          type="number"
+                                                                                                          min="0"
+                                                                                                          step="0.01"
+                                                                                                          value="10000000"
+                                                                                                          required>
+                                    </div>
+                                    <div class="field"><label for="holidays">节假日（逗号分隔）</label><input
+                                            id="holidays" placeholder="2026-12-25,2026-12-26"></div>
+                                </div>
+                            </details>
+                            <div class="notice warn">交易不带地区编码时，只有地区为 ALL 的行能够匹配。C3
+                                通过只代表业务覆盖可达，最终路由仍须通过其他过滤器。
+                            </div>
+                            <div class="err" id="formError" role="alert"></div>
+                            <div class="good" id="formGood" role="status"></div>
+                            <div class="actions" style="margin-top:14px">
+                                <button class="btn" id="save" type="submit">保存业务覆盖</button>
+                                <button class="btn secondary" id="cancel" type="button">取消编辑</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+                <aside class="rightPanel">
+                    <div class="simgrid">
+                        <div class="panel">
+                            <div class="ptitle">C3 规则模拟校验 ⓘ</div>
+                            <form id="simForm">
+                                <div class="field section"><label for="simProvider">候选合作方 *</label><select
+                                        id="simProvider"></select></div>
+                                <div class="layout2">
+                                    <div class="field"><label for="simCurrency">交易币种 *</label><select
+                                            id="simCurrency"></select></div>
+                                    <div class="field"><label for="simCountry">受益行国家 *</label><input
+                                            id="simCountry" value="CN" maxlength="2" required list="countries"></div>
+                                    <div class="field"><label for="simRegion">受益人地区（可为空）</label><input
+                                            id="simRegion" value="CN-GD" placeholder="未提供地区" maxlength="6"
+                                            list="regions"></div>
+                                    <div class="field"><label for="simCharge">扣费方式 *</label><select id="simCharge">
+                                        <option>SHA</option>
+                                        <option>OUR</option>
+                                        <option>BEN</option>
+                                    </select></div>
+                                </div>
+                                <div class="field section"><label for="simBic">受益行 BIC *（8或11位）</label><input
+                                        id="simBic" value="ICBKCNBJXXX" required maxlength="11"></div>
+                                <button class="btn" id="simulate" style="width:100%" type="submit">▶ 执行 C3 校验
+                                </button>
+                            </form>
+                        </div>
+                        <div class="panel">
+                            <div id="simResult" class="notice" role="status">默认示例：PROV-GD 的美元覆盖只面向中国广东地区；将地区清空或改为
+                                CN-SH，可验证 NO_REACH。
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+            <div class="footer">HSG RELAY · C3 业务覆盖 · 演示环境</div>
+        </div>
+    </main>
+</div>
+<datalist id="countries">
+    <option value="ALL">
+    <option value="CN">
+    <option value="HK">
+    <option value="US">
+    <option value="KG">
+    <option value="RU">
+</datalist>
+<datalist id="regions">
+    <option value="ALL">
+    <option value="CN-GD">
+    <option value="CN-SH">
+    <option value="CN-ZJ">
+</datalist>
+<script src="/c3.js"></script>
+</body>
+</html>

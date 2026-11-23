@@ -1,30 +1,412 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HSG RELAY | C5 起息日评分</title><link rel="stylesheet" href="/hsg-style.css"><style>
-.wide{grid-column:1 / -1}.scorecards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}.scorecard{padding:17px;border:1px solid #dae6f5;border-radius:10px;background:white}.scorecard b{font-size:26px;color:#155fbc;display:block;margin:5px 0}.scorecard span{font-size:12px;color:#708399}.c5-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px}.c5-grid>section,.c5-grid>aside{min-width:0}.filterbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.filterbar .field{flex:1;min-width:120px}.rulebar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.tablewrap{max-height:400px}textarea{width:100%;padding:10px;font:inherit;border:1px solid #cdd8e7;border-radius:6px;min-height:110px;color:#243b59}.notice{line-height:1.7}.score-result{background:#edf5ff;border:1px solid #c6dbf7;border-radius:9px;padding:16px;margin-bottom:12px}.score-result b{display:block;font-size:32px;color:#155fbc;margin:6px 0}.score-result.zero{background:#fff8ec;border-color:#f0d29d}.score-result.zero b{color:#a66b11}.score-result small{font-size:12px;color:#4f6d8f}.step{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid #edf1f6;font-size:13px}.step .num{height:23px;min-width:23px;background:#eaf2ff;color:#1760b7;border-radius:50%;text-align:center;line-height:23px;font-weight:700}.step small{display:block;color:#71849c;line-height:1.6;margin-top:5px}.daylist{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.day{padding:6px 9px;border:1px solid #d9e3ef;border-radius:5px;font-size:12px;background:#f8faff}.samples{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.row-selected{background:#edf5ff}.toplinks{display:none}.context{white-space:normal;line-height:1.6}.score-table{margin-top:15px}#formPanel{scroll-margin-top:15px}@media(max-width:1350px){.c5-grid{grid-template-columns:minmax(0,1fr)}.rightPanel{position:static}.simlayout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}}@media(max-width:850px){.toplinks{display:flex;gap:10px;margin-bottom:12px}.simlayout{display:block}.scorecards{gap:8px}.scorecard{padding:12px}.layout3{grid-template-columns:1fr 1fr}}
-</style></head><body><div class="shell"><aside class="sidebar">
- <div class="brand">◢ HSG <small>RELAY</small></div>
- <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
- <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
- <div class="navhead">路由规则配置</div>
- <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
- <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
- <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
- <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
- <div class="nav indent sel">C5 起息日 / 截单</div>
- <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
- <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
- <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
- <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
- <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
- <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div><div class="navhead">工具</div>
- <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
- 
-</aside>
-<main class="main"><div class="top"><div>RELAY 支付路由配置</div><div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div></div><div class="content"><div class="toplinks"><a href="/providers.html">合作方管理</a><a href="/c3.html">C3 业务覆盖</a><a href="/routing.html">全流程 Check</a></div><div class="heading"><h1>C5 起息日与速度评分</h1><div class="muted">根据覆盖行的截单时间、工作日偏移及节假日日历计算起息日。C5 为打分项，0分也不会剔除候选。</div></div>
-<div class="scorecards"><div class="scorecard"><span>无延迟 · 满足请求日期</span><b>100 分</b><span>最早起息日不晚于请求日</span></div><div class="scorecard"><span>延迟 1 个工作日</span><b>50 分</b><span>计入速度评分，候选仍可参与排序</span></div><div class="scorecard"><span>延迟 ≥2 个工作日</span><b>0 分</b><span>仅速度分为0，候选不会因此被剔除</span></div></div>
-<div class="tabs"><button class="tab sel">截单与工作日日历</button><span class="muted" id="revision" style="align-self:center"></span></div><div id="pageError" class="err" role="alert"></div><div class="c5-grid"><section>
-<div class="panel"><div class="filterbar"><div class="field"><label for="filterProvider">合作方</label><select id="filterProvider"></select></div><div class="field"><label for="filterCurrency">交易币种</label><select id="filterCurrency"></select></div><button class="btn" id="query">查询</button><button class="btn secondary" id="refresh">↻ 刷新</button></div></div>
-<div class="panel"><div class="rulebar"><h2 id="rowCount" style="margin:0">覆盖行起息配置</h2><a href="/c3.html">去 C3 新增覆盖行 ↗</a></div><div class="tablewrap"><table><thead><tr><th>行号 / 合作方</th><th>币种 / 国家 / 地区</th><th>截单时间 / 时区</th><th>偏移工作日</th><th>日历</th><th>覆盖状态</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><div class="notice">按 C3 的最精确匹配行读取 C5 参数，C5 和 C6 共用同一覆盖行。这里只维护起息日参数，覆盖范围及启用状态在 C3 管理。</div></div>
-<div class="panel" id="formPanel"><div class="rulebar"><h2 id="formTitle" style="margin:0">编辑起息配置</h2><span class="badge pending">评分项 · 不剔除候选</span></div><div class="notice context" id="context"></div><form id="scheduleForm"><div class="layout3" style="margin-top:16px"><div class="field"><label for="zone">截单时区 *</label><input id="zone" value="Asia/Hong_Kong" required list="zones"></div><div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff" type="time" step="1" required></div><div class="field"><label for="offsetDays">起息偏移工作日 *（0–5）</label><input id="offsetDays" type="number" min="0" max="5" step="1" required></div></div>
-<div class="field section" style="margin-top:17px"><label for="holidays">本覆盖行节假日日历（逗号或换行分隔）</label><textarea id="holidays" placeholder="2026-12-25
-2026-12-28" spellcheck="false"></textarea></div><div class="muted">日历按周一至周五扣除以下节假日计算。留空表示仅跳过周六、周日；请维护该合作方、该币种的节假日。</div><div id="calendarPreview" class="daylist"></div><div class="notice warn">当前时间必须严格早于截单时间才算截单前；恰好到达截单时间也顺延至下一工作日，再叠加工作日偏移。远期请求可满足时仍得100分。</div><div class="err" id="formError" role="alert"></div><div class="good" id="formGood" role="status"></div><div class="actions" style="margin-top:16px"><button class="btn" id="save" type="submit">保存起息配置</button><button class="btn secondary" id="cancel" type="button">取消编辑</button></div></form></div>
-</section><aside class="rightPanel"><div class="simlayout"><div class="panel"><div class="ptitle">C5 起息日评分试算</div><form id="simForm"><div class="layout2"><div class="field"><label for="simProvider">合作方 *</label><select id="simProvider"></select></div><div class="field"><label for="simCurrency">交易币种 *</label><select id="simCurrency"></select></div><div class="field"><label for="simCountry">受益行国家 *</label><input id="simCountry" value="US" required maxlength="2"></div><div class="field"><label for="simRegion">受益人地区（可为空）</label><input id="simRegion" placeholder="CN-GD" maxlength="6"></div><div class="field"><label for="simBic">受益行 BIC *</label><input id="simBic" value="CHASUS33" required maxlength="11"></div><div class="field"><label for="simCharge">扣费方式 *</label><select id="simCharge"><option>SHA</option><option>OUR</option><option>BEN</option></select></div><div class="field wide"><label for="at">模拟当前时间（HKT）</label><input id="at" type="datetime-local" step="1"></div><div class="field wide"><label for="requested">请求起息日</label><input id="requested" type="date"></div></div><div class="notice">时间留空取当前时间；请求起息日留空默认香港当日。试算使用已保存配置，并按交易字段自动选择覆盖行。</div><div class="samples"><button type="button" class="btn secondary tiny" data-sample="before">示例：截单前</button><button type="button" class="btn secondary tiny" data-sample="cutoff">恰好截单</button><button type="button" class="btn secondary tiny" data-sample="weekend">周末</button><button type="button" class="btn secondary tiny" data-sample="future">远期请求</button></div><button class="btn" id="simulate" type="submit" style="width:100%;margin-top:15px">▶ 计算起息日与速度分</button></form></div><div class="panel"><div id="simResult" class="notice" role="status">填写交易字段及请求起息日，查看最早起息日、候选起息日、延迟工作日和速度分数。</div></div></div></aside></div><div class="footer">HSG RELAY · C5 起息日评分 · 演示环境</div></div></main></div><datalist id="zones"><option value="Asia/Hong_Kong"><option value="UTC"><option value="Europe/London"><option value="America/New_York"></datalist><script src="/c5.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | C5 起息日评分</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .wide {
+            grid-column: 1 / -1
+        }
+
+        .scorecards {
+            display: grid;
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px
+        }
+
+        .scorecard {
+            padding: 17px;
+            border: 1px solid #dae6f5;
+            border-radius: 10px;
+            background: white
+        }
+
+        .scorecard b {
+            font-size: 26px;
+            color: #155fbc;
+            display: block;
+            margin: 5px 0
+        }
+
+        .scorecard span {
+            font-size: 12px;
+            color: #708399
+        }
+
+        .c5-grid {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 390px;
+            gap: 18px
+        }
+
+        .c5-grid > section, .c5-grid > aside {
+            min-width: 0
+        }
+
+        .filterbar {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap
+        }
+
+        .filterbar .field {
+            flex: 1;
+            min-width: 120px
+        }
+
+        .rulebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px
+        }
+
+        .tablewrap {
+            max-height: 400px
+        }
+
+        textarea {
+            width: 100%;
+            padding: 10px;
+            font: inherit;
+            border: 1px solid #cdd8e7;
+            border-radius: 6px;
+            min-height: 110px;
+            color: #243b59
+        }
+
+        .notice {
+            line-height: 1.7
+        }
+
+        .score-result {
+            background: #edf5ff;
+            border: 1px solid #c6dbf7;
+            border-radius: 9px;
+            padding: 16px;
+            margin-bottom: 12px
+        }
+
+        .score-result b {
+            display: block;
+            font-size: 32px;
+            color: #155fbc;
+            margin: 6px 0
+        }
+
+        .score-result.zero {
+            background: #fff8ec;
+            border-color: #f0d29d
+        }
+
+        .score-result.zero b {
+            color: #a66b11
+        }
+
+        .score-result small {
+            font-size: 12px;
+            color: #4f6d8f
+        }
+
+        .step {
+            display: flex;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px
+        }
+
+        .step .num {
+            height: 23px;
+            min-width: 23px;
+            background: #eaf2ff;
+            color: #1760b7;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 23px;
+            font-weight: 700
+        }
+
+        .step small {
+            display: block;
+            color: #71849c;
+            line-height: 1.6;
+            margin-top: 5px
+        }
+
+        .daylist {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 12px 0
+        }
+
+        .day {
+            padding: 6px 9px;
+            border: 1px solid #d9e3ef;
+            border-radius: 5px;
+            font-size: 12px;
+            background: #f8faff
+        }
+
+        .samples {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px
+        }
+
+        .row-selected {
+            background: #edf5ff
+        }
+
+        .toplinks {
+            display: none
+        }
+
+        .context {
+            white-space: normal;
+            line-height: 1.6
+        }
+
+        .score-table {
+            margin-top: 15px
+        }
+
+        #formPanel {
+            scroll-margin-top: 15px
+        }
+
+        @media (max-width: 1350px) {
+            .c5-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+
+            .rightPanel {
+                position: static
+            }
+
+            .simlayout {
+                display: grid;
+                grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
+                gap: 18px
+            }
+        }
+
+        @media (max-width: 850px) {
+            .toplinks {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 12px
+            }
+
+            .simlayout {
+                display: block
+            }
+
+            .scorecards {
+                gap: 8px
+            }
+
+            .scorecard {
+                padding: 12px
+            }
+
+            .layout3 {
+                grid-template-columns:1fr 1fr
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent sel">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
+
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/providers.html">合作方管理</a><a href="/c3.html">C3 业务覆盖</a><a
+                    href="/routing.html">全流程 Check</a></div>
+            <div class="heading"><h1>C5 起息日与速度评分</h1>
+                <div class="muted">根据覆盖行的截单时间、工作日偏移及节假日日历计算起息日。C5
+                    为打分项，0分也不会剔除候选。
+                </div>
+            </div>
+            <div class="scorecards">
+                <div class="scorecard"><span>无延迟 · 满足请求日期</span><b>100
+                    分</b><span>最早起息日不晚于请求日</span></div>
+                <div class="scorecard"><span>延迟 1 个工作日</span><b>50
+                    分</b><span>计入速度评分，候选仍可参与排序</span></div>
+                <div class="scorecard"><span>延迟 ≥2 个工作日</span><b>0
+                    分</b><span>仅速度分为0，候选不会因此被剔除</span></div>
+            </div>
+            <div class="tabs">
+                <button class="tab sel">截单与工作日日历</button>
+                <span class="muted" id="revision" style="align-self:center"></span></div>
+            <div id="pageError" class="err" role="alert"></div>
+            <div class="c5-grid">
+                <section>
+                    <div class="panel">
+                        <div class="filterbar">
+                            <div class="field"><label for="filterProvider">合作方</label><select
+                                    id="filterProvider"></select></div>
+                            <div class="field"><label for="filterCurrency">交易币种</label><select
+                                    id="filterCurrency"></select></div>
+                            <button class="btn" id="query">查询</button>
+                            <button class="btn secondary" id="refresh">↻ 刷新</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="rulebar"><h2 id="rowCount" style="margin:0">覆盖行起息配置</h2><a href="/c3.html">去
+                            C3 新增覆盖行 ↗</a></div>
+                        <div class="tablewrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>行号 / 合作方</th>
+                                    <th>币种 / 国家 / 地区</th>
+                                    <th>截单时间 / 时区</th>
+                                    <th>偏移工作日</th>
+                                    <th>日历</th>
+                                    <th>覆盖状态</th>
+                                    <th>操作</th>
+                                </tr>
+                                </thead>
+                                <tbody id="rows"></tbody>
+                            </table>
+                        </div>
+                        <div class="notice">按 C3 的最精确匹配行读取 C5 参数，C5 和 C6 共用同一覆盖行。这里只维护起息日参数，覆盖范围及启用状态在
+                            C3 管理。
+                        </div>
+                    </div>
+                    <div class="panel" id="formPanel">
+                        <div class="rulebar"><h2 id="formTitle" style="margin:0">编辑起息配置</h2><span
+                                class="badge pending">评分项 · 不剔除候选</span></div>
+                        <div class="notice context" id="context"></div>
+                        <form id="scheduleForm">
+                            <div class="layout3" style="margin-top:16px">
+                                <div class="field"><label for="zone">截单时区 *</label><input id="zone"
+                                                                                              value="Asia/Hong_Kong"
+                                                                                              required list="zones">
+                                </div>
+                                <div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff" type="time"
+                                                                                                step="1" required></div>
+                                <div class="field"><label for="offsetDays">起息偏移工作日 *（0–5）</label><input
+                                        id="offsetDays" type="number" min="0" max="5" step="1" required></div>
+                            </div>
+                            <div class="field section" style="margin-top:17px"><label
+                                    for="holidays">本覆盖行节假日日历（逗号或换行分隔）</label><textarea id="holidays"
+                                                                                                       placeholder="2026-12-25
+2026-12-28" spellcheck="false"></textarea></div>
+                            <div class="muted">
+                                日历按周一至周五扣除以下节假日计算。留空表示仅跳过周六、周日；请维护该合作方、该币种的节假日。
+                            </div>
+                            <div id="calendarPreview" class="daylist"></div>
+                            <div class="notice warn">
+                                当前时间必须严格早于截单时间才算截单前；恰好到达截单时间也顺延至下一工作日，再叠加工作日偏移。远期请求可满足时仍得100分。
+                            </div>
+                            <div class="err" id="formError" role="alert"></div>
+                            <div class="good" id="formGood" role="status"></div>
+                            <div class="actions" style="margin-top:16px">
+                                <button class="btn" id="save" type="submit">保存起息配置</button>
+                                <button class="btn secondary" id="cancel" type="button">取消编辑</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+                <aside class="rightPanel">
+                    <div class="simlayout">
+                        <div class="panel">
+                            <div class="ptitle">C5 起息日评分试算</div>
+                            <form id="simForm">
+                                <div class="layout2">
+                                    <div class="field"><label for="simProvider">合作方 *</label><select
+                                            id="simProvider"></select></div>
+                                    <div class="field"><label for="simCurrency">交易币种 *</label><select
+                                            id="simCurrency"></select></div>
+                                    <div class="field"><label for="simCountry">受益行国家 *</label><input
+                                            id="simCountry" value="US" required maxlength="2"></div>
+                                    <div class="field"><label for="simRegion">受益人地区（可为空）</label><input
+                                            id="simRegion" placeholder="CN-GD" maxlength="6"></div>
+                                    <div class="field"><label for="simBic">受益行 BIC *</label><input id="simBic"
+                                                                                                      value="CHASUS33"
+                                                                                                      required
+                                                                                                      maxlength="11">
+                                    </div>
+                                    <div class="field"><label for="simCharge">扣费方式 *</label><select id="simCharge">
+                                        <option>SHA</option>
+                                        <option>OUR</option>
+                                        <option>BEN</option>
+                                    </select></div>
+                                    <div class="field wide"><label for="at">模拟当前时间（HKT）</label><input id="at"
+                                                                                                            type="datetime-local"
+                                                                                                            step="1">
+                                    </div>
+                                    <div class="field wide"><label for="requested">请求起息日</label><input
+                                            id="requested" type="date"></div>
+                                </div>
+                                <div class="notice">
+                                    时间留空取当前时间；请求起息日留空默认香港当日。试算使用已保存配置，并按交易字段自动选择覆盖行。
+                                </div>
+                                <div class="samples">
+                                    <button type="button" class="btn secondary tiny" data-sample="before">示例：截单前
+                                    </button>
+                                    <button type="button" class="btn secondary tiny" data-sample="cutoff">恰好截单
+                                    </button>
+                                    <button type="button" class="btn secondary tiny" data-sample="weekend">周末</button>
+                                    <button type="button" class="btn secondary tiny" data-sample="future">远期请求
+                                    </button>
+                                </div>
+                                <button class="btn" id="simulate" type="submit" style="width:100%;margin-top:15px">▶
+                                    计算起息日与速度分
+                                </button>
+                            </form>
+                        </div>
+                        <div class="panel">
+                            <div id="simResult" class="notice" role="status">
+                                填写交易字段及请求起息日，查看最早起息日、候选起息日、延迟工作日和速度分数。
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+            <div class="footer">HSG RELAY · C5 起息日评分 · 演示环境</div>
+        </div>
+    </main>
+</div>
+<datalist id="zones">
+    <option value="Asia/Hong_Kong">
+    <option value="UTC">
+    <option value="Europe/London">
+    <option value="America/New_York">
+</datalist>
+<script src="/c5.js"></script>
+</body>
+</html>

@@ -1,14 +1,477 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HSG RELAY | 元数据中心</title><link rel="stylesheet" href="/hsg-style.css"><style>
-.meta-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}.meta-tabs{display:flex;gap:8px;margin:0 0 16px;border-bottom:1px solid #dce3ee}.meta-tabs button{border:0;background:none;padding:11px 15px;color:#51657e;font-weight:650;border-bottom:3px solid transparent}.meta-tabs button.sel{color:#1265d7;border-color:#1265d7}.meta-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.meta-toolbar input{max-width:310px}.meta-toolbar select{max-width:145px}.meta-toolbar .spacer{flex:1}.meta-stats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px}.meta-stat{border:1px solid #dde7f3;border-radius:8px;background:#fff;padding:10px 15px;min-width:135px}.meta-stat strong{display:block;font-size:21px;color:#173c68}.meta-stat span{font-size:11px;color:#65768b}.meta-table{min-width:870px}.meta-table td{white-space:normal;vertical-align:top}.meta-table .mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;word-break:break-word}.meta-code{font-weight:700;color:#164b87}.meta-tags{display:flex;gap:4px;flex-wrap:wrap}.meta-tag{display:inline-block;border-radius:4px;background:#edf4fe;color:#275f9d;padding:2px 6px;font-size:11px}.meta-empty{padding:30px;text-align:center;color:#73849a}.meta-drawer{position:fixed;inset:0;background:#0b213a80;display:none;justify-content:flex-end;z-index:20}.meta-drawer.show{display:flex}.meta-editor{background:#fff;width:min(480px,100%);height:100%;overflow:auto;padding:24px;box-shadow:-10px 0 40px #1235}.meta-editor h2{margin-bottom:5px}.meta-editor .field{margin-top:16px}.meta-editor .field>label{display:block;margin-bottom:6px;font-weight:650;font-size:12px}.meta-checks{display:flex;gap:7px;flex-wrap:wrap}.meta-checks label{display:flex;gap:5px;align-items:center;border:1px solid #d7e2f0;border-radius:5px;padding:6px 9px;font-size:12px}.meta-checks input{width:auto;min-height:0}.meta-editor .actions{justify-content:flex-end;margin-top:22px}.meta-preview{display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:16px}.meta-preview .panel{margin-bottom:0}.meta-cond{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(105px,.75fr) minmax(0,1.1fr) auto;gap:7px;align-items:center;margin:9px 0}.meta-cond .btn{padding:7px 10px}.meta-condition-card{border:1px solid #dfe8f3;background:#f9fbfe;border-radius:7px;padding:13px;margin:12px 0}.meta-cond-hint{font-size:11px;color:#687b92;grid-column:1/-1}.meta-json{width:100%;min-height:155px;border:1px solid #cbd8e8;border-radius:6px;padding:10px;font:12px ui-monospace,Menlo,monospace}.meta-result{padding:12px;border-radius:7px;margin-top:12px}.meta-result.ok{background:#e9f8f0;color:#0a7d43}.meta-result.no{background:#fdf0f0;color:#bf3b1f}.meta-codeblock{font:12px ui-monospace,Menlo,monospace;background:#10233e;color:#dbe9ff;border-radius:6px;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin-top:8px}.meta-error{color:#bd3847;font-size:12px;margin-top:8px;min-height:18px}.meta-link{display:inline-block;margin-top:10px;color:#1265d7;text-decoration:none}.meta-help{line-height:1.7}.meta-library{font-size:12px;color:#637890;margin-bottom:12px}.meta-topbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.meta-topbar select{width:140px}@media(max-width:1100px){.meta-preview{grid-template-columns:1fr}}@media(max-width:650px){.meta-cond{grid-template-columns:1fr 1fr}.meta-cond .meta-value{grid-column:1/-1}.meta-drawer{padding:0}.meta-editor{width:100%}}
-</style></head><body><div class="shell"><aside class="sidebar">
-<div class="brand">◢ HSG <small>RELAY</small></div><div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div><div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div><div class="navhead">路由规则配置</div>
-<div class="nav indent" onclick="location.href='/'">C1 业务准入</div><div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div><div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div><div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div><div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div><div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div><div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div><div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div><div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div><div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div><div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div><div class="navhead">工具</div><div class="nav sel">▦ &nbsp; 元数据中心</div></aside>
-<main class="main"><div class="top"><div>RELAY 支付路由配置</div><div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div></div><div class="content">
-<div class="heading meta-intro"><div><h1>元数据中心</h1><div class="muted">集中管理表达式字段、适用规则、运算符和可选值；C2 条件编辑器与试算菜单共享字段定义。</div></div><button class="btn secondary" id="refresh">↻ 刷新</button></div>
-<div class="meta-tabs"><button type="button" class="sel" data-tab="catalog">字段库</button><button type="button" data-tab="expression">表达式菜单与试算</button></div>
-<section id="catalogTab"><div class="meta-stats" id="metaStats"></div><div class="panel"><div class="meta-toolbar"><input id="fieldSearch" type="search" placeholder="搜索名称、编码、类型、可选值" aria-label="搜索字段"><select id="ruleFilter" aria-label="适用规则"><option value="">全部规则</option></select><select id="statusFilter" aria-label="状态"><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select><span class="spacer"></span><button class="btn" id="newField">＋ 新增字段</button></div><div class="tablewrap"><table class="meta-table"><thead><tr><th>字段名称 / 编码</th><th>数据类型</th><th>适用规则</th><th>运算符</th><th>可选值</th><th>状态</th><th>操作</th></tr></thead><tbody id="fieldRows"></tbody></table></div></div><div class="notice meta-help">字段编码保存后不可更改。停用字段会从试算菜单和 C2 新规则条件中移除；已保存规则仍保留原条件，重新编译时会检查字段状态。配置变更记录在审计日志中。</div></section>
-<section id="expressionTab" class="hidden"><div class="meta-preview"><div class="panel"><div class="meta-topbar"><h2 style="margin:0;flex:1">表达式菜单</h2><select id="exprRule" aria-label="表达式适用规则"></select><select id="groupLogic" aria-label="条件关系"><option value="AND">全部满足 AND</option><option value="OR">任一满足 OR</option></select></div><div class="meta-library" id="exprLibrary"></div><div class="meta-condition-card" id="conditionNodes"></div><div class="actions"><button class="btn secondary tiny" id="addCondition" type="button">＋ 添加条件</button></div><div class="notice meta-help">菜单按所选规则只展示已启用字段。字段类型决定可用运算符；枚举可选值来自元数据中心。</div><a class="meta-link" href="/c2.html">前往 C2 监管规则配置 →</a></div><aside class="panel"><h2>表达式试算</h2><p class="muted">输入业务变量 JSON，运行与路由规则共用的受控 Aviator 表达式编译。</p><div class="field" style="margin-top:14px"><label for="exprVars">模拟输入 JSON</label><textarea id="exprVars" class="meta-json">{"paymentCurrency":"USD","beneficiaryBankCountry":"KG","amountUsd":1500000,"flowCategory":"PSP"}</textarea></div><div class="actions" style="margin-top:10px"><button class="btn secondary tiny" data-sample="usdkg">USD 且 KG</button><button class="btn secondary tiny" data-sample="million">金额 ≥ 100万</button><button class="btn secondary tiny" data-sample="or">USD 或 HKD</button></div><button class="btn" id="runExpression" style="width:100%;margin-top:14px">▶ 编译并试算</button><div id="exprResult" role="status" class="notice">选择字段并设置条件后，可在这里查看试算结果。</div></aside></div></section>
-<div class="footer">HSG RELAY · 元数据中心 · 演示环境</div></div></main></div>
-<div id="editorBackdrop" class="meta-drawer" role="dialog" aria-modal="true" aria-label="字段配置"><div class="meta-editor"><div class="rowbetween"><div><h2 id="editorTitle">新增字段</h2><div class="muted">字段定义直接用于规则菜单和表达式校验</div></div><button type="button" class="btn secondary tiny" id="closeEditor">✕</button></div><form id="fieldForm"><div class="field"><label for="editCode">字段编码 *</label><input id="editCode" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9_]*" placeholder="paymentCurrency"></div><div class="field"><label for="editName">字段名称 *</label><input id="editName" required maxlength="80" placeholder="交易币种"></div><div class="field"><label for="editType">数据类型 *</label><select id="editType"><option value="STRING">文本 STRING</option><option value="ENUM">枚举 ENUM</option><option value="DECIMAL">小数 DECIMAL</option><option value="INTEGER">整数 INTEGER</option><option value="BOOLEAN">布尔 BOOLEAN</option></select></div><div class="field"><label>适用规则 *</label><div id="editRules" class="meta-checks"></div></div><div class="field"><label>允许运算符 *</label><div id="editOperators" class="meta-checks"></div></div><div class="field"><label for="editOptions">可选值（逗号分隔）</label><textarea id="editOptions" class="meta-json" style="min-height:76px" placeholder="CNY,USD,HKD"></textarea></div><div class="field"><label><input id="editEnabled" type="checkbox" style="width:auto;min-height:0" checked> 启用字段</label></div><div id="editError" class="meta-error" role="alert"></div><div class="actions"><button type="button" class="btn secondary" id="cancelEditor">取消</button><button type="submit" class="btn" id="saveField">保存字段</button></div></form></div></div>
-<script src="/fields.js"></script></body></html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | 元数据中心</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .meta-intro {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap
+        }
+
+        .meta-tabs {
+            display: flex;
+            gap: 8px;
+            margin: 0 0 16px;
+            border-bottom: 1px solid #dce3ee
+        }
+
+        .meta-tabs button {
+            border: 0;
+            background: none;
+            padding: 11px 15px;
+            color: #51657e;
+            font-weight: 650;
+            border-bottom: 3px solid transparent
+        }
+
+        .meta-tabs button.sel {
+            color: #1265d7;
+            border-color: #1265d7
+        }
+
+        .meta-toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px
+        }
+
+        .meta-toolbar input {
+            max-width: 310px
+        }
+
+        .meta-toolbar select {
+            max-width: 145px
+        }
+
+        .meta-toolbar .spacer {
+            flex: 1
+        }
+
+        .meta-stats {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px
+        }
+
+        .meta-stat {
+            border: 1px solid #dde7f3;
+            border-radius: 8px;
+            background: #fff;
+            padding: 10px 15px;
+            min-width: 135px
+        }
+
+        .meta-stat strong {
+            display: block;
+            font-size: 21px;
+            color: #173c68
+        }
+
+        .meta-stat span {
+            font-size: 11px;
+            color: #65768b
+        }
+
+        .meta-table {
+            min-width: 870px
+        }
+
+        .meta-table td {
+            white-space: normal;
+            vertical-align: top
+        }
+
+        .meta-table .mono {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 11px;
+            word-break: break-word
+        }
+
+        .meta-code {
+            font-weight: 700;
+            color: #164b87
+        }
+
+        .meta-tags {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap
+        }
+
+        .meta-tag {
+            display: inline-block;
+            border-radius: 4px;
+            background: #edf4fe;
+            color: #275f9d;
+            padding: 2px 6px;
+            font-size: 11px
+        }
+
+        .meta-empty {
+            padding: 30px;
+            text-align: center;
+            color: #73849a
+        }
+
+        .meta-drawer {
+            position: fixed;
+            inset: 0;
+            background: #0b213a80;
+            display: none;
+            justify-content: flex-end;
+            z-index: 20
+        }
+
+        .meta-drawer.show {
+            display: flex
+        }
+
+        .meta-editor {
+            background: #fff;
+            width: min(480px, 100%);
+            height: 100%;
+            overflow: auto;
+            padding: 24px;
+            box-shadow: -10px 0 40px #1235
+        }
+
+        .meta-editor h2 {
+            margin-bottom: 5px
+        }
+
+        .meta-editor .field {
+            margin-top: 16px
+        }
+
+        .meta-editor .field > label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 650;
+            font-size: 12px
+        }
+
+        .meta-checks {
+            display: flex;
+            gap: 7px;
+            flex-wrap: wrap
+        }
+
+        .meta-checks label {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            border: 1px solid #d7e2f0;
+            border-radius: 5px;
+            padding: 6px 9px;
+            font-size: 12px
+        }
+
+        .meta-checks input {
+            width: auto;
+            min-height: 0
+        }
+
+        .meta-editor .actions {
+            justify-content: flex-end;
+            margin-top: 22px
+        }
+
+        .meta-preview {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 410px;
+            gap: 16px
+        }
+
+        .meta-preview .panel {
+            margin-bottom: 0
+        }
+
+        .meta-cond {
+            display: grid;
+            grid-template-columns:minmax(0, 1.3fr) minmax(105px, .75fr) minmax(0, 1.1fr) auto;
+            gap: 7px;
+            align-items: center;
+            margin: 9px 0
+        }
+
+        .meta-cond .btn {
+            padding: 7px 10px
+        }
+
+        .meta-condition-card {
+            border: 1px solid #dfe8f3;
+            background: #f9fbfe;
+            border-radius: 7px;
+            padding: 13px;
+            margin: 12px 0
+        }
+
+        .meta-cond-hint {
+            font-size: 11px;
+            color: #687b92;
+            grid-column: 1/-1
+        }
+
+        .meta-json {
+            width: 100%;
+            min-height: 155px;
+            border: 1px solid #cbd8e8;
+            border-radius: 6px;
+            padding: 10px;
+            font: 12px ui-monospace, Menlo, monospace
+        }
+
+        .meta-result {
+            padding: 12px;
+            border-radius: 7px;
+            margin-top: 12px
+        }
+
+        .meta-result.ok {
+            background: #e9f8f0;
+            color: #0a7d43
+        }
+
+        .meta-result.no {
+            background: #fdf0f0;
+            color: #bf3b1f
+        }
+
+        .meta-codeblock {
+            font: 12px ui-monospace, Menlo, monospace;
+            background: #10233e;
+            color: #dbe9ff;
+            border-radius: 6px;
+            padding: 12px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            margin-top: 8px
+        }
+
+        .meta-error {
+            color: #bd3847;
+            font-size: 12px;
+            margin-top: 8px;
+            min-height: 18px
+        }
+
+        .meta-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #1265d7;
+            text-decoration: none
+        }
+
+        .meta-help {
+            line-height: 1.7
+        }
+
+        .meta-library {
+            font-size: 12px;
+            color: #637890;
+            margin-bottom: 12px
+        }
+
+        .meta-topbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap
+        }
+
+        .meta-topbar select {
+            width: 140px
+        }
+
+        @media (max-width: 1100px) {
+            .meta-preview {
+                grid-template-columns:1fr
+            }
+        }
+
+        @media (max-width: 650px) {
+            .meta-cond {
+                grid-template-columns:1fr 1fr
+            }
+
+            .meta-cond .meta-value {
+                grid-column: 1/-1
+            }
+
+            .meta-drawer {
+                padding: 0
+            }
+
+            .meta-editor {
+                width: 100%
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav sel">▦ &nbsp; 元数据中心</div>
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="heading meta-intro">
+                <div><h1>元数据中心</h1>
+                    <div class="muted">集中管理表达式字段、适用规则、运算符和可选值；C2 条件编辑器与试算菜单共享字段定义。
+                    </div>
+                </div>
+                <button class="btn secondary" id="refresh">↻ 刷新</button>
+            </div>
+            <div class="meta-tabs">
+                <button type="button" class="sel" data-tab="catalog">字段库</button>
+                <button type="button" data-tab="expression">表达式菜单与试算</button>
+            </div>
+            <section id="catalogTab">
+                <div class="meta-stats" id="metaStats"></div>
+                <div class="panel">
+                    <div class="meta-toolbar"><input id="fieldSearch" type="search"
+                                                     placeholder="搜索名称、编码、类型、可选值"
+                                                     aria-label="搜索字段"><select id="ruleFilter"
+                                                                                   aria-label="适用规则">
+                        <option value="">全部规则</option>
+                    </select><select id="statusFilter" aria-label="状态">
+                        <option value="">全部状态</option>
+                        <option value="on">启用</option>
+                        <option value="off">停用</option>
+                    </select><span class="spacer"></span>
+                        <button class="btn" id="newField">＋ 新增字段</button>
+                    </div>
+                    <div class="tablewrap">
+                        <table class="meta-table">
+                            <thead>
+                            <tr>
+                                <th>字段名称 / 编码</th>
+                                <th>数据类型</th>
+                                <th>适用规则</th>
+                                <th>运算符</th>
+                                <th>可选值</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="fieldRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="notice meta-help">字段编码保存后不可更改。停用字段会从试算菜单和 C2
+                    新规则条件中移除；已保存规则仍保留原条件，重新编译时会检查字段状态。配置变更记录在审计日志中。
+                </div>
+            </section>
+            <section id="expressionTab" class="hidden">
+                <div class="meta-preview">
+                    <div class="panel">
+                        <div class="meta-topbar"><h2 style="margin:0;flex:1">表达式菜单</h2><select id="exprRule"
+                                                                                                    aria-label="表达式适用规则"></select><select
+                                id="groupLogic" aria-label="条件关系">
+                            <option value="AND">全部满足 AND</option>
+                            <option value="OR">任一满足 OR</option>
+                        </select></div>
+                        <div class="meta-library" id="exprLibrary"></div>
+                        <div class="meta-condition-card" id="conditionNodes"></div>
+                        <div class="actions">
+                            <button class="btn secondary tiny" id="addCondition" type="button">＋ 添加条件</button>
+                        </div>
+                        <div class="notice meta-help">
+                            菜单按所选规则只展示已启用字段。字段类型决定可用运算符；枚举可选值来自元数据中心。
+                        </div>
+                        <a class="meta-link" href="/c2.html">前往 C2 监管规则配置 →</a></div>
+                    <aside class="panel"><h2>表达式试算</h2>
+                        <p class="muted">输入业务变量 JSON，运行与路由规则共用的受控 Aviator 表达式编译。</p>
+                        <div class="field" style="margin-top:14px"><label for="exprVars">模拟输入 JSON</label><textarea
+                                id="exprVars" class="meta-json">{"paymentCurrency":"USD","beneficiaryBankCountry":"KG","amountUsd":1500000,"flowCategory":"PSP"}</textarea>
+                        </div>
+                        <div class="actions" style="margin-top:10px">
+                            <button class="btn secondary tiny" data-sample="usdkg">USD 且 KG</button>
+                            <button class="btn secondary tiny" data-sample="million">金额 ≥ 100万</button>
+                            <button class="btn secondary tiny" data-sample="or">USD 或 HKD</button>
+                        </div>
+                        <button class="btn" id="runExpression" style="width:100%;margin-top:14px">▶ 编译并试算</button>
+                        <div id="exprResult" role="status" class="notice">选择字段并设置条件后，可在这里查看试算结果。
+                        </div>
+                    </aside>
+                </div>
+            </section>
+            <div class="footer">HSG RELAY · 元数据中心 · 演示环境</div>
+        </div>
+    </main>
+</div>
+<div id="editorBackdrop" class="meta-drawer" role="dialog" aria-modal="true" aria-label="字段配置">
+    <div class="meta-editor">
+        <div class="rowbetween">
+            <div><h2 id="editorTitle">新增字段</h2>
+                <div class="muted">字段定义直接用于规则菜单和表达式校验</div>
+            </div>
+            <button type="button" class="btn secondary tiny" id="closeEditor">✕</button>
+        </div>
+        <form id="fieldForm">
+            <div class="field"><label for="editCode">字段编码 *</label><input id="editCode" required maxlength="64"
+                                                                              pattern="[A-Za-z][A-Za-z0-9_]*"
+                                                                              placeholder="paymentCurrency"></div>
+            <div class="field"><label for="editName">字段名称 *</label><input id="editName" required maxlength="80"
+                                                                              placeholder="交易币种"></div>
+            <div class="field"><label for="editType">数据类型 *</label><select id="editType">
+                <option value="STRING">文本 STRING</option>
+                <option value="ENUM">枚举 ENUM</option>
+                <option value="DECIMAL">小数 DECIMAL</option>
+                <option value="INTEGER">整数 INTEGER</option>
+                <option value="BOOLEAN">布尔 BOOLEAN</option>
+            </select></div>
+            <div class="field"><label>适用规则 *</label>
+                <div id="editRules" class="meta-checks"></div>
+            </div>
+            <div class="field"><label>允许运算符 *</label>
+                <div id="editOperators" class="meta-checks"></div>
+            </div>
+            <div class="field"><label for="editOptions">可选值（逗号分隔）</label><textarea id="editOptions"
+                                                                                          class="meta-json"
+                                                                                          style="min-height:76px"
+                                                                                          placeholder="CNY,USD,HKD"></textarea>
+            </div>
+            <div class="field"><label><input id="editEnabled" type="checkbox" style="width:auto;min-height:0" checked>
+                启用字段</label></div>
+            <div id="editError" class="meta-error" role="alert"></div>
+            <div class="actions">
+                <button type="button" class="btn secondary" id="cancelEditor">取消</button>
+                <button type="submit" class="btn" id="saveField">保存字段</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script src="/fields.js"></script>
+</body>
+</html>

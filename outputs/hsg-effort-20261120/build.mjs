@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { Workbook, SpreadsheetFile } from '@oai/artifact-tool';
+import {Workbook, SpreadsheetFile} from '@oai/artifact-tool';
 
 // Engineering estimates, not measured actuals. Rates are mid-level engineer person-days.
 const lines = `
@@ -59,127 +59,264 @@ const lines = `
 54|交付运维|监控与恢复|健康/时延/失败/占用告警、备份恢复及演练|只有actuator health|1|套|3|0.25|含99.9%目标的部署与运行支撑方案
 55|交付运维|切换及观察|发布回滚演练、投产支持与首轮运行观察|尚未投产|1|轮|3|0|数据导入工时在数据类，此行计发布操作
 56|交付运维|文档与培训|部署、接口、运维、数据字典及用户培训|有Demo README|1|套|2|0.5|工程交付文档及一次培训
-`.trim().split('\n').map(l=>l.split('|'));
+`.trim().split('\n').map(l => l.split('|'));
 
-const rows=lines.map(a=>({id:a[0],category:a[1],module:a[2],task:a[3],status:a[4],quantity:+a[5],unit:a[6],rate:+a[7],credit:+a[8],note:a[9]}));
-const categories=['需求设计','Web','后端','数据库','数据跑数','测试联调','交付运维'];
-const totals=categories.map(c=>{const r=rows.filter(x=>x.category===c);return {category:c,full:r.reduce((s,x)=>s+x.quantity*x.rate,0),credit:r.reduce((s,x)=>s+x.credit,0),remaining:r.reduce((s,x)=>s+Math.max(0,x.quantity*x.rate-x.credit),0)};});
-console.log(JSON.stringify({totals,full:totals.reduce((s,x)=>s+x.full,0),credit:totals.reduce((s,x)=>s+x.credit,0),remaining:totals.reduce((s,x)=>s+x.remaining,0)}));
+const rows = lines.map(a => ({
+    id: a[0],
+    category: a[1],
+    module: a[2],
+    task: a[3],
+    status: a[4],
+    quantity: +a[5],
+    unit: a[6],
+    rate: +a[7],
+    credit: +a[8],
+    note: a[9]
+}));
+const categories = ['需求设计', 'Web', '后端', '数据库', '数据跑数', '测试联调', '交付运维'];
+const totals = categories.map(c => {
+    const r = rows.filter(x => x.category === c);
+    return {
+        category: c,
+        full: r.reduce((s, x) => s + x.quantity * x.rate, 0),
+        credit: r.reduce((s, x) => s + x.credit, 0),
+        remaining: r.reduce((s, x) => s + Math.max(0, x.quantity * x.rate - x.credit), 0)
+    };
+});
+console.log(JSON.stringify({
+    totals,
+    full: totals.reduce((s, x) => s + x.full, 0),
+    credit: totals.reduce((s, x) => s + x.credit, 0),
+    remaining: totals.reduce((s, x) => s + x.remaining, 0)
+}));
 
-const out=new URL('./',import.meta.url).pathname;
-const wb=Workbook.create();
-const sum=wb.worksheets.add('汇总与参数'),detail=wb.worksheets.add('工作量清单');
-sum.tabColor='#183B63';detail.tabColor='#6481A5';
-function base(sheet,range){sheet.showGridLines=false;sheet.getRange(range).format.font={name:'Arial',size:10,color:'#23364D'};sheet.getRange(range).format.verticalAlignment='center';sheet.getRange(range).format.rowHeight=24;}
-base(sum,'A1:J49');base(detail,`A1:O${rows.length+7}`);
-function header(s,range){s.getRange(range).format={fill:'#183B63',font:{name:'Arial',size:10,bold:true,color:'#FFFFFF'},rowHeight:32,wrapText:true,horizontalAlignment:'center',verticalAlignment:'center'};}
-sum.getRange('A2').values=[['HSG RELAY 一期工程工作量估算']];sum.getRange('A2').format.font={size:15,bold:true};
-sum.getRange('A3').values=[['估算日期：2026-11-20。按中级工程师、现成企业后台及行方基础设施估算，单位：人日。']];
-sum.getRange('A5:D5').values=[['交付口径','工程人日','工程人时','说明']];header(sum,'A5:D5');
-const end=rows.length+5;
-sum.getRange('A6:A11').values=[['从零实现一期范围'],['现有Demo预计复用抵扣'],['基于当前Demo的剩余基准'],['较顺利情况'],['谨慎估算'],['建议预留后工作量']];
-sum.getRange('B6:B11').formulas=[['=SUM(B17:B23)'],['=SUM(C17:C23)'],['=SUM(D17:D23)'],['=B8*$H$8'],['=B8*$H$9'],['=B8*(1+$H$7)']];
-sum.getRange('C6').formulas=[['=B6*$H$5']];sum.getRange('C6:C11').fillDown();
-sum.getRange('D6:D11').values=[['完整一期需求，非当前Demo已耗工时'],['仅按可复用实现折抵，须经正式代码评审'],['当前Demo到一期上线验收的新增投入'],['使用顺利系数，未另加风险预留'],['已包含不确定性，不再叠加风险预留'],['基准加风险储备，用于内部资源预算']];
-sum.getRange('G4:J4').values=[['可调整参数','数值','单位','含义']];header(sum,'G4:J4');
-sum.getRange('G5:J12').values=[
- ['每天工程工时',8,'小时/人日','人日与人时换算'],
- ['每周工作日',5,'日/周','不含周末和公共假期'],
- ['预算风险预留',0.15,'比例','接口与数据质量尚未确定'],
- ['顺利系数',0.85,'倍','需求清晰、数据可用、接口及时'],
- ['谨慎系数',1.3,'倍','外部依赖、额外修复与数据问题'],
- ['排期有效投入率',0.8,'比例','到岗时间中可用于估算任务的比例'],
- ['阶段依赖加成',0.2,'比例','设计先行、串行验收和交接损耗'],
- ['外部等待',2,'周','行方接口、网络和验收等待假设']
- ];
-sum.getRange('H7:H7').setNumberFormat('0%');sum.getRange('H10:H11').setNumberFormat('0%');sum.getRange('H8:H9').setNumberFormat('0.00');sum.getRange('H5:H12').format.fill='#FFF3CF';
-sum.getRange('A13').values=[['复用抵扣不是完成率。演示逻辑仍需正式数据、权限、版本审计、性能及验收验证。']];
-sum.getRange('A15').values=[['按职责汇总及负载估算']];sum.getRange('A15').format.font.bold=true;
-sum.getRange('A16:H16').values=[['职责','从零人日','复用人日','剩余人日','剩余人时','配置人数FTE','负载下限(周)','职责范围']];header(sum,'A16:H16');
-const staff=[0.5,1,2,0.5,0.5,1,0.25];
-const scope=['需求/方案/工程评审','后台配置和运营页面','规则、服务、适配和占用','模型、DDL、索引和迁移','清洗、导入、回放和对账','系统测试、联调及UAT','环境、发布和运维文档'];
-for(let i=0;i<7;i++){
- const r=17+i;sum.getRange(`A${r}`).values=[[categories[i]]];
- sum.getRange(`B${r}:E${r}`).formulas=[[
-  `=SUMIFS('工作量清单'!$I$6:$I$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
-  `=SUMIFS('工作量清单'!$J$6:$J$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
-  `=SUMIFS('工作量清单'!$K$6:$K$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
-  `=D${r}*$H$5`]];
- sum.getRange(`F${r}`).values=[[staff[i]]];sum.getRange(`G${r}`).formulas=[[`=IF(F${r}>0,D${r}/(F${r}*$H$6*$H$10),"未配置人员")`]];sum.getRange(`H${r}`).values=[[scope[i]]];
+const out = new URL('./', import.meta.url).pathname;
+const wb = Workbook.create();
+const sum = wb.worksheets.add('汇总与参数'), detail = wb.worksheets.add('工作量清单');
+sum.tabColor = '#183B63';
+detail.tabColor = '#6481A5';
+
+function base(sheet, range) {
+    sheet.showGridLines = false;
+    sheet.getRange(range).format.font = {name: 'Arial', size: 10, color: '#23364D'};
+    sheet.getRange(range).format.verticalAlignment = 'center';
+    sheet.getRange(range).format.rowHeight = 24;
 }
-sum.getRange('F17:F23').format.fill='#FFF3CF';
-sum.getRange('A24').values=[['合计']];for(const col of ['B','C','D','E','F'])sum.getRange(`${col}24`).formulas=[[`=SUM(${col}17:${col}23)`]];
-sum.getRange('A24:H24').format.fill='#EAF0F8';sum.getRange('A24:H24').format.font.bold=true;
-sum.getRange('A26:D26').values=[['排期指标','周数','月数(按4.33周)','说明']];header(sum,'A26:D26');
-sum.getRange('A27:A28').values=[['按职责负载的下限'],['含阶段依赖及外部等待的初步排期']];
-sum.getRange('B27:B28').formulas=[['=IF(COUNT(G17:G23)=7,MAX(G17:G23),"人员不足")'],['=IF(ISNUMBER(B27),B27*(1+$H$11)+$H$12,"人员不足")']];
-sum.getRange('C27:C28').formulas=[['=IF(ISNUMBER(B27),B27/4.33,"人员不足")'],['=IF(ISNUMBER(B28),B28/4.33,"人员不足")']];
-sum.getRange('D27:D28').values=[['按各职责投入量取最大值，不等同于承诺交付日期'],['作为资源讨论用排期；接口到位及人员可并行仍需确认']];
-sum.getRange('A30:D30').values=[['阶段','建议顺序','关键交付物','退出条件']];header(sum,'A30:D30');
-sum.getRange('A31:D36').values=[
- ['设计与数据盘点','先行','接口契约、数据库方案、数据源映射','行方确认业务口径和样本可用'],
- ['配置与规则服务','可并行','全部配置页、规则及不可变版本','固定用例和计算明细一致'],
- ['真实接口与账本','可并行后汇合','余额/汇率适配、占用幂等、取消重跑','并发无重复占用且可恢复'],
- ['运营与报表','依赖接口契约','S2/S3/S4、批量模拟、审计报表','运营全链路验证通过'],
- ['跑数与UAT','联调就绪后','数据演练、历史回放、差异对账','行方确认规则差异及验收'],
- ['投产与移交','验收后','最终导入、发布回滚、运维交接','核对报告、发布记录及交接完成']
- ];
-sum.getRange('A38').values=[['估算假设与范围']];sum.getRange('A38').format.font.bold=true;
-sum.getRange('A39').values=[['包含：BRD一期C1–C10、配置、运营审核对接、占用、模拟、报表、安全和投产工程工作。']];
-sum.getRange('A40').values=[['复用：行方SSO、基础设施、支付队列、筛查、定价及最终双人复核流程；不重建这些系统。']];
-sum.getRange('A41').values=[['不含：机器学习/AI代理、来账支付、报文发送后的拒绝退回、第三方采购、行方业务人员工时。']];
-sum.getRange('A42').values=[['开发估时含组件级单元/接口自测；测试类单列系统回归、联调、并发性能与UAT，避免重复。']];
-sum.getRange('A43').values=[['跑数假设：15个参考数据域、10000笔历史样本、3轮导入演练、2轮差异回放。数据量不是已确认事实。']];
-sum.getRange('A44').values=[['性能目标：P99≤500ms、全部请求≤2s、100合作方及50000配置行。真实日交易量和10倍吞吐待确认。']];
-sum.getRange('A45').values=[['图示S2/S3/S4完整字段、接口数量/质量、数据来源及归档标准需最终评审；额外需求另估。']];
-sum.getRange('A46').values=[['估计为工程判断。未把AI生成速度作为人效标准，也未把Demo已写代码视为已通过正式验收。']];
-sum.getRange('A47').values=[['公式：单项从零＝数量×单价；剩余＝MAX(从零－可复用抵扣,0)；人时＝剩余×每日工时。']];
-sum.getRange('A48').values=[['蓝色浅黄底为可编辑输入；清单可调整数量、单价及复用抵扣，再查看汇总。单位单价均为人日。']];
 
-detail.getRange('A2').values=[['一期工程工作量清单']];detail.getRange('A2').format.font={size:15,bold:true};
-detail.getRange('A3').values=[['依据：BRD_1.3c_RELAY_HSG_spec_v1.10_中文译文.md 第3、6–11、13–14章及2026-11-20当前Demo。估时和数据规模为工程假设。']];
-detail.getRange('A4').values=[['每行只归属一个职责；自测包含在开发单价中。系统联调、数据对账和发布操作分别单列。']];
-detail.getRange('A5:O5').values=[['编号','职责','模块','工作内容及交付','当前实现','数量','单位','单价人日','从零人日','复用抵扣','剩余人日','顺利人日','谨慎人日','剩余人时','依赖及验收口径']];header(detail,'A5:O5');
-const grid=rows.map(x=>[x.id,x.category,x.module,x.task,x.status,x.quantity,x.unit,x.rate,null,x.credit,null,null,null,null,x.note]);
-detail.getRange(`A6:O${end}`).values=grid;
-detail.getRange('I6').formulas=[['=F6*H6']];detail.getRange(`I6:I${end}`).fillDown();
-detail.getRange('K6:N6').formulas=[[`=IF(J6>I6,NA(),MAX(I6-J6,0))`,`=K6*'汇总与参数'!$H$8`,`=K6*'汇总与参数'!$H$9`,`=K6*'汇总与参数'!$H$5`]];detail.getRange(`K6:N${end}`).fillDown();
-const tr=end+1;detail.getRange(`A${tr}`).values=[['合计']];for(const c of ['I','J','K','L','M','N'])detail.getRange(`${c}${tr}`).formulas=[[`=SUM(${c}6:${c}${end})`]];
-detail.getRange(`A${tr}:O${tr}`).format.fill='#EAF0F8';detail.getRange(`A${tr}:O${tr}`).format.font.bold=true;
-for(const range of [`F6:F${end}`,`H6:H${end}`,`J6:J${end}`]){detail.getRange(range).format.fill='#FFF3CF';detail.getRange(range).format.font.color='#145AB5';}
-detail.getRange(`F6:F${end}`).setNumberFormat('0');detail.getRange(`H6:M${tr}`).setNumberFormat('0.00');detail.getRange(`N6:N${tr}`).setNumberFormat('0.0');detail.getRange(`A6:O${end}`).format.rowHeight=52;
-detail.getRange(`C6:E${end}`).format.wrapText=true;detail.getRange(`O6:O${end}`).format.wrapText=true;
-detail.freezePanes.freezeRows(5);detail.freezePanes.freezeColumns(3);
-detail.tables.add(`A5:O${end}`,true,'EffortItems');
-detail.getRange(`F6:F${end}`).dataValidation={rule:{type:'decimal',operator:'greaterThanOrEqual',formula1:0}};
-detail.getRange(`H6:J${end}`).dataValidation={rule:{type:'decimal',operator:'greaterThanOrEqual',formula1:0}};
-detail.getRange(`J6:J${end}`).dataValidation={rule:{type:'decimal',operator:'between',formula1:0,formula2:'I6'}};
-detail.getRange(`J6:J${end}`).conditionalFormats.addCustom('J6>I6',{fill:'#FDE8E8',font:{color:'#A92626'}});
-sum.getRange('H5:H6').dataValidation={rule:{type:'whole',operator:'between',formula1:1,formula2:24}};
-sum.getRange('H6').dataValidation={rule:{type:'whole',operator:'between',formula1:1,formula2:7}};
-sum.getRange('H7:H7').dataValidation={rule:{type:'decimal',operator:'between',formula1:0,formula2:1}};
-sum.getRange('H8:H9').dataValidation={rule:{type:'decimal',operator:'greaterThan',formula1:0}};
-sum.getRange('H10:H10').dataValidation={rule:{type:'decimal',operator:'between',formula1:0.01,formula2:1}};
-sum.getRange('H11').dataValidation={rule:{type:'decimal',operator:'between',formula1:0,formula2:1}};
-sum.getRange('H12').dataValidation={rule:{type:'decimal',operator:'greaterThanOrEqual',formula1:0}};
-sum.getRange('F17:F23').dataValidation={rule:{type:'decimal',operator:'greaterThanOrEqual',formula1:0}};
-sum.getRange('B6:B11').setNumberFormat('0.00');sum.getRange('C6:C11').setNumberFormat('0.0');sum.getRange('B17:D24').setNumberFormat('0.00');sum.getRange('E17:E24').setNumberFormat('0.0');sum.getRange('F17:F24').setNumberFormat('0.00');sum.getRange('G17:G23').setNumberFormat('0.0');sum.getRange('B27:C28').setNumberFormat('0.0');
-sum.getRange('A5:D11').format.rowHeight=30;sum.getRange('A31:D36').format.rowHeight=42;sum.getRange('A31:D36').format.wrapText=true;
-sum.getRange('A17:H23').format.rowHeight=30;sum.getRange('A27:D28').format.rowHeight=42;sum.getRange('A27:D28').format.wrapText=true;
-const summaryWidths={A:29,B:16,C:16,D:53,E:17,F:16,G:23,H:25,I:13,J:45};for(const [c,w]of Object.entries(summaryWidths))sum.getRange(`${c}1:${c}49`).format.columnWidth=w;
-const detailWidths={A:7,B:14,C:24,D:48,E:31,F:9,G:14,H:12,I:13,J:13,K:13,L:13,M:13,N:14,O:52};for(const[c,w]of Object.entries(detailWidths))detail.getRange(`${c}1:${c}${tr}`).format.columnWidth=w;
+base(sum, 'A1:J49');
+base(detail, `A1:O${rows.length + 7}`);
+
+function header(s, range) {
+    s.getRange(range).format = {
+        fill: '#183B63',
+        font: {name: 'Arial', size: 10, bold: true, color: '#FFFFFF'},
+        rowHeight: 32,
+        wrapText: true,
+        horizontalAlignment: 'center',
+        verticalAlignment: 'center'
+    };
+}
+
+sum.getRange('A2').values = [['HSG RELAY 一期工程工作量估算']];
+sum.getRange('A2').format.font = {size: 15, bold: true};
+sum.getRange('A3').values = [['估算日期：2026-11-20。按中级工程师、现成企业后台及行方基础设施估算，单位：人日。']];
+sum.getRange('A5:D5').values = [['交付口径', '工程人日', '工程人时', '说明']];
+header(sum, 'A5:D5');
+const end = rows.length + 5;
+sum.getRange('A6:A11').values = [['从零实现一期范围'], ['现有Demo预计复用抵扣'], ['基于当前Demo的剩余基准'], ['较顺利情况'], ['谨慎估算'], ['建议预留后工作量']];
+sum.getRange('B6:B11').formulas = [['=SUM(B17:B23)'], ['=SUM(C17:C23)'], ['=SUM(D17:D23)'], ['=B8*$H$8'], ['=B8*$H$9'], ['=B8*(1+$H$7)']];
+sum.getRange('C6').formulas = [['=B6*$H$5']];
+sum.getRange('C6:C11').fillDown();
+sum.getRange('D6:D11').values = [['完整一期需求，非当前Demo已耗工时'], ['仅按可复用实现折抵，须经正式代码评审'], ['当前Demo到一期上线验收的新增投入'], ['使用顺利系数，未另加风险预留'], ['已包含不确定性，不再叠加风险预留'], ['基准加风险储备，用于内部资源预算']];
+sum.getRange('G4:J4').values = [['可调整参数', '数值', '单位', '含义']];
+header(sum, 'G4:J4');
+sum.getRange('G5:J12').values = [
+    ['每天工程工时', 8, '小时/人日', '人日与人时换算'],
+    ['每周工作日', 5, '日/周', '不含周末和公共假期'],
+    ['预算风险预留', 0.15, '比例', '接口与数据质量尚未确定'],
+    ['顺利系数', 0.85, '倍', '需求清晰、数据可用、接口及时'],
+    ['谨慎系数', 1.3, '倍', '外部依赖、额外修复与数据问题'],
+    ['排期有效投入率', 0.8, '比例', '到岗时间中可用于估算任务的比例'],
+    ['阶段依赖加成', 0.2, '比例', '设计先行、串行验收和交接损耗'],
+    ['外部等待', 2, '周', '行方接口、网络和验收等待假设']
+];
+sum.getRange('H7:H7').setNumberFormat('0%');
+sum.getRange('H10:H11').setNumberFormat('0%');
+sum.getRange('H8:H9').setNumberFormat('0.00');
+sum.getRange('H5:H12').format.fill = '#FFF3CF';
+sum.getRange('A13').values = [['复用抵扣不是完成率。演示逻辑仍需正式数据、权限、版本审计、性能及验收验证。']];
+sum.getRange('A15').values = [['按职责汇总及负载估算']];
+sum.getRange('A15').format.font.bold = true;
+sum.getRange('A16:H16').values = [['职责', '从零人日', '复用人日', '剩余人日', '剩余人时', '配置人数FTE', '负载下限(周)', '职责范围']];
+header(sum, 'A16:H16');
+const staff = [0.5, 1, 2, 0.5, 0.5, 1, 0.25];
+const scope = ['需求/方案/工程评审', '后台配置和运营页面', '规则、服务、适配和占用', '模型、DDL、索引和迁移', '清洗、导入、回放和对账', '系统测试、联调及UAT', '环境、发布和运维文档'];
+for (let i = 0; i < 7; i++) {
+    const r = 17 + i;
+    sum.getRange(`A${r}`).values = [[categories[i]]];
+    sum.getRange(`B${r}:E${r}`).formulas = [[
+        `=SUMIFS('工作量清单'!$I$6:$I$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
+        `=SUMIFS('工作量清单'!$J$6:$J$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
+        `=SUMIFS('工作量清单'!$K$6:$K$${end},'工作量清单'!$B$6:$B$${end},A${r})`,
+        `=D${r}*$H$5`]];
+    sum.getRange(`F${r}`).values = [[staff[i]]];
+    sum.getRange(`G${r}`).formulas = [[`=IF(F${r}>0,D${r}/(F${r}*$H$6*$H$10),"未配置人员")`]];
+    sum.getRange(`H${r}`).values = [[scope[i]]];
+}
+sum.getRange('F17:F23').format.fill = '#FFF3CF';
+sum.getRange('A24').values = [['合计']];
+for (const col of ['B', 'C', 'D', 'E', 'F']) sum.getRange(`${col}24`).formulas = [[`=SUM(${col}17:${col}23)`]];
+sum.getRange('A24:H24').format.fill = '#EAF0F8';
+sum.getRange('A24:H24').format.font.bold = true;
+sum.getRange('A26:D26').values = [['排期指标', '周数', '月数(按4.33周)', '说明']];
+header(sum, 'A26:D26');
+sum.getRange('A27:A28').values = [['按职责负载的下限'], ['含阶段依赖及外部等待的初步排期']];
+sum.getRange('B27:B28').formulas = [['=IF(COUNT(G17:G23)=7,MAX(G17:G23),"人员不足")'], ['=IF(ISNUMBER(B27),B27*(1+$H$11)+$H$12,"人员不足")']];
+sum.getRange('C27:C28').formulas = [['=IF(ISNUMBER(B27),B27/4.33,"人员不足")'], ['=IF(ISNUMBER(B28),B28/4.33,"人员不足")']];
+sum.getRange('D27:D28').values = [['按各职责投入量取最大值，不等同于承诺交付日期'], ['作为资源讨论用排期；接口到位及人员可并行仍需确认']];
+sum.getRange('A30:D30').values = [['阶段', '建议顺序', '关键交付物', '退出条件']];
+header(sum, 'A30:D30');
+sum.getRange('A31:D36').values = [
+    ['设计与数据盘点', '先行', '接口契约、数据库方案、数据源映射', '行方确认业务口径和样本可用'],
+    ['配置与规则服务', '可并行', '全部配置页、规则及不可变版本', '固定用例和计算明细一致'],
+    ['真实接口与账本', '可并行后汇合', '余额/汇率适配、占用幂等、取消重跑', '并发无重复占用且可恢复'],
+    ['运营与报表', '依赖接口契约', 'S2/S3/S4、批量模拟、审计报表', '运营全链路验证通过'],
+    ['跑数与UAT', '联调就绪后', '数据演练、历史回放、差异对账', '行方确认规则差异及验收'],
+    ['投产与移交', '验收后', '最终导入、发布回滚、运维交接', '核对报告、发布记录及交接完成']
+];
+sum.getRange('A38').values = [['估算假设与范围']];
+sum.getRange('A38').format.font.bold = true;
+sum.getRange('A39').values = [['包含：BRD一期C1–C10、配置、运营审核对接、占用、模拟、报表、安全和投产工程工作。']];
+sum.getRange('A40').values = [['复用：行方SSO、基础设施、支付队列、筛查、定价及最终双人复核流程；不重建这些系统。']];
+sum.getRange('A41').values = [['不含：机器学习/AI代理、来账支付、报文发送后的拒绝退回、第三方采购、行方业务人员工时。']];
+sum.getRange('A42').values = [['开发估时含组件级单元/接口自测；测试类单列系统回归、联调、并发性能与UAT，避免重复。']];
+sum.getRange('A43').values = [['跑数假设：15个参考数据域、10000笔历史样本、3轮导入演练、2轮差异回放。数据量不是已确认事实。']];
+sum.getRange('A44').values = [['性能目标：P99≤500ms、全部请求≤2s、100合作方及50000配置行。真实日交易量和10倍吞吐待确认。']];
+sum.getRange('A45').values = [['图示S2/S3/S4完整字段、接口数量/质量、数据来源及归档标准需最终评审；额外需求另估。']];
+sum.getRange('A46').values = [['估计为工程判断。未把AI生成速度作为人效标准，也未把Demo已写代码视为已通过正式验收。']];
+sum.getRange('A47').values = [['公式：单项从零＝数量×单价；剩余＝MAX(从零－可复用抵扣,0)；人时＝剩余×每日工时。']];
+sum.getRange('A48').values = [['蓝色浅黄底为可编辑输入；清单可调整数量、单价及复用抵扣，再查看汇总。单位单价均为人日。']];
+
+detail.getRange('A2').values = [['一期工程工作量清单']];
+detail.getRange('A2').format.font = {size: 15, bold: true};
+detail.getRange('A3').values = [['依据：BRD_1.3c_RELAY_HSG_spec_v1.10_中文译文.md 第3、6–11、13–14章及2026-11-20当前Demo。估时和数据规模为工程假设。']];
+detail.getRange('A4').values = [['每行只归属一个职责；自测包含在开发单价中。系统联调、数据对账和发布操作分别单列。']];
+detail.getRange('A5:O5').values = [['编号', '职责', '模块', '工作内容及交付', '当前实现', '数量', '单位', '单价人日', '从零人日', '复用抵扣', '剩余人日', '顺利人日', '谨慎人日', '剩余人时', '依赖及验收口径']];
+header(detail, 'A5:O5');
+const grid = rows.map(x => [x.id, x.category, x.module, x.task, x.status, x.quantity, x.unit, x.rate, null, x.credit, null, null, null, null, x.note]);
+detail.getRange(`A6:O${end}`).values = grid;
+detail.getRange('I6').formulas = [['=F6*H6']];
+detail.getRange(`I6:I${end}`).fillDown();
+detail.getRange('K6:N6').formulas = [[`=IF(J6>I6,NA(),MAX(I6-J6,0))`, `=K6*'汇总与参数'!$H$8`, `=K6*'汇总与参数'!$H$9`, `=K6*'汇总与参数'!$H$5`]];
+detail.getRange(`K6:N${end}`).fillDown();
+const tr = end + 1;
+detail.getRange(`A${tr}`).values = [['合计']];
+for (const c of ['I', 'J', 'K', 'L', 'M', 'N']) detail.getRange(`${c}${tr}`).formulas = [[`=SUM(${c}6:${c}${end})`]];
+detail.getRange(`A${tr}:O${tr}`).format.fill = '#EAF0F8';
+detail.getRange(`A${tr}:O${tr}`).format.font.bold = true;
+for (const range of [`F6:F${end}`, `H6:H${end}`, `J6:J${end}`]) {
+    detail.getRange(range).format.fill = '#FFF3CF';
+    detail.getRange(range).format.font.color = '#145AB5';
+}
+detail.getRange(`F6:F${end}`).setNumberFormat('0');
+detail.getRange(`H6:M${tr}`).setNumberFormat('0.00');
+detail.getRange(`N6:N${tr}`).setNumberFormat('0.0');
+detail.getRange(`A6:O${end}`).format.rowHeight = 52;
+detail.getRange(`C6:E${end}`).format.wrapText = true;
+detail.getRange(`O6:O${end}`).format.wrapText = true;
+detail.freezePanes.freezeRows(5);
+detail.freezePanes.freezeColumns(3);
+detail.tables.add(`A5:O${end}`, true, 'EffortItems');
+detail.getRange(`F6:F${end}`).dataValidation = {rule: {type: 'decimal', operator: 'greaterThanOrEqual', formula1: 0}};
+detail.getRange(`H6:J${end}`).dataValidation = {rule: {type: 'decimal', operator: 'greaterThanOrEqual', formula1: 0}};
+detail.getRange(`J6:J${end}`).dataValidation = {
+    rule: {
+        type: 'decimal',
+        operator: 'between',
+        formula1: 0,
+        formula2: 'I6'
+    }
+};
+detail.getRange(`J6:J${end}`).conditionalFormats.addCustom('J6>I6', {fill: '#FDE8E8', font: {color: '#A92626'}});
+sum.getRange('H5:H6').dataValidation = {rule: {type: 'whole', operator: 'between', formula1: 1, formula2: 24}};
+sum.getRange('H6').dataValidation = {rule: {type: 'whole', operator: 'between', formula1: 1, formula2: 7}};
+sum.getRange('H7:H7').dataValidation = {rule: {type: 'decimal', operator: 'between', formula1: 0, formula2: 1}};
+sum.getRange('H8:H9').dataValidation = {rule: {type: 'decimal', operator: 'greaterThan', formula1: 0}};
+sum.getRange('H10:H10').dataValidation = {rule: {type: 'decimal', operator: 'between', formula1: 0.01, formula2: 1}};
+sum.getRange('H11').dataValidation = {rule: {type: 'decimal', operator: 'between', formula1: 0, formula2: 1}};
+sum.getRange('H12').dataValidation = {rule: {type: 'decimal', operator: 'greaterThanOrEqual', formula1: 0}};
+sum.getRange('F17:F23').dataValidation = {rule: {type: 'decimal', operator: 'greaterThanOrEqual', formula1: 0}};
+sum.getRange('B6:B11').setNumberFormat('0.00');
+sum.getRange('C6:C11').setNumberFormat('0.0');
+sum.getRange('B17:D24').setNumberFormat('0.00');
+sum.getRange('E17:E24').setNumberFormat('0.0');
+sum.getRange('F17:F24').setNumberFormat('0.00');
+sum.getRange('G17:G23').setNumberFormat('0.0');
+sum.getRange('B27:C28').setNumberFormat('0.0');
+sum.getRange('A5:D11').format.rowHeight = 30;
+sum.getRange('A31:D36').format.rowHeight = 42;
+sum.getRange('A31:D36').format.wrapText = true;
+sum.getRange('A17:H23').format.rowHeight = 30;
+sum.getRange('A27:D28').format.rowHeight = 42;
+sum.getRange('A27:D28').format.wrapText = true;
+const summaryWidths = {A: 29, B: 16, C: 16, D: 53, E: 17, F: 16, G: 23, H: 25, I: 13, J: 45};
+for (const [c, w] of Object.entries(summaryWidths)) sum.getRange(`${c}1:${c}49`).format.columnWidth = w;
+const detailWidths = {
+    A: 7,
+    B: 14,
+    C: 24,
+    D: 48,
+    E: 31,
+    F: 9,
+    G: 14,
+    H: 12,
+    I: 13,
+    J: 13,
+    K: 13,
+    L: 13,
+    M: 13,
+    N: 14,
+    O: 52
+};
+for (const [c, w] of Object.entries(detailWidths)) detail.getRange(`${c}1:${c}${tr}`).format.columnWidth = w;
 
 wb.recalculate();
-console.log((await wb.inspect({kind:'table',range:'汇总与参数!A5:D11',include:'values,formulas',tableMaxRows:10,tableMaxCols:4,maxChars:4000})).ndjson);
-console.log((await wb.inspect({kind:'match',searchTerm:'#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A|#NUM!|#NULL!|#SPILL!|#CALC!',options:{useRegex:true,maxResults:50},maxChars:2000})).ndjson);
+console.log((await wb.inspect({
+    kind: 'table',
+    range: '汇总与参数!A5:D11',
+    include: 'values,formulas',
+    tableMaxRows: 10,
+    tableMaxCols: 4,
+    maxChars: 4000
+})).ndjson);
+console.log((await wb.inspect({
+    kind: 'match',
+    searchTerm: '#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A|#NUM!|#NULL!|#SPILL!|#CALC!',
+    options: {useRegex: true, maxResults: 50},
+    maxChars: 2000
+})).ndjson);
 // Verify one editable rate propagates all the way to the summary, then restore it.
-const prior=sum.getRange('B8').values[0][0];const oldRate=detail.getRange('H6').values[0][0];
-detail.getRange('H6').values=[[oldRate+1]];wb.recalculate();const changed=sum.getRange('B8').values[0][0];
-if(Math.abs(changed-prior-1)>1e-6)throw Error(`Input propagation failed: ${prior} -> ${changed}`);
-detail.getRange('H6').values=[[oldRate]];wb.recalculate();
-const actual=sum.getRange('B8').values[0][0],expected=totals.reduce((s,x)=>s+x.remaining,0);if(Math.abs(actual-expected)>1e-6)throw Error('Independent sum mismatch');
-for(const [sheet,range,name] of [['汇总与参数','A1:J28','summary-preview.png'],['汇总与参数','A30:J48','scope-preview.png'],['工作量清单','A1:O13','detail-preview.png'],['工作量清单',`A47:O${tr}`,'detail-tail-preview.png']]){
- const p=await wb.render({sheetName:sheet,range,scale:1.5,format:'png'});await fs.writeFile(out+name,new Uint8Array(await p.arrayBuffer()));
+const prior = sum.getRange('B8').values[0][0];
+const oldRate = detail.getRange('H6').values[0][0];
+detail.getRange('H6').values = [[oldRate + 1]];
+wb.recalculate();
+const changed = sum.getRange('B8').values[0][0];
+if (Math.abs(changed - prior - 1) > 1e-6) throw Error(`Input propagation failed: ${prior} -> ${changed}`);
+detail.getRange('H6').values = [[oldRate]];
+wb.recalculate();
+const actual = sum.getRange('B8').values[0][0], expected = totals.reduce((s, x) => s + x.remaining, 0);
+if (Math.abs(actual - expected) > 1e-6) throw Error('Independent sum mismatch');
+for (const [sheet, range, name] of [['汇总与参数', 'A1:J28', 'summary-preview.png'], ['汇总与参数', 'A30:J48', 'scope-preview.png'], ['工作量清单', 'A1:O13', 'detail-preview.png'], ['工作量清单', `A47:O${tr}`, 'detail-tail-preview.png']]) {
+    const p = await wb.render({sheetName: sheet, range, scale: 1.5, format: 'png'});
+    await fs.writeFile(out + name, new Uint8Array(await p.arrayBuffer()));
 }
-const output=await SpreadsheetFile.exportXlsx(wb);await output.save(out+'HSG_RELAY_一期工作量估算_中级工程师.xlsx');
-await fs.writeFile(out+'estimate-totals.json',JSON.stringify({totals,remaining:actual,full:sum.getRange('B6').values[0][0],credit:sum.getRange('B7').values[0][0],budget:sum.getRange('B11').values[0][0],weeks:sum.getRange('B28').values[0][0]},null,2));
+const output = await SpreadsheetFile.exportXlsx(wb);
+await output.save(out + 'HSG_RELAY_一期工作量估算_中级工程师.xlsx');
+await fs.writeFile(out + 'estimate-totals.json', JSON.stringify({
+    totals,
+    remaining: actual,
+    full: sum.getRange('B6').values[0][0],
+    credit: sum.getRange('B7').values[0][0],
+    budget: sum.getRange('B11').values[0][0],
+    weeks: sum.getRange('B28').values[0][0]
+}, null, 2));

@@ -1,33 +1,441 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>HSG RELAY | C9 商业协议履约</title><link rel="stylesheet" href="/hsg-style.css"><style>
-.wide{grid-column:1 / -1}.scorecards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}.scorecard{padding:17px;border:1px solid #dae6f5;border-radius:10px;background:white}.scorecard b{font-size:26px;color:#155fbc;display:block;margin:5px 0}.scorecard span{font-size:12px;color:#708399}.c9-grid{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:18px}.c9-grid>section,.c9-grid>aside{min-width:0}.filterbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.filterbar .field{flex:1;min-width:120px}.rulebar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.tablewrap{max-height:420px}.notice{line-height:1.7}.score-result{background:#edf5ff;border:1px solid #c6dbf7;border-radius:9px;padding:16px;margin-bottom:12px}.score-result b{display:block;font-size:32px;color:#155fbc;margin:6px 0}.score-result small{font-size:12px;color:#4f6d8f}.score-result.behind{background:#fff4f2;border-color:#f3c9c0}.score-result.behind b{color:#bf3b1f}.step{display:flex;gap:10px;padding:12px 0;border-bottom:1px solid #edf1f6;font-size:13px}.step .num{height:23px;min-width:23px;background:#eaf2ff;color:#1760b7;border-radius:50%;text-align:center;line-height:23px;font-weight:700}.step small{display:block;color:#71849c;line-height:1.6;margin-top:5px}.samples{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.row-selected{background:#edf5ff}.toplinks{display:none}.score-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:700;font-size:12px;margin:1px 2px}.score-0{background:#e3f4e8;color:#0a7a3d}.score-50{background:#e8f0fd;color:#155fbc}.score-100{background:#fdeeea;color:#bf3b1f}.outcome{display:block;font-size:12px;color:#5d7290;margin-top:3px}.pacebar{position:relative;height:10px;background:#e8eef7;border-radius:6px;margin:7px 0 3px;overflow:hidden}.pacebar .fill{height:100%;background:linear-gradient(90deg,#2e8bd6,#155fbc);border-radius:6px}.pacebar .mark{position:absolute;top:-2px;bottom:-2px;width:2px;background:#d98a1f}.pace-note{font-size:11px;color:#71849c}.linklike{background:none;border:0;color:#1463cc;cursor:pointer;padding:0;font:inherit;text-align:left;text-decoration:underline}.agreements{line-height:1.9}#formPanel{scroll-margin-top:15px}@media(max-width:1350px){.c9-grid{grid-template-columns:minmax(0,1fr)}.rightPanel{position:static}.simlayout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
-</style></head><body><div class="shell"><aside class="sidebar">
- <div class="brand">◢ HSG <small>RELAY</small></div>
- <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
- <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
- <div class="navhead">路由规则配置</div>
- <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
- <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
- <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
- <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
- <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
- <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
- <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
- <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
- <div class="nav indent sel">C9 商业履约</div>
- <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
- <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div><div class="navhead">工具</div>
- <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
- 
-</aside>
-<main class="main"><div class="top"><div>RELAY 支付路由配置</div><div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div></div><div class="content"><div class="toplinks"><a href="/providers.html">合作方管理</a><a href="/c5.html">C5 起息日</a><a href="/routing.html">全流程 Check</a></div><div class="heading"><h1>C9 商业协议履约评分</h1><div class="muted">按合作方商业协议的月度目标与 MTD 月累计（金额或笔数）对比当月日期进度评分。C9 为打分项，任何分数都不会剔除候选。</div></div>
-<div class="scorecards"><div class="scorecard"><span>无月度目标 · 或 MTD 已 ≥ 月度目标</span><b>0 分</b><span>协议未设目标/目标为0，或本月已达标，不额外引流</span></div><div class="scorecard"><span>进度正常（未达标但未落后）</span><b>50 分</b><span>MTD ≥ 目标 ×（当月日期 ÷ 当月总天数）</span></div><div class="scorecard"><span>进度落后</span><b>100 分</b><span>MTD ＜ 目标 ×（当月日期 ÷ 当月总天数），路由加权引流</span></div></div>
-<div class="tabs"><button class="tab sel">商业协议与月度进度</button><span class="muted" id="revision" style="align-self:center"></span></div><div id="pageError" class="err" role="alert"></div><div class="c9-grid"><section>
-<div class="panel"><div class="filterbar"><div class="field"><label for="filterProvider">合作方</label><select id="filterProvider"></select></div><div class="field"><label for="filterOutcome">履约状态</label><select id="filterOutcome"><option value="">全部</option><option value="NO_TARGET">无月度目标</option><option value="TARGET_MET">已达标</option><option value="ON_PACE">进度正常</option><option value="BEHIND_PACE">进度落后</option></select></div><button class="btn" id="query">查询</button><button class="btn secondary" id="refresh">↻ 刷新</button></div></div>
-<div class="panel"><div class="rulebar"><h2 id="rowCount" style="margin:0">合作方履约进度</h2><span class="muted">同一合作方可配多条协议，得分取最高分</span></div><div class="tablewrap"><table><thead><tr><th>合作方</th><th>商业协议（9.3）</th><th>MTD 月累计</th><th>当月进度</th><th>履约进度 vs 基准</th><th>C9 得分</th><th>操作</th></tr></thead><tbody id="rows"></tbody></table></div><div class="notice">进度基准＝月度目标 ×（当月日期 ÷ 当月总天数），按香港自然月计算；AMOUNT 按美元等价金额、COUNT 按交易笔数。MTD 为演示输入，真实环境由交易统计按月回填。</div></div>
-<div class="panel" id="formPanel"><div class="rulebar"><h2 id="formTitle" style="margin:0">维护商业协议</h2><span class="badge pending">评分项 · 不剔除候选</span></div>
-<form id="agreementForm"><div class="layout3" style="margin-top:16px"><div class="field"><label for="agProvider">合作方 *</label><select id="agProvider"></select></div><div class="field"><label for="agMetric">履约指标 *</label><select id="agMetric"><option value="AMOUNT">AMOUNT · 月累计金额 USD</option><option value="COUNT">COUNT · 月累计笔数</option></select></div><div class="field"><label for="agTarget">月度目标 *（金额为 USD 等价）</label><input id="agTarget" type="number" min="0" step="0.01" required></div></div>
-<div class="muted">目标为 0 视同无月度目标，得0分。同一合作方＋指标已存在时为编辑，否则新增；与其他 C3–C10 配置共用同一份参考配置并记录审计。</div><div class="err" id="agError" role="alert"></div><div class="good" id="agGood" role="status"></div><div class="actions" style="margin-top:16px"><button class="btn" id="agSave" type="submit">保存协议</button><button class="btn secondary" id="agDelete" type="button">删除此协议</button><button class="btn secondary" id="agCancel" type="button">重置</button></div></form></div>
-<div class="panel"><div class="rulebar"><h2 style="margin:0">调整 MTD 月累计（演示输入）</h2></div>
-<form id="mtdForm"><div class="layout3" style="margin-top:16px"><div class="field"><label for="mtdProvider">合作方 *</label><select id="mtdProvider"></select></div><div class="field"><label for="mtdUsd">MTD 月累计金额 USD</label><input id="mtdUsd" type="number" min="0" step="0.01"></div><div class="field"><label for="mtdCount">MTD 月累计笔数</label><input id="mtdCount" type="number" min="0" step="1"></div></div>
-<div class="muted">仅用于演示三种评分进度场景；AMOUNT 协议读取金额、COUNT 协议读取笔数。保存后立即反映在列表、试算及全流程路由的 C9 分数。</div><div class="err" id="mtdError" role="alert"></div><div class="good" id="mtdGood" role="status"></div><div class="actions" style="margin-top:16px"><button class="btn" id="mtdSave" type="submit">保存 MTD</button><button class="btn secondary" id="mtdCancel" type="button">重置</button></div></form></div>
-</section><aside class="rightPanel"><div class="panel"><div class="ptitle">C9 履约评分试算</div><form id="simForm"><div class="layout2"><div class="field wide"><label for="simProvider">合作方 *</label><select id="simProvider"></select></div><div class="field"><label for="simMetric">履约指标（留空按已保存协议）</label><select id="simMetric"><option value="">按已保存协议</option><option value="AMOUNT">AMOUNT · 金额</option><option value="COUNT">COUNT · 笔数</option></select></div><div class="field"><label for="simTarget">月度目标（留空用已保存值）</label><input id="simTarget" type="number" min="0" step="0.01" placeholder="留空用已保存值"></div><div class="field"><label for="simUsd">MTD 月累计金额 USD</label><input id="simUsd" type="number" min="0" step="0.01" placeholder="留空用已保存值"></div><div class="field"><label for="simCount">MTD 月累计笔数</label><input id="simCount" type="number" min="0" step="1" placeholder="留空用已保存值"></div><div class="field wide"><label for="at">模拟评估时间（HKT）</label><input id="at" type="datetime-local" step="1"></div></div><div class="notice">留空的字段使用已保存的协议及 MTD；填写即覆盖本次试算，不会保存。时间留空取当前香港时间。</div><div class="samples"><button type="button" class="btn secondary tiny" data-sample="met">示例：已达标</button><button type="button" class="btn secondary tiny" data-sample="normal">进度正常</button><button type="button" class="btn secondary tiny" data-sample="behind">进度落后</button><button type="button" class="btn secondary tiny" data-sample="none">无目标</button></div><button class="btn" id="simulate" type="submit" style="width:100%;margin-top:15px">▶ 计算履约评分</button></form></div><div class="panel"><div id="simResult" class="notice" role="status">选择合作方后点击「计算履约评分」，查看当月进度基准、MTD 对比和 0/50/100 分判定依据。</div></div></aside></div><div class="footer">HSG RELAY · C9 商业协议履约 · 演示环境</div></div></main></div><script src="/c9.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | C9 商业协议履约</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .wide {
+            grid-column: 1 / -1
+        }
+
+        .scorecards {
+            display: grid;
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px
+        }
+
+        .scorecard {
+            padding: 17px;
+            border: 1px solid #dae6f5;
+            border-radius: 10px;
+            background: white
+        }
+
+        .scorecard b {
+            font-size: 26px;
+            color: #155fbc;
+            display: block;
+            margin: 5px 0
+        }
+
+        .scorecard span {
+            font-size: 12px;
+            color: #708399
+        }
+
+        .c9-grid {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 390px;
+            gap: 18px
+        }
+
+        .c9-grid > section, .c9-grid > aside {
+            min-width: 0
+        }
+
+        .filterbar {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap
+        }
+
+        .filterbar .field {
+            flex: 1;
+            min-width: 120px
+        }
+
+        .rulebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px
+        }
+
+        .tablewrap {
+            max-height: 420px
+        }
+
+        .notice {
+            line-height: 1.7
+        }
+
+        .score-result {
+            background: #edf5ff;
+            border: 1px solid #c6dbf7;
+            border-radius: 9px;
+            padding: 16px;
+            margin-bottom: 12px
+        }
+
+        .score-result b {
+            display: block;
+            font-size: 32px;
+            color: #155fbc;
+            margin: 6px 0
+        }
+
+        .score-result small {
+            font-size: 12px;
+            color: #4f6d8f
+        }
+
+        .score-result.behind {
+            background: #fff4f2;
+            border-color: #f3c9c0
+        }
+
+        .score-result.behind b {
+            color: #bf3b1f
+        }
+
+        .step {
+            display: flex;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px
+        }
+
+        .step .num {
+            height: 23px;
+            min-width: 23px;
+            background: #eaf2ff;
+            color: #1760b7;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 23px;
+            font-weight: 700
+        }
+
+        .step small {
+            display: block;
+            color: #71849c;
+            line-height: 1.6;
+            margin-top: 5px
+        }
+
+        .samples {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px
+        }
+
+        .row-selected {
+            background: #edf5ff
+        }
+
+        .toplinks {
+            display: none
+        }
+
+        .score-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 12px;
+            margin: 1px 2px
+        }
+
+        .score-0 {
+            background: #e3f4e8;
+            color: #0a7a3d
+        }
+
+        .score-50 {
+            background: #e8f0fd;
+            color: #155fbc
+        }
+
+        .score-100 {
+            background: #fdeeea;
+            color: #bf3b1f
+        }
+
+        .outcome {
+            display: block;
+            font-size: 12px;
+            color: #5d7290;
+            margin-top: 3px
+        }
+
+        .pacebar {
+            position: relative;
+            height: 10px;
+            background: #e8eef7;
+            border-radius: 6px;
+            margin: 7px 0 3px;
+            overflow: hidden
+        }
+
+        .pacebar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #2e8bd6, #155fbc);
+            border-radius: 6px
+        }
+
+        .pacebar .mark {
+            position: absolute;
+            top: -2px;
+            bottom: -2px;
+            width: 2px;
+            background: #d98a1f
+        }
+
+        .pace-note {
+            font-size: 11px;
+            color: #71849c
+        }
+
+        .linklike {
+            background: none;
+            border: 0;
+            color: #1463cc;
+            cursor: pointer;
+            padding: 0;
+            font: inherit;
+            text-align: left;
+            text-decoration: underline
+        }
+
+        .agreements {
+            line-height: 1.9
+        }
+
+        #formPanel {
+            scroll-margin-top: 15px
+        }
+
+        @media (max-width: 1350px) {
+            .c9-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+
+            .rightPanel {
+                position: static
+            }
+
+            .simlayout {
+                display: grid;
+                grid-template-columns:minmax(0, 1fr) minmax(0, 1fr)
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent sel">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
+
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/providers.html">合作方管理</a><a href="/c5.html">C5 起息日</a><a
+                    href="/routing.html">全流程 Check</a></div>
+            <div class="heading"><h1>C9 商业协议履约评分</h1>
+                <div class="muted">按合作方商业协议的月度目标与 MTD 月累计（金额或笔数）对比当月日期进度评分。C9
+                    为打分项，任何分数都不会剔除候选。
+                </div>
+            </div>
+            <div class="scorecards">
+                <div class="scorecard"><span>无月度目标 · 或 MTD 已 ≥ 月度目标</span><b>0 分</b><span>协议未设目标/目标为0，或本月已达标，不额外引流</span>
+                </div>
+                <div class="scorecard"><span>进度正常（未达标但未落后）</span><b>50 分</b><span>MTD ≥ 目标 ×（当月日期 ÷ 当月总天数）</span>
+                </div>
+                <div class="scorecard"><span>进度落后</span><b>100
+                    分</b><span>MTD ＜ 目标 ×（当月日期 ÷ 当月总天数），路由加权引流</span></div>
+            </div>
+            <div class="tabs">
+                <button class="tab sel">商业协议与月度进度</button>
+                <span class="muted" id="revision" style="align-self:center"></span></div>
+            <div id="pageError" class="err" role="alert"></div>
+            <div class="c9-grid">
+                <section>
+                    <div class="panel">
+                        <div class="filterbar">
+                            <div class="field"><label for="filterProvider">合作方</label><select
+                                    id="filterProvider"></select></div>
+                            <div class="field"><label for="filterOutcome">履约状态</label><select id="filterOutcome">
+                                <option value="">全部</option>
+                                <option value="NO_TARGET">无月度目标</option>
+                                <option value="TARGET_MET">已达标</option>
+                                <option value="ON_PACE">进度正常</option>
+                                <option value="BEHIND_PACE">进度落后</option>
+                            </select></div>
+                            <button class="btn" id="query">查询</button>
+                            <button class="btn secondary" id="refresh">↻ 刷新</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="rulebar"><h2 id="rowCount" style="margin:0">合作方履约进度</h2><span class="muted">同一合作方可配多条协议，得分取最高分</span>
+                        </div>
+                        <div class="tablewrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>合作方</th>
+                                    <th>商业协议（9.3）</th>
+                                    <th>MTD 月累计</th>
+                                    <th>当月进度</th>
+                                    <th>履约进度 vs 基准</th>
+                                    <th>C9 得分</th>
+                                    <th>操作</th>
+                                </tr>
+                                </thead>
+                                <tbody id="rows"></tbody>
+                            </table>
+                        </div>
+                        <div class="notice">进度基准＝月度目标 ×（当月日期 ÷ 当月总天数），按香港自然月计算；AMOUNT
+                            按美元等价金额、COUNT 按交易笔数。MTD 为演示输入，真实环境由交易统计按月回填。
+                        </div>
+                    </div>
+                    <div class="panel" id="formPanel">
+                        <div class="rulebar"><h2 id="formTitle" style="margin:0">维护商业协议</h2><span
+                                class="badge pending">评分项 · 不剔除候选</span></div>
+                        <form id="agreementForm">
+                            <div class="layout3" style="margin-top:16px">
+                                <div class="field"><label for="agProvider">合作方 *</label><select
+                                        id="agProvider"></select></div>
+                                <div class="field"><label for="agMetric">履约指标 *</label><select id="agMetric">
+                                    <option value="AMOUNT">AMOUNT · 月累计金额 USD</option>
+                                    <option value="COUNT">COUNT · 月累计笔数</option>
+                                </select></div>
+                                <div class="field"><label for="agTarget">月度目标 *（金额为 USD 等价）</label><input
+                                        id="agTarget" type="number" min="0" step="0.01" required></div>
+                            </div>
+                            <div class="muted">目标为 0 视同无月度目标，得0分。同一合作方＋指标已存在时为编辑，否则新增；与其他
+                                C3–C10 配置共用同一份参考配置并记录审计。
+                            </div>
+                            <div class="err" id="agError" role="alert"></div>
+                            <div class="good" id="agGood" role="status"></div>
+                            <div class="actions" style="margin-top:16px">
+                                <button class="btn" id="agSave" type="submit">保存协议</button>
+                                <button class="btn secondary" id="agDelete" type="button">删除此协议</button>
+                                <button class="btn secondary" id="agCancel" type="button">重置</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="panel">
+                        <div class="rulebar"><h2 style="margin:0">调整 MTD 月累计（演示输入）</h2></div>
+                        <form id="mtdForm">
+                            <div class="layout3" style="margin-top:16px">
+                                <div class="field"><label for="mtdProvider">合作方 *</label><select
+                                        id="mtdProvider"></select></div>
+                                <div class="field"><label for="mtdUsd">MTD 月累计金额 USD</label><input id="mtdUsd"
+                                                                                                        type="number"
+                                                                                                        min="0"
+                                                                                                        step="0.01">
+                                </div>
+                                <div class="field"><label for="mtdCount">MTD 月累计笔数</label><input id="mtdCount"
+                                                                                                      type="number"
+                                                                                                      min="0" step="1">
+                                </div>
+                            </div>
+                            <div class="muted">仅用于演示三种评分进度场景；AMOUNT 协议读取金额、COUNT
+                                协议读取笔数。保存后立即反映在列表、试算及全流程路由的 C9 分数。
+                            </div>
+                            <div class="err" id="mtdError" role="alert"></div>
+                            <div class="good" id="mtdGood" role="status"></div>
+                            <div class="actions" style="margin-top:16px">
+                                <button class="btn" id="mtdSave" type="submit">保存 MTD</button>
+                                <button class="btn secondary" id="mtdCancel" type="button">重置</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+                <aside class="rightPanel">
+                    <div class="panel">
+                        <div class="ptitle">C9 履约评分试算</div>
+                        <form id="simForm">
+                            <div class="layout2">
+                                <div class="field wide"><label for="simProvider">合作方 *</label><select
+                                        id="simProvider"></select></div>
+                                <div class="field"><label for="simMetric">履约指标（留空按已保存协议）</label><select
+                                        id="simMetric">
+                                    <option value="">按已保存协议</option>
+                                    <option value="AMOUNT">AMOUNT · 金额</option>
+                                    <option value="COUNT">COUNT · 笔数</option>
+                                </select></div>
+                                <div class="field"><label for="simTarget">月度目标（留空用已保存值）</label><input
+                                        id="simTarget" type="number" min="0" step="0.01" placeholder="留空用已保存值">
+                                </div>
+                                <div class="field"><label for="simUsd">MTD 月累计金额 USD</label><input id="simUsd"
+                                                                                                        type="number"
+                                                                                                        min="0"
+                                                                                                        step="0.01"
+                                                                                                        placeholder="留空用已保存值">
+                                </div>
+                                <div class="field"><label for="simCount">MTD 月累计笔数</label><input id="simCount"
+                                                                                                      type="number"
+                                                                                                      min="0" step="1"
+                                                                                                      placeholder="留空用已保存值">
+                                </div>
+                                <div class="field wide"><label for="at">模拟评估时间（HKT）</label><input id="at"
+                                                                                                        type="datetime-local"
+                                                                                                        step="1"></div>
+                            </div>
+                            <div class="notice">留空的字段使用已保存的协议及
+                                MTD；填写即覆盖本次试算，不会保存。时间留空取当前香港时间。
+                            </div>
+                            <div class="samples">
+                                <button type="button" class="btn secondary tiny" data-sample="met">示例：已达标</button>
+                                <button type="button" class="btn secondary tiny" data-sample="normal">进度正常</button>
+                                <button type="button" class="btn secondary tiny" data-sample="behind">进度落后</button>
+                                <button type="button" class="btn secondary tiny" data-sample="none">无目标</button>
+                            </div>
+                            <button class="btn" id="simulate" type="submit" style="width:100%;margin-top:15px">▶
+                                计算履约评分
+                            </button>
+                        </form>
+                    </div>
+                    <div class="panel">
+                        <div id="simResult" class="notice" role="status">选择合作方后点击「计算履约评分」，查看当月进度基准、MTD
+                            对比和 0/50/100 分判定依据。
+                        </div>
+                    </div>
+                </aside>
+            </div>
+            <div class="footer">HSG RELAY · C9 商业协议履约 · 演示环境</div>
+        </div>
+    </main>
+</div>
+<script src="/c9.js"></script>
+</body>
+</html>

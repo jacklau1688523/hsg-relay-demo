@@ -1,6 +1,7 @@
 # HSG RELAY — C1 + C2 可视化规则配置演示项目
 
-基于 RELAY V1.10 C1/C2 规格、原管理后台截图和字段库/AND/OR/能力标签需求制作：Java 17 / Spring Boot 3.3.5 / Spring Data JPA / H2（默认） / MySQL（可选）/ AviatorScript 5.4.1 / 原生 HTML/CSS/JS（无需 Node）。
+基于 RELAY V1.10 C1/C2 规格、原管理后台截图和字段库/AND/OR/能力标签需求制作：Java 17 / Spring Boot 3.3.5 / Spring Data
+JPA / H2（默认） / MySQL（可选）/ AviatorScript 5.4.1 / 原生 HTML/CSS/JS（无需 Node）。
 
 ## 启动
 
@@ -11,9 +12,11 @@ mvn spring-boot:run
 
 浏览器访问：**http://localhost:8080/**（C1）和 **http://localhost:8080/c2.html**（C2）。左侧导航可在 C1 / C2 间切换。
 
-默认 H2 文件数据库：`./data/relaydb`；自动建表，第一次启动自动灌入示例合作方、C1 准入规则、客户、个案审批、MTD、C2 限制规则、监管规则、能力标签。
+默认 H2 文件数据库：`./data/relaydb`；自动建表，第一次启动自动灌入示例合作方、C1 准入规则、客户、个案审批、MTD、C2
+限制规则、监管规则、能力标签。
 
-数据库控制台：`http://localhost:8080/h2-console`，JDBC URL `jdbc:h2:file:./data/relaydb;MODE=MySQL;DATABASE_TO_UPPER=false;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1`，用户名 `sa`，密码留空。
+数据库控制台：`http://localhost:8080/h2-console`，JDBC URL `jdbc:h2:file:
+./data/relaydb;MODE=MySQL;DATABASE_TO_UPPER=false;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_DELAY=-1`，用户名 `sa`，密码留空。
 
 ### 用 MySQL 启动
 
@@ -21,7 +24,9 @@ mvn spring-boot:run
 2. 设置 `DB_USERNAME` 和 `DB_PASSWORD` 环境变量。
 3. `mvn spring-boot:run -Dspring-boot.run.profiles=mysql`
 
-开发环境 `ddl-auto=update` 会根据 Entity 创建表。生产环境应使用 Flyway/Liquibase，不能使用 `update` 自动变更表结构。对于已有 C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列并新建四张 C2 表；若采用手工 DDL，请只执行一次 `sql/migrate-c1-to-c2.sql` 的字段迁移，并运行 `sql/schema-mysql.sql` 中 C2 新表的 `CREATE TABLE IF NOT EXISTS` 语句。
+开发环境 `ddl-auto=update` 会根据 Entity 创建表。生产环境应使用 Flyway/Liquibase，不能使用 `update` 自动变更表结构。对于已有
+C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列并新建四张 C2 表；若采用手工 DDL，请只执行一次
+`sql/migrate-c1-to-c2.sql` 的字段迁移，并运行 `sql/schema-mysql.sql` 中 C2 新表的 `CREATE TABLE IF NOT EXISTS` 语句。
 
 ## C1 功能
 
@@ -35,25 +40,32 @@ mvn spring-boot:run
 ## C2 功能（本次新增）
 
 - **监管路由规则页面**：`/c2.html` →「监管路由规则」Tab，列出所有全局规则、版本和启用状态，支持新增、编辑、启用/停用。
-- **字段库驱动条件编辑器**：后端 `relay_rule_field` 持久化 C2 可用字段、操作符和可选枚举，前端按接口自动渲染字段选择、EQ/NE/IN 运算符及对应值控件；支持无限思路的递归条件组（实际限制最多6层、60节点）。
+- **字段库驱动条件编辑器**：后端 `relay_rule_field` 持久化 C2 可用字段、操作符和可选枚举，前端按接口自动渲染字段选择、EQ/NE/IN
+  运算符及对应值控件；支持无限思路的递归条件组（实际限制最多6层、60节点）。
 - **AST / AviatorScript**：前端提交嵌套 JSON 条件树，后端校验白名单、枚举和层级后编译 AviatorScript；可预览表达式。普通业务人员不提交任意脚本。
-- **监管能力要求**：每条 GLOBAL 监管规则可选择多个 `requiredTags`（ALL 语义），条件命中但合作方缺失任何一项，返回 `REG_RULE_NOT_MET`。原因码不可修改。
-- **合作方限制**：`BENEFICIARY_COUNTRY` / `DIRECTOR_UBO_NATIONALITY` / `BENEFICIARY_REGION` / `ORDERING_COUNTRY` / `INTERMEDIARY_COUNTRY` / `CURRENCY` / `PURPOSE`，逐项配置屏蔽名单，自动映射固定返回码。维护入口在合作方管理页（`/providers.html`）的「合作方限制」页签，按合作方显示其限制列表并支持新增 / 编辑 / 启停（C2 校验实时读取）。
-- **合作方能力标签**：按合作方编辑标签（如 `SWIFT`、`CNY_ONSHORE`）。维护入口在合作方管理页（`/providers.html`）编辑表单的「C2 能力标签」勾选区——原 C2 页面的「合作方能力标签」标签页已并入此处，C2 页面仅保留模拟校验中的标签只读展示。
+- **监管能力要求**：每条 GLOBAL 监管规则可选择多个 `requiredTags`（ALL 语义），条件命中但合作方缺失任何一项，返回
+  `REG_RULE_NOT_MET`。原因码不可修改。
+- **合作方限制**：`BENEFICIARY_COUNTRY` / `DIRECTOR_UBO_NATIONALITY` / `BENEFICIARY_REGION` / `ORDERING_COUNTRY` /
+  `INTERMEDIARY_COUNTRY` / `CURRENCY` / `PURPOSE`，逐项配置屏蔽名单，自动映射固定返回码。维护入口在合作方管理页（
+  `/providers.html`）的「合作方限制」页签，按合作方显示其限制列表并支持新增 / 编辑 / 启停（C2 校验实时读取）。
+- **合作方能力标签**：按合作方编辑标签（如 `SWIFT`、`CNY_ONSHORE`）。维护入口在合作方管理页（`/providers.html`）编辑表单的「C2
+  能力标签」勾选区——原 C2 页面的「合作方能力标签」标签页已并入此处，C2 页面仅保留模拟校验中的标签只读展示。
 - **C2 模拟测试**：右侧填写交易国家、币种、中间行、董事/UBO 国籍、用途等字段，返回全部命中限制、主原因码、监管条件是否触发、缺失标签和编译表达式；不会释放交易或占用额度。
 - **版本与审计**：每次修改规则递增 `version_no` 并写入 `relay_rule_audit`；演示项目为覆盖式编辑+审计，生产需改为不可变发布版本。
 
 ### C2 预置数据验证场景
 
-| 场景 | 合作方及交易 | 预期结果 |
-|---|---|---|
-| 监管能力缺失 | `PROV-HO` + CNY + 受益行 CN | `REG_RULE_NOT_MET`（缺少 CNY_ONSHORE） |
-| 监管能力满足 | `PROV-T1` + CNY + 受益行 CN | C2 PASS（预置了 CNY_ONSHORE） |
-| Wise 国家限制 | `PROV-W` + 受益行 KG | `RESTRICTED_COUNTRY` |
-| Wise 国籍限制 | `PROV-W` + 董事/UBO 国籍 RU | `RESTRICTED_NATIONALITY`（若没有更高优先级的其他命中） |
-| 中间行国家限制 | `PROV-W` + 中间行 RU | `RESTRICTED_COUNTRY` |
+| 场景        | 合作方及交易                   | 预期结果                                    |
+|-----------|--------------------------|-----------------------------------------|
+| 监管能力缺失    | `PROV-HO` + CNY + 受益行 CN | `REG_RULE_NOT_MET`（缺少 CNY_ONSHORE）      |
+| 监管能力满足    | `PROV-T1` + CNY + 受益行 CN | C2 PASS（预置了 CNY_ONSHORE）                |
+| Wise 国家限制 | `PROV-W` + 受益行 KG        | `RESTRICTED_COUNTRY`                    |
+| Wise 国籍限制 | `PROV-W` + 董事/UBO 国籍 RU  | `RESTRICTED_NATIONALITY`（若没有更高优先级的其他命中） |
+| 中间行国家限制   | `PROV-W` + 中间行 RU        | `RESTRICTED_COUNTRY`                    |
 
-**重要：** C2 每条限制都要判断并收集命中项。默认按需求中的 1→8 顺序确定 `reasonCode`（主原因），所有命中保存在 `hits`。只做 C2 模拟，**C2 PASS 不代表其他过滤器通过**。生产客户董事/UBO 国籍应从权威客户档案获取，不能相信任意外部填报值；本 Demo 使用表单输入仅用于测试。
+**重要：** C2 每条限制都要判断并收集命中项。默认按需求中的 1→8 顺序确定 `reasonCode`（主原因），所有命中保存在 `hits`。只做 C2
+模拟，**C2 PASS 不代表其他过滤器通过**。生产客户董事/UBO 国籍应从权威客户档案获取，不能相信任意外部填报值；本 Demo
+使用表单输入仅用于测试。
 
 ### 重要：C1 规则约束
 
@@ -108,12 +120,27 @@ curl -X POST http://localhost:8080/api/c1/simulate \
   "condition": {
     "operator": "AND",
     "children": [
-      {"field": "paymentCurrency", "operator": "EQ", "value": "CNY"},
-      {"field": "beneficiaryBankCountry", "operator": "EQ", "value": "CN"}
+      {
+        "field": "paymentCurrency",
+        "operator": "EQ",
+        "value": "CNY"
+      },
+      {
+        "field": "beneficiaryBankCountry",
+        "operator": "EQ",
+        "value": "CN"
+      }
     ]
   },
-  "requirement": {"type": "PROVIDER_CAPABILITY", "requiredTags": ["CNY_ONSHORE"]},
-  "onFailure": {"reasonCode": "REG_RULE_NOT_MET"},
+  "requirement": {
+    "type": "PROVIDER_CAPABILITY",
+    "requiredTags": [
+      "CNY_ONSHORE"
+    ]
+  },
+  "onFailure": {
+    "reasonCode": "REG_RULE_NOT_MET"
+  },
   "enabled": true,
   "effectiveFrom": "2025-10-01T00:00:00",
   "effectiveTo": null
@@ -132,7 +159,9 @@ curl -s -X POST http://localhost:8080/api/c2/simulate \
 
 ## 表结构
 
-Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_client_profile`、`relay_client_exclusion`、`relay_case_approval`、`relay_provider_usage`、`relay_rule_field`、`relay_rule_audit`；本次新增 4 张：`relay_regulatory_rule`、`relay_provider_restriction`、`relay_capability_tag`、`relay_provider_capability`。
+Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_client_profile`、`relay_client_exclusion`、
+`relay_case_approval`、`relay_provider_usage`、`relay_rule_field`、`relay_rule_audit`；本次新增 4 张：
+`relay_regulatory_rule`、`relay_provider_restriction`、`relay_capability_tag`、`relay_provider_capability`。
 
 `sql/schema-mysql.sql` 提供独立 MySQL DDL，默认不需要手工执行。
 
@@ -143,7 +172,8 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 1. 接入真正 HSG 客户档案及分类、客户审批、合作方角色权限；本项目客户档案及审批均为本地模拟。
 2. 接入 HSG 路由 MTD 账本：按 paymentId 幂等占用，竞态时原子检查，取消释放，RERUN 排除本笔；演示数据只读。
 3. 规则配置变更应采用 append-only 版本、双时间轴、发布快照和完整审计；Demo 中编辑是覆盖式更新并留审计，不适合正式审计保留要求。
-4. 加强安全：身份认证、访问控制、CSRF、表达式安全隔离与资源限制、请求限流；当前没有做这些，只供本机测试。**切勿将当前不带认证的管理 API 暴露到公网。**
+4. 加强安全：身份认证、访问控制、CSRF、表达式安全隔离与资源限制、请求限流；当前没有做这些，只供本机测试。**切勿将当前不带认证的管理
+   API 暴露到公网。**
 5. 将新增 C1–C10 试算接入真实参考数据、统一发布快照和 Ops Check 工作流。
 6. 规则维度目前限制 `STANDARD/PSP/WEB3` 等固定示例枚举，正式项目应改为受控字典；真实业务币种/国家/时区来源应采用正式主数据。
 
@@ -157,10 +187,15 @@ mvn clean test
 
 ## C1–C10 全流程 Check（路由试算）
 
-访问 `/routing.html`，侧边栏菜单为「▶ C1–C10 Check」（原名「C1–C10 全流程路由」，已更名，页面同时重构为与各配置页一致的侧边栏布局）。C1/C2 等页的工具栏也有入口。提供候选生成、全部过滤器、四项评分、主路由与两条备选、REFER 原因优先级、下一个外汇窗口和持久化决策查询。C1/C2 的规则各自存在独立数据库表并由对应页面维护，Check 时实时读取；页面内提供「C1 / C2 规则查看（只读）」面板：C1 准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（含条件树摘要、失败动作），并附各自维护页入口；「参考配置」JSON 仅覆盖 C3–C10 共享的 `relay_routing_document` CONFIG（评分权重等尚无独立页面的项；C4 余额已可由 `/c4.html` 页面维护）。
+访问 `/routing.html`，侧边栏菜单为「▶ C1–C10 Check」（原名「C1–C10 全流程路由」，已更名，页面同时重构为与各配置页一致的侧边栏布局）。C1/C2
+等页的工具栏也有入口。提供候选生成、全部过滤器、四项评分、主路由与两条备选、REFER 原因优先级、下一个外汇窗口和持久化决策查询。C1/C2
+的规则各自存在独立数据库表并由对应页面维护，Check 时实时读取；页面内提供「C1 / C2 规则查看（只读）」面板：C1
+准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（含条件树摘要、失败动作），并附各自维护页入口；「参考配置」JSON
+仅覆盖 C3–C10 共享的 `relay_routing_document` CONFIG（评分权重等尚无独立页面的项；C4 余额已可由 `/c4.html` 页面维护）。
 
 - C3：匹配币种、国家、地区、BIC8、扣费方式；优先指定地区、国家及银行列表。
-- C4：合作方资金校验开关 OFF 直接通过；按外汇渠道选择头寸账户（NONE/TREASURY 取交易币种，PROVIDER 取扣账账户币种），可用头寸＝账户余额−未记账占用，不足则剔除并返回 FUNDING_SHORTFALL；计算器与 `/c4.html` 页面共用。
+- C4：合作方资金校验开关 OFF 直接通过；按外汇渠道选择头寸账户（NONE/TREASURY 取交易币种，PROVIDER
+  取扣账账户币种），可用头寸＝账户余额−未记账占用，不足则剔除并返回 FUNDING_SHORTFALL；计算器与 `/c4.html` 页面共用。
 - C5：使用覆盖行时区、截单时间、周末及节假日计算工作日偏移和请求起息日。
 - C6：同时记录单笔及当日限额失败。
 - C7：固定及比例手续费、最低/最高费、电报费、中间行费和外汇点差折港币；用剩余候选最低成本计算得分。
@@ -168,7 +203,9 @@ mvn clean test
 - C9：金额/笔数月度目标按当月日期进度评分，计算器与 `/c9.html` 页面共用。
 - C10：按货币对、工作日/节假日、窗口时间和单笔外汇上限判断。
 
-所有过滤器都会执行；C1 内部仍按规格首个失败返回。只有通过过滤的候选计算成本、偏好、履约及综合排名。使用 Decimal128 计算，展示金额/总分保留两位小数；平分按成本、起息日、合作方优先级、代码排序。所有试算结果标记 `simulation=true`、`opsCheckRequired=true`。
+所有过滤器都会执行；C1 内部仍按规格首个失败返回。只有通过过滤的候选计算成本、偏好、履约及综合排名。使用 Decimal128
+计算，展示金额/总分保留两位小数；平分按成本、起息日、合作方优先级、代码排序。所有试算结果标记 `simulation=true`、
+`opsCheckRequired=true`。
 
 ### 接口
 
@@ -177,105 +214,156 @@ mvn clean test
 - `POST /api/routing/simulate`：执行全流程试算。
 - `GET /api/routing/decisions/{decisionId}`：读取保存的原始试算请求和完整结果。
 
-配置页面的 JSON 编辑器可维护 C3–C10 的参考数据；默认配置见 `src/main/resources/routing-demo.json`。覆盖行 BIC 列表为空表示 ALL，手续费 rate 为小数（0.001 即0.1%），hkdRates 是每单位币种折合港币。外汇窗口为香港时间，采用起点包含、终点不包含；跨午夜需拆成两条。节假日需自行维护；默认空列表仅用于演示。todayUsd/monthUsd/monthCount 是试算时点的累计快照，修改模拟日期时应同步调整。C1 月累计仍取现有 provider_usage 表，按模拟时间所在自然月查询。
+配置页面的 JSON 编辑器可维护 C3–C10 的参考数据；默认配置见 `src/main/resources/routing-demo.json`。覆盖行 BIC 列表为空表示
+ALL，手续费 rate 为小数（0.001 即0.1%），hkdRates
+是每单位币种折合港币。外汇窗口为香港时间，采用起点包含、终点不包含；跨午夜需拆成两条。节假日需自行维护；默认空列表仅用于演示。todayUsd/monthUsd/monthCount
+是试算时点的累计快照，修改模拟日期时应同步调整。C1 月累计仍取现有 provider_usage 表，按模拟时间所在自然月查询。
 
 示例请求（JSON 使用当前 Demo 的 camelCase 字段，尚未做 BRD snake_case 报文适配）：
 
 ```json
 {
-  "paymentId":"DEMO-001","clientId":"C10002",
-  "debitCurrency":"USD","paymentCurrency":"USD","amount":10000,
-  "beneficiaryBankCountry":"US","beneficiaryAddressCountry":"US",
-  "beneficiaryBankBic":"CHASUS33","chargeOption":"SHA",
-  "orderingCountry":"HK","clientCountry":"HK","directorUboNationalities":[],
-  "paymentType":"TRADE","clientSegment":"STANDARD",
-  "requestedValueDate":"2026-11-20","at":"2026-11-20T10:00:00+08:00"
+  "paymentId": "DEMO-001",
+  "clientId": "C10002",
+  "debitCurrency": "USD",
+  "paymentCurrency": "USD",
+  "amount": 10000,
+  "beneficiaryBankCountry": "US",
+  "beneficiaryAddressCountry": "US",
+  "beneficiaryBankBic": "CHASUS33",
+  "chargeOption": "SHA",
+  "orderingCountry": "HK",
+  "clientCountry": "HK",
+  "directorUboNationalities": [],
+  "paymentType": "TRADE",
+  "clientSegment": "STANDARD",
+  "requestedValueDate": "2026-11-20",
+  "at": "2026-11-20T10:00:00+08:00"
 }
 ```
 
-默认场景推荐 Wise。扣账币种改为 HKD，时间改为 `2026-11-21T10:00:00+08:00`，返回 `FX_WINDOW_CLOSED`，下一窗口为 11月23日09:00。扣账 HKD、交易 EUR 返回 `NO_FX_VENUE`。
+默认场景推荐 Wise。扣账币种改为 HKD，时间改为 `2026-11-21T10:00:00+08:00`，返回 `FX_WINDOW_CLOSED`，下一窗口为 11月23日09:
+00。扣账 HKD、交易 EUR 返回 `NO_FX_VENUE`。
 
 ### 当前范围与验证
 
-这是可运行的完整 C1–C10 **路由计算演示**。真实 HSG 汇率/余额/用量接口、交易幂等资金占用与取消释放、NEW/RERUN 的占用排除、强制运营审核工作流及最终支付发送仍需接入。当前不提供真实交易提交接口。请求中的客户号会查询本地分类及流转类别，国籍仍为试算输入。
+这是可运行的完整 C1–C10 **路由计算演示**。真实 HSG 汇率/余额/用量接口、交易幂等资金占用与取消释放、NEW/RERUN
+的占用排除、强制运营审核工作流及最终支付发送仍需接入。当前不提供真实交易提交接口。请求中的客户号会查询本地分类及流转类别，国籍仍为试算输入。
 
-2026-11-20 已通过 Maven 测试24项（C1 4项、C2 4项、全流程16项），并验证实际 HTTP 路由、周末外汇关闭及无外汇渠道场景。本机 Chrome 页面实测通过：正常路由、周末 REFER、从 C1 导航到路由页；无前端 JavaScript 异常。
+2026-11-20 已通过 Maven 测试24项（C1 4项、C2 4项、全流程16项），并验证实际 HTTP 路由、周末外汇关闭及无外汇渠道场景。本机 Chrome
+页面实测通过：正常路由、周末 REFER、从 C1 导航到路由页；无前端 JavaScript 异常。
 
-本次为避免与 IDEA 已运行的8080服务及其数据库冲突，新版演示启动在8081，使用 `./data/routing-demo` 独立数据库。常规 `mvn spring-boot:run` 仍使用8080和原数据库；停止旧服务后重新启动即可加载新版代码。
+本次为避免与 IDEA 已运行的8080服务及其数据库冲突，新版演示启动在8081，使用 `./data/routing-demo` 独立数据库。常规
+`mvn spring-boot:run` 仍使用8080和原数据库；停止旧服务后重新启动即可加载新版代码。
 
 ### H2 重启时重复创建索引的修复
 
-连接 URL 保留 `DATABASE_TO_UPPER=false` 并追加 `CASE_INSENSITIVE_IDENTIFIERS=TRUE`，使 Hibernate 的元数据识别与数据库标识符行为一致。不要删除数据库或修改已有索引。IDEA 若通过环境变量或启动参数覆盖了 `spring.datasource.url`，对应 URL 也需要追加该设置；重启后生效。
+连接 URL 保留 `DATABASE_TO_UPPER=false` 并追加 `CASE_INSENSITIVE_IDENTIFIERS=TRUE`，使 Hibernate
+的元数据识别与数据库标识符行为一致。不要删除数据库或修改已有索引。IDEA 若通过环境变量或启动参数覆盖了
+`spring.datasource.url`，对应 URL 也需要追加该设置；重启后生效。
 
 `SchemaRestartTest` 覆盖旧 URL 建库及存入记录、旧 URL 重启失败、新 URL 连续更新两次、原记录及唯一一份索引保留。修复后全套25项测试通过。
 
 ## C3 业务覆盖配置页面
 
-访问 `/c3.html`；C1、C2 左侧的「C3 业务覆盖」已接通。页面提供合作方/币种/国家/状态筛选、新增、编辑、启用/停用和独立模拟。表单可维护国家、地区、银行 ALL/LIST、BIC8 列表及支持扣费方式；折叠区维护此行供 C5/C6 使用的时区、截单时间、工作日偏移、限额及节假日。
+访问 `/c3.html`；C1、C2 左侧的「C3 业务覆盖」已接通。页面提供合作方/币种/国家/状态筛选、新增、编辑、启用/停用和独立模拟。表单可维护国家、地区、银行
+ALL/LIST、BIC8 列表及支持扣费方式；折叠区维护此行供 C5/C6 使用的时区、截单时间、工作日偏移、限额及节假日。
 
-覆盖行与全流程参考配置共用 `relay_routing_document` 中的 CONFIG，不另建一份数据。保存会递增配置版本并写入配置审计；旧版本保存会被拒绝。旧配置中缺少 enabled 字段的行默认启用。银行范围 ALL 对应空 bics 数组，LIST 对应非空 BIC8 数组。停用的行不会参与 C3/C5/C6 选择。
+覆盖行与全流程参考配置共用 `relay_routing_document` 中的 CONFIG，不另建一份数据。保存会递增配置版本并写入配置审计；旧版本保存会被拒绝。旧配置中缺少
+enabled 字段的行默认启用。银行范围 ALL 对应空 bics 数组，LIST 对应非空 BIC8 数组。停用的行不会参与 C3/C5/C6 选择。
 
-`C3Matcher` 由独立模拟和全流程路由共用：币种精确匹配；国家和地区支持 ALL；无地区只匹配 ALL；交易 BIC 取前8位；扣费方式必须被该行支持。全部条件同时通过才命中。最精确行按指定地区、指定国家、LIST 的顺序比较；同精确度按覆盖表行顺序选择。C5/C6 使用同一选中行。
+`C3Matcher` 由独立模拟和全流程路由共用：币种精确匹配；国家和地区支持 ALL；无地区只匹配 ALL；交易 BIC
+取前8位；扣费方式必须被该行支持。全部条件同时通过才命中。最精确行按指定地区、指定国家、LIST 的顺序比较；同精确度按覆盖表行顺序选择。C5/C6
+使用同一选中行。
 
 接口：
 
 - `GET /api/c3/reaches`：返回配置 revision、覆盖行 `{index, reach}` 及可选币种。
-- `POST /api/c3/reaches`：提交 `{revision, index, bankScope, reach}`；index 为空新增，有值编辑。index 为当前配置数组的0基索引，与 revision 一起使用。
+- `POST /api/c3/reaches`：提交 `{revision, index, bankScope, reach}`；index 为空新增，有值编辑。index 为当前配置数组的0基索引，与
+  revision 一起使用。
 - `POST /api/c3/reaches/{index}/toggle`：提交 `{revision}` 启用或停用。
-- `POST /api/c3/simulate`：提交 `{providerCode,paymentCurrency,beneficiaryBankCountry,beneficiaryRegion,beneficiaryBankBic,chargeOption}`，返回 PASS/NO_REACH、selectedIndex、selectedReach、每行五项匹配依据和配置版本。
+- `POST /api/c3/simulate`：提交
+  `{providerCode,paymentCurrency,beneficiaryBankCountry,beneficiaryRegion,beneficiaryBankBic,chargeOption}`，返回
+  PASS/NO_REACH、selectedIndex、selectedReach、每行五项匹配依据和配置版本。
 
-2026-11-20：全套38项测试通过。C3 新增13项测试覆盖地区缺失、广东/非广东、BIC8/11、币种、国家、扣费方式、精确度排序、停用、配置编辑及版本冲突、C5/C6选中行一致性。Chrome 实测验证导航、模拟、编辑保存、BIC匹配、停用与错误校验；验证后恢复了原覆盖行。
+2026-11-20：全套38项测试通过。C3 新增13项测试覆盖地区缺失、广东/非广东、BIC8/11、币种、国家、扣费方式、精确度排序、停用、配置编辑及版本冲突、C5/C6选中行一致性。Chrome
+实测验证导航、模拟、编辑保存、BIC匹配、停用与错误校验；验证后恢复了原覆盖行。
 
 ## C4 头寸资金校验页面
 
-访问 `/c4.html`；各页面左侧「C3 业务覆盖」下方新增「C4 头寸资金校验」菜单（首页、合作方管理、C2–C10、全流程 Check 及字段库页均已接入，顺序为 C3 → C4 → C5）。C4 为过滤器（BRD 6.4）：由合作方资金校验开关（9.1）、我行在合作方的往来账 nostro 余额、尚未记账的已路由交易占用金额，决定该合作方候选是否保留。
+访问 `/c4.html`；各页面左侧「C3 业务覆盖」下方新增「C4 头寸资金校验」菜单（首页、合作方管理、C2–C10、全流程 Check 及字段库页均已接入，顺序为
+C3 → C4 → C5）。C4 为过滤器（BRD 6.4）：由合作方资金校验开关（9.1）、我行在合作方的往来账 nostro 余额、尚未记账的已路由交易占用金额，决定该合作方候选是否保留。
 
-- 步骤 1 资金校验开关：OFF 直接通过。后补头寸的合作方（如 Wise、GD Pay）设为 OFF，资金由资金部在合作方出款前补足，逻辑在 RELAY 模块之外；开关在合作方管理维护，本页只读展示。
+- 步骤 1 资金校验开关：OFF 直接通过。后补头寸的合作方（如 Wise、GD Pay）设为 OFF，资金由资金部在合作方出款前补足，逻辑在 RELAY
+  模块之外；开关在合作方管理维护，本页只读展示。
 - 步骤 2 账户币种：外汇渠道 NONE / TREASURY 取交易币种；PROVIDER 取扣账账户币种。
 - 步骤 3 可用头寸 ＝ 账户余额 − 未记账的已路由交易占用；未配置该币种余额行时可用按 0 计。
-- 步骤 4 判定：可用头寸 ≥ 本笔交易账户币种等价金额 → 通过；否则 `FUNDING_SHORTFALL` 并剔除该候选。PROVIDER 渠道等价金额＝交易金额 × HSG 当日汇率（交易币种汇率 ÷ 扣账币种汇率，经港币交叉）；其余渠道即交易金额。
+- 步骤 4 判定：可用头寸 ≥ 本笔交易账户币种等价金额 → 通过；否则 `FUNDING_SHORTFALL` 并剔除该候选。PROVIDER
+  渠道等价金额＝交易金额 × HSG 当日汇率（交易币种汇率 ÷ 扣账币种汇率，经港币交叉）；其余渠道即交易金额。
 
-校验开关开启且仅头寸不足导致失败时，全流程返回 REFER `FUNDING_SHORTFALL`（全部候选未通过且存在仅因 C4 失败的候选，优先级在 `CLIENT_NOT_CLASSIFIED`、`NO_FX_VENUE`、`NO_PROVIDER_ACCEPTS`、`FX_WINDOW_CLOSED` 之后）；运营审核环节，资金部确认补头寸后，运营可人工选用该合作方（示例 6b）。
+校验开关开启且仅头寸不足导致失败时，全流程返回 REFER `FUNDING_SHORTFALL`（全部候选未通过且存在仅因 C4 失败的候选，优先级在
+`CLIENT_NOT_CLASSIFIED`、`NO_FX_VENUE`、`NO_PROVIDER_ACCEPTS`、`FX_WINDOW_CLOSED` 之后）；运营审核环节，资金部确认补头寸后，运营可人工选用该合作方（示例
+6b）。
 
-计算由 `C4Calculator` 供独立模拟和全流程路由共用（原 `RoutingService` 内联的头寸判定已迁入同一计算器，全流程 C4 明细即计算器结果：enabled、fxVenue、accountCurrency、rate、required、balance、reserved、available、accountFound、passed、reasons）。开关 OFF 时仍计算账户与头寸数值，仅供展示，`passed` 恒为 true。
+计算由 `C4Calculator` 供独立模拟和全流程路由共用（原 `RoutingService` 内联的头寸判定已迁入同一计算器，全流程 C4
+明细即计算器结果：enabled、fxVenue、accountCurrency、rate、required、balance、reserved、available、accountFound、passed、reasons）。开关
+OFF 时仍计算账户与头寸数值，仅供展示，`passed` 恒为 true。
 
-页面提供往来账余额行的新增/编辑/删除（合作方、币种、账户余额、未记账占用；同一合作方同一币种仅一行，金额须非负）、合作方/币种筛选、合作方资金校验开关只读表，以及单合作方模拟：扣账＝交易币种时按 NONE 渠道校验；扣账≠交易币种时按已配置的外汇窗口逐渠道（TREASURY / PROVIDER）校验，与全流程候选生成一致，没有任何渠道窗口时返回 `NO_FX_VENUE`。模拟可选「资金校验开关」覆盖本次试算（不落库）。示例按钮覆盖：通过、头寸不足、资金部渠道、合作方渠道开关 ON（Wise USD→AUD 7,800 万，扣账 USD 需 5,100 万 > 5,000 万可用）、同一笔开关 OFF（直接通过）、HKD→EUR 无渠道六种场景。
+页面提供往来账余额行的新增/编辑/删除（合作方、币种、账户余额、未记账占用；同一合作方同一币种仅一行，金额须非负）、合作方/币种筛选、合作方资金校验开关只读表，以及单合作方模拟：扣账＝交易币种时按
+NONE 渠道校验；扣账≠交易币种时按已配置的外汇窗口逐渠道（TREASURY / PROVIDER）校验，与全流程候选生成一致，没有任何渠道窗口时返回
+`NO_FX_VENUE`。模拟可选「资金校验开关」覆盖本次试算（不落库）。示例按钮覆盖：通过、头寸不足、资金部渠道、合作方渠道开关 ON（Wise
+USD→AUD 7,800 万，扣账 USD 需 5,100 万 > 5,000 万可用）、同一笔开关 OFF（直接通过）、HKD→EUR 无渠道六种场景。
 
-余额行与全流程参考配置共用 `relay_routing_document` 中的 CONFIG `balances`（不另建一份数据）。保存会递增配置版本并写入配置审计；旧版本保存会被拒绝。实时 HSG 余额/占用接口尚未接入，页面数值仅用于演示；试算不占用资金。
+余额行与全流程参考配置共用 `relay_routing_document` 中的 CONFIG `balances`（不另建一份数据）。保存会递增配置版本并写入配置审计；旧版本保存会被拒绝。实时
+HSG 余额/占用接口尚未接入，页面数值仅用于演示；试算不占用资金。
 
 接口：
 
-- `GET /api/c4/balances`：返回配置 revision、余额行 `{index, balance:{provider,currency,balance,reserved}}`、币种清单、HSG 当日汇率（hkdRates）及各合作方资金校验开关 `{code,name,status,fundingCheckEnabled,nostroAccount}`。
+- `GET /api/c4/balances`：返回配置 revision、余额行 `{index, balance:{provider,currency,balance,reserved}}`、币种清单、HSG
+  当日汇率（hkdRates）及各合作方资金校验开关 `{code,name,status,fundingCheckEnabled,nostroAccount}`。
 - `PUT /api/c4/balances`：提交 `{revision,index?,balance}`；index 为空新增，有值编辑。合作方须存在，币种须为三位大写且已配置汇率，余额与占用须非负，同一合作方同一币种不可重复。
 - `POST /api/c4/balances/delete`：提交 `{revision,index}` 删除余额行；删除后该币种可用头寸按 0 计。
-- `POST /api/c4/simulate`：提交 `{providerCode,debitCurrency,paymentCurrency,amount,fundingCheckEnabled?}`，返回 PASS / FUNDING_SHORTFALL / NO_FX_VENUE、各渠道分步计算结果（`venues[].calculation`）与配置版本；fundingCheckEnabled 留空用合作方已保存的开关。
+- `POST /api/c4/simulate`：提交 `{providerCode,debitCurrency,paymentCurrency,amount,fundingCheckEnabled?}`，返回 PASS /
+  FUNDING_SHORTFALL / NO_FX_VENUE、各渠道分步计算结果（`venues[].calculation`）与配置版本；fundingCheckEnabled 留空用合作方已保存的开关。
 
-2026-11-23：全套168项测试通过（新增15项）。`C4CalculatorTest` 6项：开关 OFF、NONE/TREASURY 取交易币种、PROVIDER 取扣账币种与汇率折算、占用扣减与等于边界的通过、仅用本合作方余额行、非法渠道/缺汇率。`C4ServiceTest` 9项：列表、增删改与全流程共享配置并写审计、字段校验与版本冲突、六类模拟场景、试算开关覆盖不落库、与全流程 C4 明细逐字段一致、页面保存余额后全流程返回 REFER `FUNDING_SHORTFALL`。在独立端口与内存库上以 curl 验证全部接口及13个页面的侧边栏顺序，并用无头 Chrome 实测页面：六个示例、筛选与刷新保留条件、编辑/新增/删除、重复与负数校验，无前端 JavaScript 异常。
+2026-11-23：全套168项测试通过（新增15项）。`C4CalculatorTest` 6项：开关 OFF、NONE/TREASURY 取交易币种、PROVIDER
+取扣账币种与汇率折算、占用扣减与等于边界的通过、仅用本合作方余额行、非法渠道/缺汇率。`C4ServiceTest`
+9项：列表、增删改与全流程共享配置并写审计、字段校验与版本冲突、六类模拟场景、试算开关覆盖不落库、与全流程 C4
+明细逐字段一致、页面保存余额后全流程返回 REFER `FUNDING_SHORTFALL`。在独立端口与内存库上以 curl 验证全部接口及13个页面的侧边栏顺序，并用无头
+Chrome 实测页面：六个示例、筛选与刷新保留条件、编辑/新增/删除、重复与负数校验，无前端 JavaScript 异常。
 
 ## 合作方管理（BRD 9.1）
 
-访问 `/providers.html`，C1/C2/C3 左侧「合作方管理」均已接入。列表支持编码、名称、BIC、类型和状态筛选，展示上线状态、资金校验、能力标签、优先级及临期/逾期复核提示。详情分基础信息、关联配置、合作方限制和变更记录。
+访问 `/providers.html`，C1/C2/C3
+左侧「合作方管理」均已接入。列表支持编码、名称、BIC、类型和状态筛选，展示上线状态、资金校验、能力标签、优先级及临期/逾期复核提示。详情分基础信息、关联配置、合作方限制和变更记录。
 
 维护字段：编码（唯一，最长12位、保存后不可改）、名称（80字符）、类型（TIER1_BANK/OTHER_BANK/HEAD_OFFICE/FINTECH/NETWORK）、状态（LIVE/NOT_LIVE）、C4资金校验、报文通道（SWIFT/API/FILE/MANUAL/BOOK）、BIC、C2能力标签、优先级（1–99）、HSG往来账号、HSG总账编码、HSG对接负责人用户编码、准入复核日期。
 
 - 新增默认 NOT_LIVE；SWIFT 通道强制填写8或11位 BIC。
-- 保存为 LIVE 时必须具备至少一条启用覆盖行、一条手续费配置、一条当前有效的准入行、往来账号和总账编码。EXCLUDE 同样是已配置准入行，不代表通过C1；最终候选需执行完整过滤。
-- 状态、通道、资金校验和优先级直接使用原 provider 表，下次路由试算生效。能力标签与C2共用，修改留审计；合作方能力标签的维护入口已从 C2 页面并入本页编辑表单。
-- 「合作方限制」页签（原 C2 页「合作方限制」标签页并入）：按合作方显示制裁及监管屏蔽记录（类型、屏蔽值、生效期、版本、启停），支持新增 / 编辑 / 启停，走 C2 限制接口并留版本号，C2 校验实时读取。
+- 保存为 LIVE 时必须具备至少一条启用覆盖行、一条手续费配置、一条当前有效的准入行、往来账号和总账编码。EXCLUDE
+  同样是已配置准入行，不代表通过C1；最终候选需执行完整过滤。
+- 状态、通道、资金校验和优先级直接使用原 provider 表，下次路由试算生效。能力标签与C2共用，修改留审计；合作方能力标签的维护入口已从
+  C2 页面并入本页编辑表单。
+- 「合作方限制」页签（原 C2
+  页「合作方限制」标签页并入）：按合作方显示制裁及监管屏蔽记录（类型、屏蔽值、生效期、版本、启停），支持新增 / 编辑 / 启停，走 C2
+  限制接口并留版本号，C2 校验实时读取。
 - 「模拟测试」将当前合作方带入全流程试算的 includeProviders，NOT_LIVE 也可参与模拟；不修改其上线状态。
 - 使用乐观锁 version 防止基础字段被旧版本覆盖；变更记录保存前后快照、用户及时间。当前操作用户仍为 demo.operator。
 - 准入复核按香港日期显示30天内临期/逾期；负责人目录及自动通知尚未连接，页面不发送提醒。
 - 旧演示记录的 PAYMENT_NETWORK 在编辑表单映射为 NETWORK，超过99的旧优先级在表单调整至99，保存后规范化。旧记录不自动填充BIC、账号或负责人，缺失资料显示待完善。
 
-接口：`GET/POST /api/provider-management`、`GET/PUT /api/provider-management/{code}`、`GET /api/provider-management/{code}/related`、`GET /api/provider-management/{code}/audit`。原 `GET /api/providers` 保持兼容。
+接口：`GET/POST /api/provider-management`、`GET/PUT /api/provider-management/{code}`、
+`GET /api/provider-management/{code}/related`、`GET /api/provider-management/{code}/audit`。原 `GET /api/providers` 保持兼容。
 
-数据库新增可空资料字段及 version（默认0），默认 Hibernate update 自动增加列并保留旧数据。禁用自动DDL的既有MySQL库可执行一次 `sql/migrate-provider-management.sql`；新库使用 `sql/schema-mysql.sql`。
+数据库新增可空资料字段及 version（默认0），默认 Hibernate update 自动增加列并保留旧数据。禁用自动DDL的既有MySQL库可执行一次
+`sql/migrate-provider-management.sql`；新库使用 `sql/schema-mysql.sql`。
 
 2026-11-20：全套49项测试通过；新增10项合作方管理测试及1项旧provider表升级测试。Chrome在独立内存库完成新增、编辑、上线条件拦截及回滚、C2标签同步、关联配置、审计、未上线合作方模拟入口和手机布局验证；实际8081文件数据库升级后页面正常加载，原有合作方保留。
 
 ## C5 起息日评分页面
 
-访问 `/c5.html`，各配置页左侧的「C5 起息日 / 截单」已接通。C5 为固定速度打分项：延迟0工作日100分、1工作日50分、2工作日及以上0分；不会向候选过滤器列表添加C5，也不会因为0分剔除候选。综合排序继续按交易类型/客户层级的速度权重加权。
+访问 `/c5.html`，各配置页左侧的「C5 起息日 / 截单」已接通。C5
+为固定速度打分项：延迟0工作日100分、1工作日50分、2工作日及以上0分；不会向候选过滤器列表添加C5，也不会因为0分剔除候选。综合排序继续按交易类型/客户层级的速度权重加权。
 
 按C3选出的最精确覆盖行维护截单时区（默认香港）、截单时间、0–5工作日偏移和本行节假日列表。日历以周一至五减去配置节假日计算，当前仍是本地演示日历数据，需维护合作方该币种的适用节假日。页面保存只修改C5参数，保留C3覆盖维度、启用状态、C6限额及其他全流程配置；与C3共用数据，不另建一份副本。
 
@@ -293,7 +381,8 @@ mvn clean test
 
 - `GET /api/c5/schedules`：覆盖行及当前配置revision。
 - `PUT /api/c5/schedules`：提交 `{revision,index,zone,cutoff,offsetDays,holidays}`，只更新该行起息参数并记录配置审计；旧版本拒绝覆盖。
-- `POST /api/c5/simulate`：交易字段同C3，增加 `requestedValueDate`、`at`；请求起息日也接受BRD字段名 `requested_value_date`。该别名也接入全流程模拟请求。
+- `POST /api/c5/simulate`：交易字段同C3，增加 `requestedValueDate`、`at`；请求起息日也接受BRD字段名 `requested_value_date`
+  。该别名也接入全流程模拟请求。
 - 全流程候选新增 `c5` 计算明细，包括评估时间、基准日、最早起息日、请求起息日、候选起息日、实际延迟工作日和速度分；原valueDate返回候选起息日。
 
 2026-11-20：全套65项测试通过（新增16项C5计算及集成测试）。Chrome验证50/0/100分、截单边界、远期请求、节假日保存且与C3同步、重复节假日拒绝、手机布局和零分候选仍保留排名；浏览器写入验证在独立内存库完成，8081原演示配置保留。
@@ -302,11 +391,14 @@ mvn clean test
 
 访问 `/c6.html`，各配置页左侧「C6 交易限额」已接通。C6 为过滤器（BRD 6.6）：数据源为 C3 覆盖行的单笔最大限额、每日最大限额（美元等价）及合作方当日累计金额。
 
-- 覆盖行限额列表：按合作方/币种筛选，展示单笔与每日限额、启用状态；本页只维护两项限额，覆盖维度、截单、节假日等其他字段与 C3/C5 共用同一行数据。
+- 覆盖行限额列表：按合作方/币种筛选，展示单笔与每日限额、启用状态；本页只维护两项限额，覆盖维度、截单、节假日等其他字段与 C3/C5
+  共用同一行数据。
 - 当日累计（演示输入）：按合作方维护 todayUsd 快照；重算不含本笔自身，真实环境由交易统计回填。
-- C6 模拟：先按 C3 选中最精确覆盖行（指定地区＞ALL、指定国家＞ALL、LIST＞ALL），再依次执行两项校验并输出原因码；填写「当日累计」仅覆盖本次试算不落库；C3 未命中时返回 NO_REACH 且限额不适用。
+- C6 模拟：先按 C3 选中最精确覆盖行（指定地区＞ALL、指定国家＞ALL、LIST＞ALL），再依次执行两项校验并输出原因码；填写「当日累计」仅覆盖本次试算不落库；C3
+  未命中时返回 NO_REACH 且限额不适用。
 
-计算由 `C6Calculator` 供独立试算与全流程路由共用：本笔美元等价＝交易金额×HSG中间汇率÷USD汇率；校验1 本笔≤单笔限额，否则 `LIMIT_PER_PAYMENT`；校验2 当日累计＋本笔≤每日限额，否则 `LIMIT_DAILY`；两项校验均执行并留痕（不短路）。
+计算由 `C6Calculator` 供独立试算与全流程路由共用：本笔美元等价＝交易金额×HSG中间汇率÷USD汇率；校验1 本笔≤单笔限额，否则
+`LIMIT_PER_PAYMENT`；校验2 当日累计＋本笔≤每日限额，否则 `LIMIT_DAILY`；两项校验均执行并留痕（不短路）。
 
 接口：
 
@@ -317,28 +409,37 @@ mvn clean test
 
 ## C7 综合成本页面
 
-访问 `/c7.html`，左侧导航「C7 综合成本 / 费用」。C7 为打分项（BRD 6.7）：预估总成本（港币）＝合作方手续费＋电报费＋预估中间行费用＋换汇成本；得分＝100×（剩余候选最低成本÷本候选成本），成本为0直接100分。
+访问 `/c7.html`，左侧导航「C7 综合成本 / 费用」。C7 为打分项（BRD
+6.7）：预估总成本（港币）＝合作方手续费＋电报费＋预估中间行费用＋换汇成本；得分＝100×（剩余候选最低成本÷本候选成本），成本为0直接100分。
 
 - 手续费配置：维度【合作方＋币种＋扣费方式（ALL/OUR/SHA/BEN）】；字段含固定手续费、百分比费率（小数）、最低/最高手续费、电报费、预估中间行费用、费用币种；支持新增、编辑、删除，与全流程路由共用配置并写审计。
-- 成本预估试算：扣账≠交易币种时按货币对分别展示 TREASURY／PROVIDER 渠道，无需换汇展示 NONE；每个渠道给出窗口开放状态、点差（含非工作时段加点）、手续费托底/封顶过程与折港币合计；窗口关闭或超单笔上限时标注 C10 将剔除、点差按0展示仅作参考。
+- 成本预估试算：扣账≠交易币种时按货币对分别展示 TREASURY／PROVIDER 渠道，无需换汇展示
+  NONE；每个渠道给出窗口开放状态、点差（含非工作时段加点）、手续费托底/封顶过程与折港币合计；窗口关闭或超单笔上限时标注 C10
+  将剔除、点差按0展示仅作参考。
 
-计算由 `C7Calculator` 供独立试算与全流程路由共用：手续费＝固定＋费率×金额，低于最低取最低、高于最高取最高；换汇＝港币金额×点差bps÷10000；全部项目按 HSG 中间汇率折港币。示例（默认配置）：PROV-T1 HKD→USD 20,000 周一 09:05，TREASURY 10bp → 手续费130＋换汇156＝HKD 286；PROV-W HKD→AUD 20,000 周六，PROVIDER 35＋20＝55bp → 100＋561＝HKD 661。
+计算由 `C7Calculator` 供独立试算与全流程路由共用：手续费＝固定＋费率×金额，低于最低取最低、高于最高取最高；换汇＝港币金额×点差bps÷10000；全部项目按
+HSG 中间汇率折港币。示例（默认配置）：PROV-T1 HKD→USD 20,000 周一 09:05，TREASURY 10bp → 手续费130＋换汇156＝HKD 286；PROV-W
+HKD→AUD 20,000 周六，PROVIDER 35＋20＝55bp → 100＋561＝HKD 661。
 
 接口：
 
 - `GET /api/c7/fees`：返回配置 revision、手续费行、币种清单与中间汇率。
 - `PUT /api/c7/fees`：提交 `{revision,index?,fee}`；index 为空新增，有值编辑；维度重复由配置校验拒绝。
 - `POST /api/c7/fees/delete`：提交 `{revision,index}` 删除该行。
-- `POST /api/c7/simulate`：提交 `{providerCode,debitCurrency,paymentCurrency,amount,chargeOption,at}`，返回各外汇渠道的成本明细；无任何货币对窗口时返回空列表并注明 NO_FX_VENUE。
+- `POST /api/c7/simulate`：提交 `{providerCode,debitCurrency,paymentCurrency,amount,chargeOption,at}`
+  ，返回各外汇渠道的成本明细；无任何货币对窗口时返回空列表并注明 NO_FX_VENUE。
 
 ## C8 偏好规则页面
 
 访问 `/c8.html`，左侧导航「C8 偏好规则」。C8 为打分项（BRD 6.8）：条件全部非空匹配时，给规则指定合作方加奖励分；合计封顶100，未命中0分。
 
-- 规则配置：目标合作方＋七个条件（币种、受益行国家、受益人地区、金额上下限 USD、交易类型、客户分层；留空或 ALL＝匹配全部）＋奖励分 1–100；支持新增、编辑、删除，保存递增版本并写审计。
-- 偏好试算：按交易字段逐条评估全部规则，每条规则展示七个条件的「配置值｜交易值｜命中」明细；按合作方汇总累计分与封顶后得分。预置规则：USD≥100万→PROV-T1＋100；受益国家 KG→PROV-HO＋100；地区 CN-GD→PROV-GD＋100。
+- 规则配置：目标合作方＋七个条件（币种、受益行国家、受益人地区、金额上下限 USD、交易类型、客户分层；留空或 ALL＝匹配全部）＋奖励分
+  1–100；支持新增、编辑、删除，保存递增版本并写审计。
+- 偏好试算：按交易字段逐条评估全部规则，每条规则展示七个条件的「配置值｜交易值｜命中」明细；按合作方汇总累计分与封顶后得分。预置规则：USD≥100万→PROV-T1＋100；受益国家
+  KG→PROV-HO＋100；地区 CN-GD→PROV-GD＋100。
 
-计算由 `C8Calculator` 供独立试算与全流程路由共用（路由内原内联匹配已改为同一计算器）：文本条件空/ALL 视为通配；指定地区仅在交易携带相同地区编码时命中；金额上下限按美元等价闭区间比较。
+计算由 `C8Calculator` 供独立试算与全流程路由共用（路由内原内联匹配已改为同一计算器）：文本条件空/ALL
+视为通配；指定地区仅在交易携带相同地区编码时命中；金额上下限按美元等价闭区间比较。
 
 接口：
 
@@ -349,7 +450,8 @@ mvn clean test
 
 ## C9 商业协议履约页面
 
-访问 `/c9.html`，各配置页左侧的「C9 商业履约」已接通（全流程 Check 页头部亦增加入口）。C9 为固定履约打分项（BRD 6.9）：数据源为商业协议配置（9.3）及 MTD 月累计金额 / 交易笔数，按香港自然月评分：
+访问 `/c9.html`，各配置页左侧的「C9 商业履约」已接通（全流程 Check 页头部亦增加入口）。C9 为固定履约打分项（BRD
+6.9）：数据源为商业协议配置（9.3）及 MTD 月累计金额 / 交易笔数，按香港自然月评分：
 
 1. 合作方无月度目标（无协议或目标为0），或 MTD 已 ≥ 月度目标 → 得0分（协议已履行，不额外引流）。
 2. MTD ＜ 月度目标 ×（当月日期 ÷ 当月总天数）→ 得100分（进度落后，路由加权引流）。
@@ -364,7 +466,9 @@ mvn clean test
 3. 进度基准＝月度目标 ×（当月日期 ÷ 当月总天数），Decimal128 计算。
 4. 严格小于基准判进度落后（100分），大于等于基准且未达标判进度正常（50分），达标或无目标为0分；月末最后一天基准即全月目标。
 
-页面提供 0/50/100 分说明卡、合作方/履约状态筛选、每家合作方的协议目标、MTD、当月进度、进度条（含时间基准标记）与逐协议得分；支持维护协议（同一合作方＋指标为编辑，否则新增，可删除）、调整 MTD 演示输入，以及带覆盖参数（指标、目标、MTD、评估时间）的独立试算，试算展示每一步判定依据，提供已达标、进度正常、进度落后、无目标四个示例。协议与 MTD 和 C3–C10 共用 `relay_routing_document` 的 CONFIG，保存递增版本并写配置审计，旧版本拒绝覆盖。
+页面提供 0/50/100 分说明卡、合作方/履约状态筛选、每家合作方的协议目标、MTD、当月进度、进度条（含时间基准标记）与逐协议得分；支持维护协议（同一合作方＋指标为编辑，否则新增，可删除）、调整
+MTD 演示输入，以及带覆盖参数（指标、目标、MTD、评估时间）的独立试算，试算展示每一步判定依据，提供已达标、进度正常、进度落后、无目标四个示例。协议与
+MTD 和 C3–C10 共用 `relay_routing_document` 的 CONFIG，保存递增版本并写配置审计，旧版本拒绝覆盖。
 
 接口：
 
@@ -378,35 +482,56 @@ mvn clean test
 
 ## C10 外汇能力校验页面
 
-访问 `/c10.html`，各配置页左侧的「C10 外汇窗口」已接通（全流程 Check 页头部亦增加入口）。C10 为过滤器（BRD 6.10），仅换汇交易适用：扣账币种＝交易币种时无需换汇直接通过；未配置窗口的渠道不生成候选，所有渠道均不支持该货币对时返回 REFER `NO_FX_VENUE`（8.1）。
+访问 `/c10.html`，各配置页左侧的「C10 外汇窗口」已接通（全流程 Check 页头部亦增加入口）。C10 为过滤器（BRD
+6.10），仅换汇交易适用：扣账币种＝交易币种时无需换汇直接通过；未配置窗口的渠道不生成候选，所有渠道均不支持该货币对时返回 REFER
+`NO_FX_VENUE`（8.1）。
 
-- 外汇渠道＝TREASURY 资金部：当前时间落在该货币对资金部窗口内才通过（周一至周五 09:00–17:30，香港节假日一律关闭，即使该行勾选 HOLIDAY），否则 `FX_TREASURY_CLOSED`。
-- 外汇渠道＝PROVIDER 合作方：当前时间落在合作方窗口内且本笔美元等价 ≤ 窗口单笔限额；不在窗口 `FX_PROVIDER_CLOSED`，在窗口但超限额 `FX_TICKET_LIMIT`。
+- 外汇渠道＝TREASURY 资金部：当前时间落在该货币对资金部窗口内才通过（周一至周五 09:00–17:30，香港节假日一律关闭，即使该行勾选
+  HOLIDAY），否则 `FX_TREASURY_CLOSED`。
+- 外汇渠道＝PROVIDER 合作方：当前时间落在合作方窗口内且本笔美元等价 ≤ 窗口单笔限额；不在窗口 `FX_PROVIDER_CLOSED`，在窗口但超限额
+  `FX_TICKET_LIMIT`。
 - 全部渠道仅 C10 失败时，整体返回 `FX_WINDOW_CLOSED` 并给出下一窗口开窗时间；超全部窗口单笔限额的笔无下一窗口可等。
 
-窗口配置（BRD 9.3 示例，即 12 章演示配置）：资金部 HKD/USD、USD/HKD、HKD/CNH、CNH/HKD、USD/CNH、CNH/USD 共 6 对，工作日 09:00–17:30、点差 10bp；Wise 澳元/新元对（HKD 与 USD 扣账）每日 00:00–23:59、点差 35bp、单笔上限 50 万美元，周末/节假日行以「非工作时段加点」＋20bp 表达；Wise 韩元对工作日 08:00–16:30、点差 50bp、单笔上限 20 万美元。HKD/EUR、HKD/KGS 等未配置货币对提交即 `NO_FX_VENUE`。
+窗口配置（BRD 9.3 示例，即 12 章演示配置）：资金部 HKD/USD、USD/HKD、HKD/CNH、CNH/HKD、USD/CNH、CNH/USD 共 6 对，工作日 09:00–17:
+30、点差 10bp；Wise 澳元/新元对（HKD 与 USD 扣账）每日 00:00–23:59、点差 35bp、单笔上限 50 万美元，周末/节假日行以「非工作时段加点」＋20bp
+表达；Wise 韩元对工作日 08:00–16:30、点差 50bp、单笔上限 20 万美元。HKD/EUR、HKD/KGS 等未配置货币对提交即 `NO_FX_VENUE`。
 
-计算由 `C10Calculator` 供独立试算与全流程路由共用（原 `RoutingService` 内联窗口判定已迁入同一计算器，C7 页面判断窗口开放同样复用）：按评估时间（香港时区）匹配日期（MON–SUN / HOLIDAY）与时段，多个窗口同时开放取点差合计最低；`next` 自评估时间起最多查 366 天。页面支持窗口增删改（同一渠道同一货币对不可配置日期与时段重叠的窗口；扣账＝交易币种或跨行日期时段重叠将拒绝）、渠道/货币对筛选、香港节假日表展示，以及渠道级模拟：资金部（所有合作方共用）＋每个配置了该货币对窗口的合作方各生成一个 PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部开窗（周一 09:05）、周六资金部关（下一窗口周一 09:00）、Wise 周末加点（55bp）、韩元超限额（FX_TICKET_LIMIT）、HKD→EUR 无渠道、同币种无需换汇六种场景。
+计算由 `C10Calculator` 供独立试算与全流程路由共用（原 `RoutingService` 内联窗口判定已迁入同一计算器，C7
+页面判断窗口开放同样复用）：按评估时间（香港时区）匹配日期（MON–SUN / HOLIDAY）与时段，多个窗口同时开放取点差合计最低；`next`
+自评估时间起最多查 366
+天。页面支持窗口增删改（同一渠道同一货币对不可配置日期与时段重叠的窗口；扣账＝交易币种或跨行日期时段重叠将拒绝）、渠道/货币对筛选、香港节假日表展示，以及渠道级模拟：资金部（所有合作方共用）＋每个配置了该货币对窗口的合作方各生成一个
+PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部开窗（周一 09:05）、周六资金部关（下一窗口周一 09:00）、Wise
+周末加点（55bp）、韩元超限额（FX_TICKET_LIMIT）、HKD→EUR 无渠道、同币种无需换汇六种场景。
 
 接口：
 
 - `GET /api/c10/windows`：返回配置 revision、窗口行 `{index, window}`、币种清单及香港节假日表。
 - `PUT /api/c10/windows`：提交 `{revision,index?,window}`；index 为空新增，有值编辑；渠道为 TREASURY 或已存在合作方。
 - `POST /api/c10/windows/delete`：提交 `{revision,index}` 删除窗口行。
-- `POST /api/c10/simulate`：提交 `{debitCurrency,paymentCurrency,amount,at}`，返回各渠道的窗口匹配、开放窗口（点差合计）、原因码与下一窗口；扣账＝交易币种返回 NONE 直接通过。
+- `POST /api/c10/simulate`：提交 `{debitCurrency,paymentCurrency,amount,at}`，返回各渠道的窗口匹配、开放窗口（点差合计）、原因码与下一窗口；扣账＝交易币种返回
+  NONE 直接通过。
 
 ## 字段库与表达式页面（独立页）
 
-原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「字段库与表达式」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方管理页内「变更记录」标签查看。
+原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`
+，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「字段库与表达式」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写
+`relay_rule_audit`），可通过 `GET /api/audit` 或合作方管理页内「变更记录」标签查看。
 
-页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2 控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入 C2 条件编辑器，停用字段从下拉消失但历史规则表达式按原样存档）。
+页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
+控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入 C2
+条件编辑器，停用字段从下拉消失但历史规则表达式按原样存档）。
 
-右侧为 AND / OR 可视化表达式试算（与 C2 监管规则触发条件共用同一编译链路）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替 C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按钮覆盖：USD 且 KG（AND 命中）、金额 ≥ 100万、PSP 或 WEB3（OR）。
+右侧为 AND / OR 可视化表达式试算（与 C2 监管规则触发条件共用同一编译链路）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
+JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
+C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按钮覆盖：USD 且 KG（AND 命中）、金额 ≥ 100万、PSP 或 WEB3（OR）。
 
 接口（均为既有接口，无后端改动）：
 
 - `GET /api/fields`：返回字段库全量（含停用）。
 - `GET /api/c2/fields`：C2 条件编辑器使用，仅 `allowedRules` 含 C2 且启用的字段。
-- `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回 `{matched,expression}`。
+- `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回
+  `{matched,expression}`。
 
-2026-11-20：纯前端抽取，151 项测试不受影响；Chrome 验证独立页加载、字段表渲染（演示种子 12 字段）、表达式命中/未命中、三个示例、首页各标签切换、九个子页导航接通。同日按演示精简需求移除侧边栏「规则审计」入口与首页「配置历史」标签页（后端审计写入与 `GET /api/audit` 保留）。
+2026-11-20：纯前端抽取，151 项测试不受影响；Chrome 验证独立页加载、字段表渲染（演示种子 12
+字段）、表达式命中/未命中、三个示例、首页各标签切换、九个子页导航接通。同日按演示精简需求移除侧边栏「规则审计」入口与首页「配置历史」标签页（后端审计写入与
+`GET /api/audit` 保留）。
