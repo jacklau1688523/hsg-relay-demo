@@ -13,6 +13,7 @@ public record RoutingConfig(Map<String,BigDecimal> hkdRates, List<Reach> reaches
   public boolean active(){return !Boolean.FALSE.equals(enabled);}
  }
  public RoutingConfig withReaches(List<Reach> rows){return new RoutingConfig(hkdRates,rows,balances,fees,fxWindows,preferences,agreements,weights,todayUsd,monthUsd,monthCount,hongKongHolidays);}
+ public RoutingConfig withBalances(List<Balance> rows){return new RoutingConfig(hkdRates,reaches,rows,fees,fxWindows,preferences,agreements,weights,todayUsd,monthUsd,monthCount,hongKongHolidays);}
  public RoutingConfig withFees(List<Fee> rows){return new RoutingConfig(hkdRates,reaches,balances,rows,fxWindows,preferences,agreements,weights,todayUsd,monthUsd,monthCount,hongKongHolidays);}
  public RoutingConfig withFxWindows(List<FxWindow> rows){return new RoutingConfig(hkdRates,reaches,balances,fees,rows,preferences,agreements,weights,todayUsd,monthUsd,monthCount,hongKongHolidays);}
  public RoutingConfig withPreferences(List<Preference> rows){return new RoutingConfig(hkdRates,reaches,balances,fees,fxWindows,rows,agreements,weights,todayUsd,monthUsd,monthCount,hongKongHolidays);}

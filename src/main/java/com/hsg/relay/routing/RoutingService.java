@@ -110,9 +110,8 @@ public class RoutingService {
     var b=c2.simulate(new C2Service.Simulation(p.code,r.paymentCurrency(),r.debitCurrency(),r.beneficiaryBankCountry(),r.beneficiaryAddressCountry(),r.beneficiaryRegion(),r.orderingCountry(),r.clientCountry(),r.intermediaryCountry(),r.purpose(),r.directorUboNationalities()),now.toLocalDateTime());check(c,"C2",b.hits().stream().map(C2Service.RuleHit::reasonCode).distinct().toList(),b);
     Reach reach=C3Matcher.select(cfg.reaches(),new C3Matcher.Input(p.code,r.paymentCurrency(),r.beneficiaryBankCountry(),r.beneficiaryRegion(),r.beneficiaryBankBic(),r.chargeOption())).map(C3Matcher.Row::reach).orElse(null);
     check(c,"C3",reach==null?List.of("NO_REACH"):List.of(),reach);
-    String account="PROVIDER".equals(venue)?r.debitCurrency():r.paymentCurrency();BigDecimal needed=amountHkd.divide(rate(cfg,account),MC);
-    Balance bal=cfg.balances().stream().filter(x->x.provider().equals(p.code)&&x.currency().equals(account)).findFirst().orElse(null);
-    check(c,"C4",p.fundingCheckEnabled&&(bal==null||bal.balance().subtract(bal.reserved()).compareTo(needed)<0)?List.of("FUNDING_SHORTFALL"):List.of(),Map.of("enabled",p.fundingCheckEnabled,"currency",account,"required",needed,"available",bal==null?BigDecimal.ZERO:bal.balance().subtract(bal.reserved())));
+    var c4=C4Calculator.check(p.code,p.fundingCheckEnabled,venue,r.paymentCurrency(),r.debitCurrency(),r.amount(),cfg.hkdRates(),cfg.balances());
+    check(c,"C4",c4.reasons(),c4);
     var c6=reach==null?null:C6Calculator.check(reach,usd,cfg.todayUsd().getOrDefault(p.code,BigDecimal.ZERO));
     check(c,"C6",reach==null?List.of():c6.reasons(),reach==null?"无覆盖行，限额不适用":c6);
     var c10=C10Calculator.check(venue,"TREASURY".equals(venue)?"TREASURY":p.code,r.debitCurrency(),r.paymentCurrency(),cfg.fxWindows(),usd,now,cfg);
