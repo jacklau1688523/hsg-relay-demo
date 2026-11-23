@@ -5,8 +5,11 @@ import com.hsg.relay.domain.*;
 import com.hsg.relay.repo.*;
 import com.hsg.relay.service.*;
 import org.springframework.http.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.*;
 import java.util.*;
 
@@ -131,6 +134,46 @@ public class RelayController {
     @GetMapping("/usage")
     public List<ProviderUsage> usage() {
         return usages.findAll();
+    }
+
+    // 演示用：模拟统计任务回填 MTD。按「合作方＋流转类别＋月份」覆盖写入，不存在则新增。
+    // 入参用 record 而不是实体：实体的 amountUsd 默认值是 0，漏传金额时会被当成 0 覆盖掉原有 MTD
+    public record UsageInput(String providerCode, String flowCategory, String monthKey, BigDecimal amountUsd) {
+    }
+
+    @PutMapping("/usage")
+    @Transactional
+    public ProviderUsage saveUsage(@RequestBody UsageInput in) {
+        if (in.providerCode() == null || !providers.existsById(in.providerCode())) throw new IllegalArgumentException("无效合作方");
+        if (in.flowCategory() == null || !List.of("STANDARD", "PSP", "WEB3").contains(in.flowCategory())) throw new IllegalArgumentException("无效流转类别");
+        if (in.monthKey() == null || !in.monthKey().matches("\\d{4}-(0[1-9]|1[0-2])")) throw new IllegalArgumentException("月份格式应为 YYYY-MM");
+        if (in.amountUsd() == null) throw new IllegalArgumentException("月累计金额不可为空");
+        if (in.amountUsd().signum() < 0) throw new IllegalArgumentException("月累计金额不可小于0");
+        ProviderUsage row = usages.findAll().stream().filter(u -> u.providerCode.equals(in.providerCode()) && u.flowCategory.equals(in.flowCategory()) && u.monthKey.equals(in.monthKey())).findFirst().orElse(new ProviderUsage(in.providerCode(), in.flowCategory(), in.monthKey(), BigDecimal.ZERO));
+        boolean created = row.id == null;
+        ProviderUsage saved;
+        try {
+            String before = created ? null : json.writeValueAsString(row);
+            row.amountUsd = in.amountUsd().setScale(2, RoundingMode.HALF_UP);
+            saved = usages.save(row);
+            audit.save(new RuleAudit("USAGE", saved.id.toString(), created ? "CREATE" : "UPDATE", "demo.operator", before, json.writeValueAsString(saved)));
+        } catch (Exception e) {
+            throw new IllegalStateException("审计写入失败", e);
+        }
+        return saved;
+    }
+
+    @DeleteMapping("/usage/{id}")
+    @Transactional
+    public Map<String, Object> deleteUsage(@PathVariable Long id) {
+        ProviderUsage row = usages.findById(id).orElseThrow(() -> new IllegalArgumentException("MTD 记录不存在"));
+        try {
+            usages.delete(row);
+            audit.save(new RuleAudit("USAGE", id.toString(), "DELETE", "demo.operator", json.writeValueAsString(row), null));
+        } catch (Exception e) {
+            throw new IllegalStateException("审计写入失败", e);
+        }
+        return Map.of("id", id, "deleted", true);
     }
 
     @GetMapping("/audit")

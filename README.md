@@ -38,6 +38,7 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - 客户排除记录和有效期检查
 - CASE_BY_CASE 个案审批及有效期检查
 - HKT 自然月 MTD 查询，C1 模拟校验，逐步骤 PASS / FAIL 和原因码
+- MTD 模拟数据页面（工具 → MTD 模拟数据）：按「合作方＋流转类别＋月份」通过 `PUT /api/usage` 覆盖月累计金额，用于演示月度上限 `APPETITE_CAP_REACHED`；无定时任务，C1 只读取香港当月记录
 - 字段库与 AND/OR 条件组 → 后端生成安全受控表达式 → AviatorScript 执行试算
 - 演示模拟不会扣减 MTD
 
@@ -88,6 +89,8 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - `POST /api/appetites/{id}/toggle`
 - `GET /api/clients`, `/api/exclusions`, `/api/approvals`, `/api/usage`, `/api/audit`, `/api/fields`
 - `POST /api/exclusions`, `POST /api/approvals`
+- `PUT /api/usage`：演示用，模拟统计任务回填 MTD。提交 `{providerCode,flowCategory,monthKey,amountUsd}`，按三者组合覆盖写入（不存在则新增），金额必填、保留两位小数并写审计
+- `DELETE /api/usage/{id}`：删除一条 MTD 记录
 - `POST /api/c1/simulate`
 - `POST /api/expression/preview`
 
@@ -100,6 +103,17 @@ curl -X POST http://localhost:8080/api/c1/simulate \
 ```
 
 将返回 `PASS`（示例数据预置了有效 PSP 个案审批）。改成 `PROV-T1` 返回 `APPETITE_EXCLUDED`。
+
+演示环境的 MTD 没有定时任务，可用 `PUT /api/usage` 直接写入来模拟（`monthKey` 须为香港当月才参与 C1 校验，下例以 2026-11 为例）：
+
+```bash
+curl -X PUT http://localhost:8080/api/usage \
+  -H 'Content-Type: application/json' \
+  -d '{"providerCode":"PROV-T1","flowCategory":"STANDARD","monthKey":"2026-11","amountUsd":9900000}'
+```
+
+之后模拟客户 `C10002` 向 `PROV-T1` 付 `150000`（STANDARD，上限 10,000,000）即返回 `APPETITE_CAP_REACHED`；改回 `1800000` 则通过。页面入口见「MTD
+模拟数据页面」一章。
 
 ## C2 REST API
 
@@ -174,7 +188,8 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 该项目为**参考 Demo，不是完整 C1–C10 支付引擎，更不是可直接投产的银行路由服务**。
 
 1. 接入真正 HSG 客户档案及分类、客户审批、合作方角色权限；本项目客户档案及审批均为本地模拟。
-2. 接入 HSG 路由 MTD 账本：按 paymentId 幂等占用，竞态时原子检查，取消释放，RERUN 排除本笔；演示数据只读。
+2. 接入 HSG 路由 MTD 账本：按 paymentId 幂等占用，竞态时原子检查，取消释放，RERUN 排除本笔；演示环境 MTD 为预置数据，仅提供 `PUT /api/usage`
+   用于模拟，不做占用/释放。
 3. 规则配置变更应采用 append-only 版本、双时间轴、发布快照和完整审计；Demo 中编辑是覆盖式更新并留审计，不适合正式审计保留要求。
 4. 加强安全：身份认证、访问控制、CSRF、表达式安全隔离与资源限制、请求限流；当前没有做这些，只供本机测试。**切勿将当前不带认证的管理
    API 暴露到公网。**
@@ -515,10 +530,10 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 - `POST /api/c10/simulate`：提交 `{debitCurrency,paymentCurrency,amount,at}`，返回各渠道的窗口匹配、开放窗口（点差合计）、原因码与下一窗口；扣账＝交易币种返回
   NONE 直接通过。
 
-## 字段库与表达式页面（独立页）
+## 元数据中心页面（独立页）
 
-原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`
-，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「字段库与表达式」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写
+原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`（页面名「元数据中心」，页内分「字段库」「表达式菜单与试算」两个页签）
+，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「元数据中心」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写
 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方管理页内「变更记录」标签查看。
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
@@ -528,6 +543,26 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 右侧为 AND / OR 可视化表达式试算（与 C2 监管规则触发条件共用同一编译链路）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
 C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按钮覆盖：USD 且 KG（AND 命中）、金额 ≥ 100万、PSP 或 WEB3（OR）。
+
+## MTD 模拟数据页面（C1 月度上限）
+
+C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方 × 流转类别 × 月份 → 月累计金额 USD）。演示环境**没有定时任务**：`DemoData`
+仅在表为空时按香港当月预置两条（PROV-T1/STANDARD 1,800,000、PROV-W/STANDARD 800,000），之后保持不变；C1 校验只读取「香港当月」的记录，命中
+设置了月度上限的 ACCEPT 规则时判断 `MTD + 本笔金额 <= 月上限`，否则返回 `APPETITE_CAP_REACHED`，模拟校验不占用 MTD。
+
+侧边栏「工具 → MTD 模拟数据」（`/mtd.html`）用于模拟统计任务回填：
+
+- 列表展示全部 MTD 记录（月份倒序），标出当月记录，并列出来自生效 ACCEPT 规则的月度上限与当月剩余额度。
+- 「调整 MTD 月累计」表单：选择合作方、流转类别、月份，填写金额后保存，即调用 `PUT /api/usage` 覆盖写入（不存在则新增），同一组合仅一行；可删除记录。输入金额时实时预览保存后的当月剩余额度。
+- 示例按钮：「接近月度上限」把当月 MTD 设为「月度上限 − 100,000」，随后到 C1 模拟一笔 150,000 即返回 `APPETITE_CAP_REACHED`；「清零」恢复余量。
+- 右侧面板按表单内容实时生成 curl 命令，可直接在终端执行。
+- C1「MTD 使用情况」页签保持只读，每行提供「调整」跳转到本页并带入该行参数（`/mtd.html?provider=..&flow=..&month=..`）。
+
+接口：`PUT /api/usage`（请求体 `{providerCode,flowCategory,monthKey,amountUsd}`；校验合作方存在、流转类别为 STANDARD/PSP/WEB3、月份格式
+`YYYY-MM`、金额必填且 ≥ 0，字段缺失或拼错一律返回 400 而不会按 0 覆盖；返回保存后的记录）和 `DELETE /api/usage/{id}`；每次写入在 `relay_rule_audit`
+记录 `USAGE` 类型的 CREATE / UPDATE / DELETE。
+
+注意：C9 商业履约使用的 MTD（协议配置中的 `monthUsd` / `monthCount`）是另一份数据，请在 C9 页面或通过 `PUT /api/c9/mtd` 调整，两者互不影响。
 
 接口（均为既有接口，无后端改动）：
 

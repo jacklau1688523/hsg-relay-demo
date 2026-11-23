@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | MTD 模拟数据</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .scorecards {
+            display: grid;
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px
+        }
+
+        .scorecard {
+            padding: 17px;
+            border: 1px solid #dae6f5;
+            border-radius: 10px;
+            background: white
+        }
+
+        .scorecard b {
+            font-size: 17px;
+            color: #155fbc;
+            display: block;
+            margin: 5px 0
+        }
+
+        .scorecard span {
+            font-size: 12px;
+            color: #708399
+        }
+
+        .mtd-grid {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 420px;
+            gap: 18px
+        }
+
+        .mtd-grid > section, .mtd-grid > aside {
+            min-width: 0
+        }
+
+        .filterbar {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap
+        }
+
+        .filterbar .field {
+            flex: 1;
+            min-width: 120px
+        }
+
+        .rulebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 14px
+        }
+
+        .tablewrap {
+            max-height: 400px
+        }
+
+        .notice {
+            line-height: 1.7
+        }
+
+        .samples {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px
+        }
+
+        .row-selected {
+            background: #edf5ff
+        }
+
+        .toplinks {
+            display: none
+        }
+
+        .neg {
+            color: #bf3b1f;
+            font-weight: 700
+        }
+
+        .mono {
+            font-family: ui-monospace, Menlo, monospace;
+            font-size: 12px
+        }
+
+        .code {
+            font-family: ui-monospace, Menlo, monospace;
+            line-height: 1.7;
+            margin-top: 6px
+        }
+
+        .flowlist {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+            line-height: 1.7;
+            color: #355173
+        }
+
+        .flowlist li {
+            margin-bottom: 6px
+        }
+
+        #formPanel {
+            scroll-margin-top: 16px
+        }
+
+        @media (max-width: 1350px) {
+            .mtd-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+
+            .rightPanel {
+                position: static
+            }
+        }
+
+        @media (max-width: 850px) {
+            .toplinks {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 16px
+            }
+
+            .toplinks a {
+                font-size: 13px
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 元数据中心</div>
+        <div class="nav sel">◷ &nbsp; MTD 模拟数据</div>
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/">C1 业务准入</a><a href="/c9.html">C9 商业履约</a><a
+                    href="/routing.html">全流程 Check</a></div>
+            <div class="heading"><h1>MTD 模拟数据</h1>
+                <div class="muted">维护 C1 业务准入使用的「合作方 × 流转类别 × 月份」MTD 月累计使用金额（USD）。真实环境由交易统计定时回填；演示环境没有定时任务，数据在首次启动时预置，可在本页通过
+                    PUT /api/usage 覆盖写入来模拟。
+                </div>
+            </div>
+            <div class="scorecards">
+                <div class="scorecard"><span>数据来源</span><b>无定时任务 · 预置数据</b><span>首次启动写入当月两条（PROV-T1
+                    1,800,000 / PROV-W 800,000 USD），之后保持不变，除非在本页或通过接口写入</span></div>
+                <div class="scorecard"><span>C1 读取规则</span><b>只读香港当月的记录</b><span>按「合作方＋流转类别＋当月」汇总
+                    MTD；其他月份的记录不参与校验</span></div>
+                <div class="scorecard"><span>月度上限判定</span><b>MTD ＋ 本笔 ＞ 上限 → 拒绝</b><span>命中设置了月度上限的
+                    ACCEPT 规则时校验，不通过返回 <span class="mono">APPETITE_CAP_REACHED</span>；模拟校验不占用 MTD</span></div>
+            </div>
+            <div class="tabs">
+                <button class="tab sel">C1 月累计使用情况（MTD）</button>
+                <span class="muted" id="hkMonth" style="align-self:center"></span></div>
+            <div id="pageError" class="err" role="alert"></div>
+            <div class="mtd-grid">
+                <section>
+                    <div class="panel">
+                        <div class="filterbar">
+                            <div class="field"><label for="filterProvider">合作方</label><select
+                                    id="filterProvider"></select></div>
+                            <div class="field"><label for="filterFlow">流转类别</label><select id="filterFlow">
+                                <option value="">全部</option>
+                                <option value="STANDARD">STANDARD</option>
+                                <option value="PSP">PSP</option>
+                                <option value="WEB3">WEB3</option>
+                            </select></div>
+                            <button class="btn" id="query">查询</button>
+                            <button class="btn secondary" id="refresh">↻ 刷新</button>
+                        </div>
+                    </div>
+                    <div class="panel">
+                        <div class="rulebar"><h2 id="rowCount" style="margin:0">MTD 月累计使用情况</h2><span
+                                class="muted">同一合作方＋流转类别＋月份仅一行；「当月」记录参与 C1 月度上限校验</span></div>
+                        <div class="tablewrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>合作方</th>
+                                    <th>流转类别</th>
+                                    <th>月份（HKT）</th>
+                                    <th>月累计金额 USD</th>
+                                    <th>月度上限 USD</th>
+                                    <th>当月剩余额度</th>
+                                    <th>操作</th>
+                                </tr>
+                                </thead>
+                                <tbody id="rows"></tbody>
+                            </table>
+                        </div>
+                        <div class="notice">月度上限取自 <a href="/">C1 业务准入</a>「准入规则配置」中生效的 ACCEPT
+                            规则（按合作方＋流转类别；实际命中哪条规则还取决于币种与受益行国家，多条上限不同时取最低值）；当月剩余额度＝上限 − MTD，仅当月记录显示。
+                        </div>
+                    </div>
+                    <div class="panel" id="formPanel">
+                        <div class="rulebar"><h2 id="formTitle" style="margin:0">调整 MTD 月累计（演示输入）</h2><span
+                                class="badge pending">仅影响 C1 模拟校验</span></div>
+                        <form id="mtdForm">
+                            <div class="layout3" style="margin-top:16px">
+                                <div class="field"><label for="mtdProvider">合作方 *</label><select
+                                        id="mtdProvider"></select></div>
+                                <div class="field"><label for="mtdFlow">流转类别 *</label><select id="mtdFlow">
+                                    <option value="STANDARD">STANDARD · 标准流转</option>
+                                    <option value="PSP">PSP</option>
+                                    <option value="WEB3">WEB3</option>
+                                </select></div>
+                                <div class="field"><label for="mtdMonth">月份（HKT）*</label><input id="mtdMonth"
+                                                                                               type="month"
+                                                                                               required></div>
+                                <div class="field"><label for="mtdAmount">月累计金额 USD *（覆盖写入）</label><input
+                                        id="mtdAmount" type="number" min="0" step="0.01" required></div>
+                            </div>
+                            <div class="muted" id="formHint"></div>
+                            <div class="samples">
+                                <button type="button" class="btn secondary tiny" data-sample="near">示例：接近月度上限（设为当月，下一笔即超限）
+                                </button>
+                                <button type="button" class="btn secondary tiny" data-sample="zero">示例：清零</button>
+                            </div>
+                            <div class="err" id="mtdError" role="alert"></div>
+                            <div class="good" id="mtdGood" role="status"></div>
+                            <div class="actions" style="margin-top:16px">
+                                <button class="btn" id="mtdSave" type="submit">保存 MTD（PUT /api/usage）</button>
+                                <button class="btn secondary" id="mtdDelete" type="button">删除此行</button>
+                                <button class="btn secondary" id="mtdCancel" type="button">重置</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+                <aside class="rightPanel">
+                    <div class="panel">
+                        <div class="ptitle">接口调用示例</div>
+                        <div class="muted">随左侧表单实时生成，可直接在终端执行，效果与页面「保存 MTD」相同。</div>
+                        <div class="code" id="curlPut"></div>
+                        <div class="muted" style="margin-top:12px">删除一条记录（按 id）：</div>
+                        <div class="code" id="curlDelete"></div>
+                        <div class="muted" style="margin-top:12px">查询全部：</div>
+                        <div class="code" id="curlGet"></div>
+                    </div>
+                    <div class="panel">
+                        <div class="ptitle">C1 如何使用 MTD</div>
+                        <ol class="flowlist">
+                            <li>客户分类为 COMPLETE，且未命中该合作方的客户排除记录。</li>
+                            <li>按「合作方＋流转类别＋币种＋受益行国家」匹配有效期内的准入规则，无匹配返回 <span
+                                    class="mono">APPETITE_NOT_SET</span>。
+                            <li>动作为 ACCEPT 且规则设置了月度上限时：取该合作方、该流转类别、<b>香港当月</b>的 MTD，若「MTD
+                                ＋ 本笔金额 ＞ 月上限」返回 <span class="mono">APPETITE_CAP_REACHED</span>。
+                            <li>模拟校验只读取 MTD，不扣减；月度上限在 C1「准入规则配置」里维护。</li>
+                        </ol>
+                        <div class="notice">到 <a href="/">C1 业务准入</a> 右侧「C1 规则模拟校验」验证效果：示例数据下把
+                            PROV-T1 / STANDARD 的当月 MTD 调到 9,900,000，再模拟一笔 150,000 即返回 <span
+                                    class="mono">APPETITE_CAP_REACHED</span>（上限 10,000,000）。<br>C9 商业履约使用的是另一份
+                            MTD（协议配置中的月累计金额 / 笔数），请到 <a href="/c9.html">C9 商业履约</a> 页面调整，两者互不影响。
+                        </div>
+                    </div>
+                </aside>
+            </div>
+            <div class="footer">HSG RELAY · MTD 模拟数据 · 演示环境</div>
+        </div>
+    </main>
+</div>
+<script src="/mtd.js"></script>
+</body>
+</html>

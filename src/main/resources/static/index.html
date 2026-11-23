@@ -506,7 +506,8 @@
         <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
         <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
         <div class="navhead">工具</div>
-        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 字段库与表达式</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 元数据中心</div>
+        <div class="nav" onclick="location.href='/mtd.html'">◷ &nbsp; MTD 模拟数据</div>
     </aside>
     <main class="main">
         <div class="top">
@@ -641,7 +642,8 @@
                         </div>
                     </div>
                     <div id="usageView" class="hidden">
-                        <div class="panel"><h2>MTD 月累计使用情况</h2>
+                        <div class="panel"><div class="rowbetween"><h2>MTD 月累计使用情况</h2>
+                            <a href="/mtd.html">调整 / 模拟 MTD ↗</a></div>
                             <div class="tablewrap">
                                 <table>
                                     <thead>
@@ -650,13 +652,15 @@
                                         <th>流转类别</th>
                                         <th>月份（HKT）</th>
                                         <th>累计金额 USD</th>
+                                        <th>操作</th>
                                     </tr>
                                     </thead>
                                     <tbody id="usageRows"></tbody>
                                 </table>
                             </div>
                             <div class="notice warn">演示环境的 MTD
-                                为预置只读数据，模拟校验不写入占用。真实生产环境需对接路由已占用统计及事务原子占用/释放机制。
+                                为预置数据（没有定时任务，首次启动按当月写入），C1 只读取香港当月的记录，模拟校验不写入占用。需要模拟时可通过「工具 → MTD 模拟数据」页面或
+                                PUT /api/usage 调整。真实生产环境需对接路由已占用统计及事务原子占用/释放机制。
                             </div>
                         </div>
                     </div>
@@ -855,7 +859,10 @@
 
     async function loadUsage() {
         let data = await api('/usage');
-        $('usageRows').innerHTML = data.map(x => `<tr><td>${esc(x.providerCode)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)}</td><td>${Number(x.amountUsd).toLocaleString('en-US')}</td></tr>`).join('');
+        // 香港当月（HKT 固定 UTC+8）：只有当月记录参与 C1 月度上限校验
+        let month = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
+        let sorted = data.slice().sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.providerCode.localeCompare(b.providerCode) || a.flowCategory.localeCompare(b.flowCategory));
+        $('usageRows').innerHTML = sorted.map(x => `<tr><td>${esc(x.providerCode)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)} ${x.monthKey === month ? '<span class="badge pass">当月</span>' : '<span class="muted">不参与校验</span>'}</td><td>${Number(x.amountUsd).toLocaleString('en-US')}</td><td><a href="/mtd.html?provider=${encodeURIComponent(x.providerCode)}&flow=${encodeURIComponent(x.flowCategory)}&month=${encodeURIComponent(x.monthKey)}">调整</a></td></tr>`).join('') || '<tr><td colspan="5">暂无 MTD 记录，可到「工具 → MTD 模拟数据」新增。</td></tr>';
     }
 
     async function simulate() {
