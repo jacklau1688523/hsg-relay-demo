@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | 合作方详情</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .detail-intro {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            flex-wrap: wrap
+        }
+
+        .profile {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 18px;
+            flex-wrap: wrap
+        }
+
+        .profile-code {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: .3px
+        }
+
+        .profile-name {
+            font-size: 14px;
+            color: #53708e;
+            margin-top: 3px
+        }
+
+        .badges {
+            display: flex;
+            gap: 7px;
+            flex-wrap: wrap;
+            margin-top: 11px
+        }
+
+        .badges .badge {
+            margin: 0
+        }
+
+        .badge.neutral {
+            color: #355173;
+            background: #f3f7fd;
+            border-color: #cdd8e7
+        }
+
+        .facts {
+            display: flex;
+            gap: 28px;
+            flex-wrap: wrap
+        }
+
+        .fact span {
+            display: block;
+            font-size: 12px;
+            color: #748298
+        }
+
+        .fact b {
+            font-size: 15px
+        }
+
+        .provider-grid {
+            display: grid;
+            grid-template-columns:minmax(0, 1fr) 330px;
+            gap: 18px
+        }
+
+        .provider-grid > section, .provider-grid > aside {
+            min-width: 0
+        }
+
+        .panel > .tabs {
+            margin-top: 0
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns:repeat(2, minmax(0, 1fr));
+            gap: 0 30px
+        }
+
+        .info {
+            display: grid;
+            grid-template-columns:132px minmax(0, 1fr);
+            gap: 10px;
+            padding: 11px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px;
+            min-width: 0;
+            align-items: baseline
+        }
+
+        .info > span {
+            color: #748298;
+            font-size: 12px
+        }
+
+        .info > b {
+            font-weight: 600;
+            word-break: break-word
+        }
+
+        .tag-grid {
+            display: flex;
+            gap: 9px;
+            flex-wrap: wrap
+        }
+
+        .chip {
+            display: inline-block;
+            font-size: 12px;
+            padding: 5px 9px;
+            background: #f5f8fc;
+            border: 1px solid #d7e2ef;
+            border-radius: 6px;
+            color: #243b59
+        }
+
+        .rulebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 15px
+        }
+
+        .checkrow {
+            padding: 12px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px
+        }
+
+        .checkrow small {
+            display: block;
+            color: #748298;
+            font-size: 12px;
+            margin: 6px 0 0 20px
+        }
+
+        .subheading {
+            font-weight: 700;
+            font-size: 13px;
+            margin: 19px 0 12px
+        }
+
+        .code {
+            max-height: 300px;
+            overflow: auto
+        }
+
+        .toplinks {
+            display: none
+        }
+
+        .notice {
+            line-height: 1.6
+        }
+
+        .pageerror {
+            font-size: 13px;
+            padding: 12px 0 4px
+        }
+
+        summary {
+            cursor: pointer
+        }
+
+        a.btn {
+            display: inline-block;
+            margin: 0
+        }
+
+        @media (max-width: 1250px) {
+            .provider-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+
+            .rightPanel {
+                position: static
+            }
+        }
+
+        @media (max-width: 850px) {
+            .toplinks {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 12px
+            }
+
+            .toplinks a {
+                font-size: 13px
+            }
+
+            .info-grid {
+                grid-template-columns:minmax(0, 1fr)
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav sel" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 元数据中心</div>
+        <div class="nav" onclick="location.href='/mtd.html'">◷ &nbsp; MTD 模拟数据</div>
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">行方管理 · 演示环境 · HKT</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/providers.html">← 合作方管理</a></div>
+            <div class="heading detail-intro">
+                <div><h1>合作方详情</h1>
+                    <div class="muted">只读展示单个合作方的基础资料、关联配置、合作方限制和变更记录。修改基础资料请点「编辑合作方」；新增
+                        / 编辑 / 启停合作方限制在编辑面板的「合作方限制」页签操作。
+                    </div>
+                </div>
+                <div class="actions">
+                    <a class="btn secondary" href="/providers.html">← 返回合作方管理</a>
+                    <a class="btn" id="edit" href="/providers.html" style="display:none">编辑合作方</a>
+                    <a class="btn secondary" id="simulate" href="/routing.html" style="display:none">模拟测试</a>
+                    <button type="button" class="btn secondary" id="refresh">↻ 刷新</button>
+                </div>
+            </div>
+            <div class="err pageerror" id="pageError" role="alert"></div>
+            <p class="muted" id="loading" hidden>正在加载…</p>
+            <div id="detail" class="hidden">
+                <div class="panel" id="profile"></div>
+                <div class="provider-grid">
+                    <section>
+                        <div class="panel">
+                            <div class="tabs">
+                                <button type="button" class="tab sel" data-tab="base">基础信息</button>
+                                <button type="button" class="tab" data-tab="related">关联配置</button>
+                                <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
+                                <button type="button" class="tab" data-tab="audit">变更记录</button>
+                            </div>
+                            <div id="baseView"></div>
+                            <div id="relatedView" class="hidden"></div>
+                            <div id="restrictionsView" class="hidden"></div>
+                            <div id="auditView" class="hidden"></div>
+                        </div>
+                    </section>
+                    <aside class="rightPanel">
+                        <div class="panel">
+                            <div class="ptitle">上线准备检查</div>
+                            <div id="readiness"></div>
+                            <div class="notice warn">合作方保存为 LIVE
+                                前，须具备业务覆盖、手续费、有效准入行、往来账号及总账编码。SWIFT 通道还须填写 BIC。
+                            </div>
+                            <div class="actions" style="margin-top:14px"><a href="/">C1 业务准入 ↗</a><a
+                                    href="/c2.html">C2 合规限制 ↗</a><a href="/c3.html">C3 业务覆盖 ↗</a><a
+                                    href="/routing.html#configPanel">费用参考配置 ↗</a></div>
+                        </div>
+                        <div class="panel"><h2>准入复核</h2>
+                            <div id="reviewInfo" class="notice"></div>
+                            <p class="muted" style="line-height:1.6">
+                                复核日期前30天显示临期提醒，过期显示逾期。当前演示按香港日期计算提示；通知发送和负责人目录尚未接入。</p>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+            <div class="footer">HSG RELAY · 合作方详情 · 非生产环境</div>
+        </div>
+    </main>
+</div>
+<script src="/provider-common.js"></script>
+<script src="/provider-detail.js"></script>
+</body>
+</html>

@@ -243,14 +243,12 @@
             <div class="provider-grid">
                 <section>
                     <div class="panel" id="editor">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增合作方</h2><span id="version"
-                                                                                                      class="muted"></span>
+                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增合作方</h2><span id="version" style="margin-left:auto"
+                                                                                                      class="muted"></span><a id="detailLink" href="#" style="display:none;margin:0">查看详情 ↗</a>
                         </div>
                         <div class="tabs">
                             <button type="button" class="tab sel" data-tab="base">基础信息</button>
-                            <button type="button" class="tab" data-tab="related">关联配置</button>
                             <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
-                            <button type="button" class="tab" data-tab="audit">变更记录</button>
                         </div>
                         <div id="baseView">
                             <form id="providerForm">
@@ -309,9 +307,7 @@
                                        style="margin:0">模拟测试</a></div>
                             </form>
                         </div>
-                        <div id="relatedView" class="hidden"></div>
                         <div id="restrictionsView" class="hidden"></div>
-                        <div id="auditView" class="hidden"></div>
                     </div>
                 </section>
                 <aside class="rightPanel">
@@ -336,6 +332,7 @@
         </div>
     </main>
 </div>
+<script src="/provider-common.js"></script>
 <script src="/providers.js"></script>
 </body>
 </html>
