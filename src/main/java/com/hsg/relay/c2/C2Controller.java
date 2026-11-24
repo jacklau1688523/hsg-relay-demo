@@ -47,6 +47,18 @@ public class C2Controller {
         return service.toggleRegulatory(id);
     }
 
+    /** 只按字段库校验附加触发条件并返回编译后的表达式 `{expression}`，不保存。 */
+    @PostMapping("/regulatory-rules/compile")
+    public Map<String, String> compileTrigger(@RequestBody C2Service.TriggerConditionInput body) {
+        return Map.of("expression", service.compileTrigger(body == null ? null : body.tree()));
+    }
+
+    /** 保存监管规则的附加触发条件：`{enabled, tree, versionNo?}`；`enabled=false` 清除条件。范围和能力标签不变。 */
+    @PutMapping("/regulatory-rules/{id}/condition")
+    public C2Service.RegulatoryView saveTrigger(@PathVariable String id, @RequestBody C2Service.TriggerConditionInput body) {
+        return service.saveTriggerCondition(id, body);
+    }
+
     @DeleteMapping("/regulatory-rules/{id}")
     public void delete(@PathVariable String id, @RequestParam Integer versionNo) {
         service.deleteRegulatory(id, versionNo);

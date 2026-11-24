@@ -111,6 +111,21 @@
     white-space: normal
 }
 
+/* 列表名称下方的附加触发条件标识（条件本身在 C2 模拟页配置）；条件较长时在名称列内换行，标识和链接不拆行 */
+.c2-trigger {
+    margin-top: 4px;
+    font-size: 11px;
+    white-space: normal
+}
+
+.c2-trigger .badge, .c2-trigger a, .c2-trigger-line a {
+    white-space: nowrap
+}
+
+.c2-trigger-line {
+    margin-bottom: 8px
+}
+
 /* 当前载入表单的那条规则 */
 .row-selected td {
     background: #edf5ff

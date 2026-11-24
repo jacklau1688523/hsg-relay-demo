@@ -62,9 +62,42 @@ class SchemaRestartTest {
         }
     }
 
+    @Test
+    void existingRegulatoryRuleTableGainsTheTriggerColumnWithoutLosingData() throws Exception {
+        String url = "jdbc:h2:file:" + dir.resolve("regulatory_upgrade")
+                + ";MODE=MySQL;DATABASE_TO_UPPER=false;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
+        // 本次升级前的 relay_regulatory_rule：没有附加触发条件列，带一条已保存的规则
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement()) {
+            stmt.execute("CREATE TABLE relay_regulatory_rule (rule_id VARCHAR(48) PRIMARY KEY,rule_name VARCHAR(140) NOT NULL,"
+                    + "rule_code VARCHAR(10) NOT NULL DEFAULT 'C2',scope VARCHAR(16) NOT NULL DEFAULT 'GLOBAL',"
+                    + "condition_json CLOB NOT NULL,required_tags_json CLOB NOT NULL,"
+                    + "reason_code VARCHAR(32) NOT NULL DEFAULT 'REG_RULE_NOT_MET',enabled BOOLEAN NOT NULL DEFAULT TRUE,"
+                    + "version_no INT NOT NULL DEFAULT 1,effective_from TIMESTAMP NOT NULL,effective_to TIMESTAMP NULL,remark VARCHAR(400))");
+            stmt.execute("INSERT INTO relay_regulatory_rule (rule_id,rule_name,condition_json,required_tags_json,effective_from) "
+                    + "VALUES ('REG-OLD','升级前保存的规则','{\"operator\":\"AND\",\"children\":[]}','[\"SWIFT\"]',TIMESTAMP '2025-10-01 00:00:00')");
+        }
+        updateSchema(url, com.hsg.relay.c2.RegulatoryRule.class);
+        // 再次启动：列已存在，不重复处理也不报错
+        updateSchema(url, com.hsg.relay.c2.RegulatoryRule.class);
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement();
+             var rs = stmt.executeQuery("SELECT rule_name,version_no,enabled,trigger_condition_json FROM relay_regulatory_rule")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("rule_name")).isEqualTo("升级前保存的规则");
+            assertThat(rs.getInt("version_no")).isEqualTo(1);
+            assertThat(rs.getBoolean("enabled")).isTrue();
+            assertThat(rs.getString("trigger_condition_json")).as("旧规则没有附加触发条件").isNull();
+            assertThat(rs.next()).isFalse();
+        }
+    }
+
     private void updateSchema(String url) {
-        var cfg = new Configuration().addAnnotatedClass(ProviderRestriction.class)
-                .setPhysicalNamingStrategy(new CamelCaseToUnderscoresNamingStrategy())
+        updateSchema(url, ProviderRestriction.class);
+    }
+
+    private void updateSchema(String url, Class<?>... entities) {
+        Configuration cfg = new Configuration();
+        for (Class<?> entity : entities) cfg.addAnnotatedClass(entity);
+        cfg.setPhysicalNamingStrategy(new CamelCaseToUnderscoresNamingStrategy())
                 .setProperty("hibernate.connection.driver_class", "org.h2.Driver")
                 .setProperty("hibernate.connection.url", url).setProperty("hibernate.connection.username", "sa")
                 .setProperty("hibernate.hbm2ddl.auto", "update")

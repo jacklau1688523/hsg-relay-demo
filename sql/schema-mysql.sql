@@ -264,6 +264,8 @@ CREATE TABLE IF NOT EXISTS relay_rule_audit
 -- C2: GLOBAL 监管路由规则。condition_json 为适用范围的标准条件树：
 --   {"operator":"AND","children":[{"field":"paymentCurrency","operator":"EQ","value":"CNY"},{"field":"beneficiaryBankCountry","operator":"EQ","value":"CN"}]}
 --   受益行国家不限（ALL）时只有币种一个叶子；required_tags_json 为要求的能力标签 JSON 数组
+-- trigger_condition_json 为可选的附加触发条件：按字段库构建的条件树（条件组 {logic,children}，叶子 {field,operator,value}，
+--   形态同 relay_appetite.condition_json）；为空表示落在范围内的交易一律触发
 CREATE TABLE IF NOT EXISTS relay_regulatory_rule
 (
     rule_id
@@ -285,6 +287,7 @@ CREATE TABLE IF NOT EXISTS relay_regulatory_rule
 ) NOT NULL DEFAULT 'GLOBAL',
     condition_json LONGTEXT NOT NULL,
     required_tags_json LONGTEXT NOT NULL,
+    trigger_condition_json LONGTEXT NULL,
     reason_code VARCHAR
 (
     32
@@ -314,6 +317,12 @@ CREATE TABLE IF NOT EXISTS relay_regulatory_rule
     JSON_VALID
 (
     required_tags_json
+)),
+    CHECK
+(
+    JSON_VALID
+(
+    trigger_condition_json
 ))
     ) ENGINE=InnoDB;
 

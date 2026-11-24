@@ -8,6 +8,7 @@ import com.hsg.relay.domain.RuleAudit;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.ProviderRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import com.hsg.relay.service.ExpressionService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,11 +26,13 @@ public class C2Service {
     private final FieldDefinitionRepository fieldRepo;
     private final RuleAuditRepository auditRepo;
     private final C2ExpressionCompiler compiler;
+    private final ExpressionService expressions;
     private final ObjectMapper mapper;
 
     public C2Service(RegulatoryRuleRepository regulatoryRepo, ProviderRestrictionRepository restrictionRepo,
                      ProviderCapabilityRepository capabilityRepo, CapabilityTagRepository tagRepo, ProviderRepository providerRepo,
-                     FieldDefinitionRepository fieldRepo, RuleAuditRepository auditRepo, C2ExpressionCompiler compiler, ObjectMapper mapper) {
+                     FieldDefinitionRepository fieldRepo, RuleAuditRepository auditRepo, C2ExpressionCompiler compiler,
+                     ExpressionService expressions, ObjectMapper mapper) {
         this.regulatoryRepo = regulatoryRepo;
         this.restrictionRepo = restrictionRepo;
         this.capabilityRepo = capabilityRepo;
@@ -38,6 +41,7 @@ public class C2Service {
         this.fieldRepo = fieldRepo;
         this.auditRepo = auditRepo;
         this.compiler = compiler;
+        this.expressions = expressions;
         this.mapper = mapper;
     }
 
@@ -56,11 +60,17 @@ public class C2Service {
     /**
      * legacy=true 表示这条规则仍带着旧版页面保存的自由条件树：照原条件执行，但无法用「币种 + 受益行国家」表达，
      * 在页面重新保存后转为标准形态。
+     * triggerCondition / triggerText 为附加触发条件（按字段库构建，未配置时为 null）；triggerProblem 是该条件按当前字段库不能执行的原因（可执行时为 null）。
      */
     public record RegulatoryView(String ruleId, String ruleName, String ruleCode, String scope, String currency, String bankCountry,
-                                 boolean legacy, String conditionText, JsonNode condition, Requirement requirement,
-                                 FailureAction onFailure, boolean enabled, int versionNo, LocalDateTime effectiveFrom,
-                                 LocalDateTime effectiveTo, String remark) {
+                                 boolean legacy, String conditionText, JsonNode condition,
+                                 JsonNode triggerCondition, String triggerText, String triggerProblem,
+                                 Requirement requirement, FailureAction onFailure, boolean enabled, int versionNo,
+                                 LocalDateTime effectiveFrom, LocalDateTime effectiveTo, String remark) {
+    }
+
+    /** 附加触发条件的保存请求：enabled 缺省或为 true 时保存 tree，enabled=false 清除；versionNo 可选，带上时须与规则当前版本一致。 */
+    public record TriggerConditionInput(ExpressionService.Node tree, Boolean enabled, Integer versionNo) {
     }
 
     public record RegulatoryOptions(List<String> currencies, List<RegulatoryScope.Country> countries, List<CapabilityTag> tags) {
@@ -74,18 +84,31 @@ public class C2Service {
     public record CapabilitiesInput(List<String> tags) {
     }
 
+    /** variables：附加触发条件字段的取值（字段编码 → 值）。九个固定交易要素以同名字段为准，不接受 variables 覆盖。 */
     public record Simulation(String providerCode, String paymentCurrency, String debitCurrency,
                              String beneficiaryBankCountry, String beneficiaryAddressCountry, String beneficiaryRegion,
                              String orderingCountry, String clientCountry, String intermediaryCountry, String purpose,
-                             List<String> directorUboNationalities) {
+                             List<String> directorUboNationalities, Map<String, Object> variables) {
+        public Simulation(String providerCode, String paymentCurrency, String debitCurrency,
+                          String beneficiaryBankCountry, String beneficiaryAddressCountry, String beneficiaryRegion,
+                          String orderingCountry, String clientCountry, String intermediaryCountry, String purpose,
+                          List<String> directorUboNationalities) {
+            this(providerCode, paymentCurrency, debitCurrency, beneficiaryBankCountry, beneficiaryAddressCountry, beneficiaryRegion,
+                    orderingCountry, clientCountry, intermediaryCountry, purpose, directorUboNationalities, null);
+        }
     }
 
     public record RuleHit(int order, String ruleId, String restrictionType, String reasonCode, String field,
                           String detail) {
     }
 
-    /** condition 为规则的适用范围（或旧版条件树摘要）；expression 仅旧版规则才有，是其编译后的 AviatorScript。 */
-    public record RegulatoryCheck(String ruleId, boolean triggered, List<String> missingTags, String condition, String expression) {
+    /**
+     * condition 为规则的适用范围（或旧版条件树摘要）；expression 仅旧版规则才有，是其编译后的 AviatorScript。
+     * triggerCondition / triggerExpression 为附加触发条件的摘要和编译后的表达式（未配置或未能求值时为 null）；
+     * note 说明附加条件缺值（按未触发）或失效（按触发）时的处理。
+     */
+    public record RegulatoryCheck(String ruleId, boolean triggered, List<String> missingTags, String condition, String expression,
+                                  String triggerCondition, String triggerExpression, String note) {
     }
 
     public record Result(boolean passed, String reasonCode, List<RuleHit> hits, List<RegulatoryCheck> regulatoryChecks,
@@ -168,11 +191,14 @@ public class C2Service {
             List<String> tags = Arrays.asList(mapper.readValue(rule.requiredTagsJson, String[].class));
             JsonNode condition = parse(rule.conditionJson);
             RegulatoryScope.Scope scope = RegulatoryScope.of(condition);
+            ExpressionService.Node trigger = RegulatoryTrigger.parse(rule.triggerConditionJson, mapper);
             return new RegulatoryView(rule.ruleId, rule.ruleName, rule.ruleCode, rule.scope,
                     scope == null ? null : scope.currency(), scope == null ? null : scope.bankCountry(), scope == null,
                     scope == null ? RegulatoryScope.legacyText(condition)
                             : RegulatoryScope.text(scope.currency(), scope.bankCountry()),
-                    condition, new Requirement("PROVIDER_CAPABILITY", tags), new FailureAction(rule.reasonCode), rule.enabled,
+                    condition, trigger == null ? null : mapper.valueToTree(trigger), RegulatoryTrigger.text(trigger),
+                    RegulatoryTrigger.problem(trigger, expressions),
+                    new Requirement("PROVIDER_CAPABILITY", tags), new FailureAction(rule.reasonCode), rule.enabled,
                     rule.versionNo, rule.effectiveFrom, rule.effectiveTo, rule.remark);
         } catch (Exception e) {
             throw new IllegalStateException("监管规则数据无法解析: " + rule.ruleId, e);
@@ -202,6 +228,35 @@ public class C2Service {
         rule.remark = in.remark();
         RegulatoryView saved = view(regulatoryRepo.save(rule));
         audit("REGULATORY", rule.ruleId, creating ? "CREATE" : "UPDATE", before, saved);
+        return saved;
+    }
+
+    /** 按字段库校验附加触发条件并返回编译后的表达式，不保存。 */
+    public String compileTrigger(ExpressionService.Node tree) {
+        return expressions.compile(tree, "C2");
+    }
+
+    /**
+     * 保存监管规则的附加触发条件：范围（币种 + 受益行国家）和能力标签不变。
+     * 保存前按元数据中心校验；不通过返回 400，规则不变。
+     */
+    @Transactional
+    public RegulatoryView saveTriggerCondition(String id, TriggerConditionInput in) {
+        RegulatoryRule rule = regulatoryRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("规则不存在"));
+        if (in == null) throw new IllegalArgumentException("条件不能为空");
+        if (in.versionNo() != null && rule.versionNo != in.versionNo())
+            throw new IllegalArgumentException("规则版本已变化，请刷新后重试");
+        String before = encode(view(rule));
+        if (Boolean.FALSE.equals(in.enabled())) rule.triggerConditionJson = null;
+        else {
+            compileTrigger(in.tree());
+            String conditionJson = encode(in.tree());
+            if (conditionJson.length() > 12000) throw new IllegalArgumentException("附加触发条件过长");
+            rule.triggerConditionJson = conditionJson;
+        }
+        rule.versionNo++;
+        RegulatoryView saved = view(regulatoryRepo.save(rule));
+        audit("REGULATORY", rule.ruleId, "UPDATE_CONDITION", before, saved);
         return saved;
     }
 
@@ -367,6 +422,8 @@ public class C2Service {
             }
         }
         Map<String, Object> variables = new HashMap<>();
+        // 附加触发条件字段的取值；九个固定交易要素以模拟请求为准，不接受 variables 覆盖
+        if (req.variables() != null) variables.putAll(req.variables());
         variables.put("paymentCurrency", req.paymentCurrency());
         variables.put("debitCurrency", req.debitCurrency());
         variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
@@ -388,13 +445,23 @@ public class C2Service {
                 triggered = compiler.evaluate(view.condition(), variables);
             } else
                 triggered = RegulatoryScope.matches(view.currency(), view.bankCountry(), req.paymentCurrency(), req.beneficiaryBankCountry());
+            // 范围命中后，配置了附加触发条件的规则还须附加条件命中才触发
+            String triggerExpression = null, note = null;
+            if (triggered && view.triggerCondition() != null) {
+                RegulatoryTrigger.Outcome outcome = RegulatoryTrigger.evaluate(
+                        RegulatoryTrigger.parse(rule.triggerConditionJson, mapper), variables, expressions);
+                triggered = outcome.matched();
+                triggerExpression = outcome.expression();
+                note = outcome.note();
+            }
             List<String> missing = triggered ? view.requirement().requiredTags().stream().filter(tag -> !capabilities.contains(tag)).toList() : List.of();
-            checks.add(new RegulatoryCheck(rule.ruleId, triggered, missing, view.conditionText(), expression));
+            checks.add(new RegulatoryCheck(rule.ruleId, triggered, missing, view.conditionText(), expression,
+                    view.triggerText(), triggerExpression, note));
             if (!missing.isEmpty()) hits.add(new RuleHit(8, rule.ruleId, "REGULATORY", "REG_RULE_NOT_MET",
                     "providerCapabilities", "监管规则命中，缺少能力标签：" + String.join(",", missing)));
         }
         hits.sort(Comparator.comparingInt(RuleHit::order).thenComparing(RuleHit::ruleId));
         return new Result(hits.isEmpty(), hits.isEmpty() ? "PASS" : hits.get(0).reasonCode(), List.copyOf(hits), checks, capabilities,
-                "仅模拟 C2；不代表通过 C1、C3/C4/C6/C10。未填写的可选字段按未命中处理。");
+                "仅模拟 C2；不代表通过 C1、C3/C4/C6/C10。未填写的可选字段按未命中处理；监管规则的附加触发条件引用的字段没有取值时，该规则按未触发处理。");
     }
 }

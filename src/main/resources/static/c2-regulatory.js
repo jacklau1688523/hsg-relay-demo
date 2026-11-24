@@ -18,7 +18,7 @@ const c2Api = async (path, opt = {}) => {
 };
 const c2State = {
     currencies: [], countries: [], tags: [], rules: [], requiredTags: [],
-    editingId: null, regVersion: null, legacyCondition: null
+    editingId: null, regVersion: null, legacyCondition: null, triggerRule: null
 };
 
 function c2CountryLabel(code) {
@@ -74,7 +74,11 @@ function c2RenderPreview() {
         : `${scope}：<span class="c2-warn">尚未选择能力标签，保存前至少勾选一项。</span>`;
     const legacy = c2State.legacyCondition ? `<div class="c2-legacy">该规则由旧版条件树创建，当前仍按原条件执行：<span class="mono">${c2Esc(c2State.legacyCondition)}</span>。
   请核对下方范围后保存，保存后改为按「币种 + 受益行国家」执行。</div>` : '';
-    c2$('c2RegPreview').innerHTML = legacy + `<div>${body}</div>`;
+    // 附加触发条件在 C2 模拟页左侧按字段库配置；这里只提示它存在（保存本表单不会改动它）
+    const triggerRule = c2State.triggerRule;
+    const trigger = triggerRule?.triggerCondition ? `<div class="c2-trigger-line">附加触发条件：<span class="mono">${c2Esc(triggerRule.triggerText)}</span> —— 交易还须满足此条件规则才触发，在
+  <a href="/c2.html?rule=${encodeURIComponent(triggerRule.ruleId)}">C2 模拟页</a> 维护。${triggerRule.triggerProblem ? `<span class="c2-warn">该条件已失效：${c2Esc(triggerRule.triggerProblem)}</span>` : ''}</div>` : '';
+    c2$('c2RegPreview').innerHTML = legacy + trigger + `<div>${body}</div>`;
 }
 
 function c2RenderRequiredTags() {
@@ -93,9 +97,11 @@ function c2UpdateRequiredTag(el) {
 
 function c2RenderList() {
     const tags = r => c2SelectedTagsOf(r).map(code => `<span class="tagchip" title="${c2Esc(c2TagName(code))}">${c2Esc(code)}</span>`).join('');
+    // 名称下方标出附加触发条件（在 C2 模拟页配置）；字段在元数据中心被停用等情况导致条件无法执行时标为已失效
+    const trigger = r => r.triggerCondition ? `<div class="c2-trigger"><span class="badge ${r.triggerProblem ? 'pending' : ''}" ${r.triggerProblem ? `title="${c2Esc(r.triggerProblem)}"` : ''}>${r.triggerProblem ? '附加条件已失效' : '附加触发条件'}</span> <span class="mono">${c2Esc(r.triggerText)}</span> <a href="/c2.html?rule=${encodeURIComponent(r.ruleId)}">配置 →</a></div>` : '';
     c2$('c2RegCount').textContent = c2State.rules.length ? `共 ${c2State.rules.length} 条` : '';
     c2$('c2RegRows').innerHTML = c2State.rules.map(r => `<tr class="${c2State.editingId === r.ruleId ? 'row-selected' : ''}">
-  <td>${c2Esc(r.ruleId)}</td><td>${c2Esc(r.ruleName)}</td>
+  <td>${c2Esc(r.ruleId)}</td><td>${c2Esc(r.ruleName)}${trigger(r)}</td>
   ${r.legacy ? `<td colspan="2"><span class="badge pending">旧版条件</span> <span class="mono">${c2Esc(r.conditionText)}</span></td>` : `<td>${c2Esc(r.currency)}</td><td>${c2Esc(c2CountryLabel(r.bankCountry))}</td>`}
   <td class="tags-cell">${tags(r)}</td><td>v${r.versionNo}</td>
   <td>${r.enabled ? '<span class="dot"></span>启用' : '停用'}</td>
@@ -122,6 +128,7 @@ function c2NewRegulatory(scroll = true) {
     c2State.editingId = null;
     c2State.regVersion = null;
     c2State.legacyCondition = null;
+    c2State.triggerRule = null;
     c2State.requiredTags = [];
     c2$('c2FormTitle').textContent = '新增监管规则';
     let next = 1;
@@ -150,6 +157,7 @@ function c2EditRegulatory(id, scroll = true) {
     c2State.regVersion = r.versionNo;
     c2State.requiredTags = [...r.requirement.requiredTags];
     c2State.legacyCondition = r.legacy ? r.conditionText : null;
+    c2State.triggerRule = r.triggerCondition ? r : null;
     c2$('c2FormTitle').textContent = '编辑监管规则 · ' + id;
     c2$('c2RuleId').value = id;
     c2$('c2RuleId').disabled = true;
