@@ -44,6 +44,24 @@ class C1ServiceTest {
 
     @Test
     @Transactional
+    void clientStatusAndProviderExclusionConditionsUseStoredDataWithoutSimulationInputs() {
+        metadata.create(new FieldMetadataController.Input("clientClassificationStatus", "客户分类状态", "ENUM", "EQ,NE", "C1", "COMPLETE,PENDING", true));
+        metadata.create(new FieldMetadataController.Input("clientProviderExcluded", "客户是否被合作方排除", "BOOLEAN", "EQ,NE", "C1", null, true));
+        var rule = headOfficePspRule();
+        var tree = new ExpressionService.Node("AND", List.of(
+                new ExpressionService.Node(null, null, "clientClassificationStatus", "EQ", "COMPLETE"),
+                new ExpressionService.Node(null, null, "clientProviderExcluded", "EQ", "false")), null, null, null);
+        controller.saveC1Condition(rule.id, new RelayController.C1ConditionUpdate(true, tree));
+
+        var request = new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100"));
+        assertThat(service.evaluate(request).reasonCode()).isEqualTo("PASS");
+        var spoofed = new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100"),
+                Map.of("clientClassificationStatus", "PENDING", "clientProviderExcluded", true));
+        assertThat(service.evaluate(spoofed).reasonCode()).isEqualTo("PASS");
+    }
+
+    @Test
+    @Transactional
     void conditionAcceptsEveryFieldEnabledForC1InMetadataCenter() {
         // 元数据中心新增的 C1 字段不再被写死的四个字段挡住：可以编译、保存并参与模拟
         metadata.create(new FieldMetadataController.Input("testRiskRating", "风险等级", "ENUM", "EQ,NE,IN", "C1", "LOW,HIGH", true));

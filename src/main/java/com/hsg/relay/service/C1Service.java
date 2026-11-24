@@ -76,7 +76,7 @@ public class C1Service {
         for (String flow : flows) {
             // 附加条件缺值或已失效的规则按不命中处理，并在校验过程里逐条说明
             List<String> skipped = new ArrayList<>();
-            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, flow, skipped)).max(Comparator.comparingInt(a -> specificity(a, req)));
+            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, client, excluded, flow, skipped)).max(Comparator.comparingInt(a -> specificity(a, req)));
             skipped.forEach(detail -> steps.add(new Trace("3. 规则匹配 " + flow, "SKIP", detail)));
             if (match.isEmpty()) return fail("APPETITE_NOT_SET", null, null, steps, flow + " 无有效准入配置（默认拒绝）");
             Appetite a = match.get();
@@ -117,7 +117,7 @@ public class C1Service {
         return (a.currency.equalsIgnoreCase(r.paymentCurrency()) ? 2 : 0) + (a.bankCountry.equalsIgnoreCase(r.beneficiaryBankCountry()) ? 1 : 0);
     }
 
-    private boolean conditionMatches(Appetite rule, Simulation req, String flow, List<String> skipped) {
+    private boolean conditionMatches(Appetite rule, Simulation req, ClientProfile client, boolean excluded, String flow, List<String> skipped) {
         if (rule.conditionJson == null || rule.conditionJson.isBlank()) return true;
         try {
             var tree = json.readValue(rule.conditionJson, ExpressionService.Node.class);
@@ -129,7 +129,10 @@ public class C1Service {
             }
             Map<String, Object> variables = new HashMap<>();
             if (req.variables() != null) variables.putAll(req.variables());
-            // 四个交易要素以模拟表单为准，不接受 variables 覆盖
+            // 客户和合作方状态从档案、排除记录读取，不接受模拟请求覆盖
+            variables.put("clientClassificationStatus", client.classificationStatus);
+            variables.put("clientProviderExcluded", excluded);
+            // 四个交易要素以模拟请求为准，不接受 variables 覆盖
             variables.put("flowCategory", flow);
             variables.put("paymentCurrency", req.paymentCurrency());
             variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());

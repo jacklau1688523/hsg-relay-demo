@@ -2,8 +2,6 @@
 let c1ConditionTree = null;
 let c1ActiveRule = null;
 const c1ConfiguredRuleId = new URLSearchParams(location.search).get('rule');
-// 模拟面板固定采集的交易要素；字段库里其余 C1 字段的取值由模拟面板按字段定义动态生成
-const c1SimFixedFields = new Set(['flowCategory', 'paymentCurrency', 'beneficiaryBankCountry', 'amountUsd']);
 const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 >',GTE:'大于等于 ≥',LT:'小于 <',LTE:'小于等于 ≤'};
 const c1Split = value => String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
 // 可选字段完全由元数据中心决定：已启用且适用规则含 C1 的字段全部进入下拉，运算符和可选值随字段定义走
@@ -63,21 +61,8 @@ async function c1LoadConditionRules(){
   $('c1SaveButton').disabled=!c1ActiveRule;
   $('c1SaveButton').textContent=c1ActiveRule?`保存条件至规则 #${c1ActiveRule.id}`:'保存条件配置';
   $('c1SaveButton').title=c1ActiveRule?'': '请先在合作方详情新增准入规则';
-  c1RenderSimFields();
  }catch(error){$('c1ConditionError').textContent=error.message;}
 }
-// 模拟面板：除固定交易要素外，字段库里启用的 C1 字段按字段定义生成取值控件（枚举下拉 / 数字 / 文本）
-function c1SimFields(){return c1Fields().filter(f=>!c1SimFixedFields.has(f.fieldCode));}
-function c1RenderSimFields(){
- const list=c1SimFields(),blank='<option value="">（不提供）</option>';
- $('simVariables').innerHTML=list.length?'<div class="muted" style="margin:14px 0 4px">附加条件字段 · 取自元数据中心 C1 字段库。选「不提供」或留空的字段不参与本次模拟，引用它的规则按不命中处理。</div>'+list.map(f=>{
-  const attr=`data-field="${esc(f.fieldCode)}" aria-label="${esc(f.fieldName)}"`,values=c1Split(f.valueOptions);
-  const control=f.dataType==='BOOLEAN'?`<select ${attr}>${blank}<option selected>true</option><option>false</option></select>`:values.length?`<select ${attr}>${blank}${values.map((v,i)=>`<option ${i?'':'selected'}>${esc(v)}</option>`).join('')}</select>`:`<input ${attr} ${['DECIMAL','INTEGER'].includes(f.dataType)?'type="number" step="any"':''} placeholder="请输入模拟取值">`;
-  return `<div class="field section"><label>${esc(f.fieldName)}</label>${control}</div>`;
- }).join(''):'';
-}
-// 下拉选「不提供」或文本留空的字段不提交：规则引用了没有取值的字段时，后端按不命中处理并在校验过程中说明
-function c1SimVariables(){const out={};c1SimFields().forEach(f=>{const v=$('simVariables').querySelector(`[data-field="${f.fieldCode}"]`)?.value.trim();if(v)out[f.fieldCode]=v;});return out;}
 async function c1SaveCondition(){
  const id=c1ActiveRule?.id;if(!id)return;
  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
