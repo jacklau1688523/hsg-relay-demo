@@ -286,8 +286,7 @@
                         </div>
                     </div>
                     <div class="panel">
-                        <div class="rulebar"><h2 id="rowCount" style="margin:0">覆盖行起息配置</h2><a href="/c3.html">去
-                            C3 新增覆盖行 ↗</a></div>
+                        <div class="rulebar"><h2 id="rowCount" style="margin:0">覆盖行起息配置</h2><a href="/providers.html">去合作方详情新增覆盖行 ↗</a></div>
                         <div class="tablewrap">
                             <table>
                                 <thead>
@@ -298,49 +297,14 @@
                                     <th>偏移工作日</th>
                                     <th>日历</th>
                                     <th>覆盖状态</th>
-                                    <th>操作</th>
+                                    <th>维护入口</th>
                                 </tr>
                                 </thead>
                                 <tbody id="rows"></tbody>
                             </table>
                         </div>
-                        <div class="notice">按 C3 的最精确匹配行读取 C5 参数，C5 和 C6 共用同一覆盖行。这里只维护起息日参数，覆盖范围及启用状态在
-                            C3 管理。
+                        <div class="notice">按 C3 的最精确匹配行读取 C5 参数，C5 和 C6 共用同一覆盖行。这里仅供查询；截单与节假日在合作方详情维护，覆盖范围及启用状态在合作方详情的“业务覆盖”页签管理。
                         </div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">编辑起息配置</h2><span
-                                class="badge pending">评分项 · 不剔除候选</span></div>
-                        <div class="notice context" id="context"></div>
-                        <form id="scheduleForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="zone">截单时区 *</label><input id="zone"
-                                                                                              value="Asia/Hong_Kong"
-                                                                                              required list="zones">
-                                </div>
-                                <div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff" type="time"
-                                                                                                step="1" required></div>
-                                <div class="field"><label for="offsetDays">起息偏移工作日 *（0–5）</label><input
-                                        id="offsetDays" type="number" min="0" max="5" step="1" required></div>
-                            </div>
-                            <div class="field section" style="margin-top:17px"><label
-                                    for="holidays">本覆盖行节假日日历（逗号或换行分隔）</label><textarea id="holidays"
-                                                                                                       placeholder="2026-12-25
-2026-12-28" spellcheck="false"></textarea></div>
-                            <div class="muted">
-                                日历按周一至周五扣除以下节假日计算。留空表示仅跳过周六、周日；请维护该合作方、该币种的节假日。
-                            </div>
-                            <div id="calendarPreview" class="daylist"></div>
-                            <div class="notice warn">
-                                当前时间必须严格早于截单时间才算截单前；恰好到达截单时间也顺延至下一工作日，再叠加工作日偏移。远期请求可满足时仍得100分。
-                            </div>
-                            <div class="err" id="formError" role="alert"></div>
-                            <div class="good" id="formGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="save" type="submit">保存起息配置</button>
-                                <button class="btn secondary" id="cancel" type="button">取消编辑</button>
-                            </div>
-                        </form>
                     </div>
                 </section>
                 <aside class="rightPanel">

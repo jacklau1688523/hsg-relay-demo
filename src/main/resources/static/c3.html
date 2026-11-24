@@ -116,10 +116,6 @@
             line-height: 1.6
         }
 
-        #formPanel {
-            scroll-margin-top: 16px
-        }
-
         @media (max-width: 1350px) {
             .c3-grid {
                 grid-template-columns:minmax(0, 1fr)
@@ -189,13 +185,13 @@
         <div class="content">
             <div class="toplinks"><a href="/">C1 业务准入</a><a href="/c2.html">C2 合规限制</a><a href="/routing.html">全流程
                 Check</a></div>
-            <div class="heading"><h1>C3 业务覆盖配置</h1>
-                <div class="muted">按合作方维护币种、国家、地区、银行范围和扣费方式。存在一条启用覆盖行全部匹配才通过，否则返回
+            <div class="heading"><h1>C3 业务覆盖查询与模拟</h1>
+                <div class="muted">查询合作方的币种、国家、地区、银行范围和扣费方式；到合作方详情维护覆盖行。存在一条启用覆盖行全部匹配才通过，否则返回
                     NO_REACH。
                 </div>
             </div>
             <div class="tabs">
-                <button class="tab sel">业务覆盖表</button>
+                <button class="tab sel">业务覆盖查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div class="err" id="pageError" role="alert"></div>
             <div class="c3-grid">
@@ -220,7 +216,7 @@
                     <div class="panel">
                         <div class="rulebar"><h2 id="rowCount" style="margin:0">业务覆盖列表</h2>
                             <div class="actions">
-                                <button class="btn" id="new">＋ 新增覆盖</button>
+                                <a class="btn" href="/providers.html">前往合作方详情维护 ↗</a>
                                 <button class="btn secondary" id="refresh">↻ 刷新</button>
                             </div>
                         </div>
@@ -243,88 +239,6 @@
                         <div class="notice">最精确行优先：指定地区 ＞ ALL；再比较指定国家 ＞ ALL；再比较银行 LIST ＞
                             ALL。同精确度按覆盖表顺序选取。选中行同时供 C5 起息日和 C6 限额使用。
                         </div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增业务覆盖</h2><span
-                                class="badge pending">C3 · NO_REACH</span></div>
-                        <form id="reachForm">
-                            <div class="layout3">
-                                <div class="field"><label for="provider">合作方 *</label><select id="provider"
-                                                                                                 required></select>
-                                </div>
-                                <div class="field"><label for="currency">交易币种 *</label><select id="currency"
-                                                                                                   required></select>
-                                </div>
-                                <div class="field"><label for="enabled">状态</label><select id="enabled">
-                                    <option value="true">启用</option>
-                                    <option value="false">停用</option>
-                                </select></div>
-                                <div class="field"><label for="country">受益行国家 *</label><input id="country"
-                                                                                                   value="ALL"
-                                                                                                   placeholder="CN / ALL"
-                                                                                                   required
-                                                                                                   maxlength="3"
-                                                                                                   list="countries">
-                                </div>
-                                <div class="field"><label for="region">受益人地区 *</label><input id="region"
-                                                                                                  value="ALL"
-                                                                                                  placeholder="CN-GD / ALL"
-                                                                                                  required maxlength="6"
-                                                                                                  list="regions"></div>
-                                <div class="field"><label for="bankScope">银行范围 *</label><select id="bankScope">
-                                    <option value="ALL">ALL · 全部银行</option>
-                                    <option value="LIST">LIST · 指定 BIC8</option>
-                                </select></div>
-                            </div>
-                            <div class="field section hidden" id="bicField"><label for="bics">BIC8 列表
-                                *（逗号或换行分隔）</label><textarea id="bics" placeholder="ICBKCNBJ, BKCHCNBJ"
-                                                                   spellcheck="false"></textarea>
-                                <div class="muted">填写银行 BIC 前8位。交易中的11位 BIC 将截取前8位进行匹配。</div>
-                            </div>
-                            <div class="section-title">支持的扣费方式 *（至少一项）</div>
-                            <div class="checks"><label><input type="checkbox" name="charges" value="OUR"
-                                                              checked>OUR</label><label><input type="checkbox"
-                                                                                               name="charges"
-                                                                                               value="SHA"
-                                                                                               checked>SHA</label><label><input
-                                    type="checkbox" name="charges" value="BEN" checked>BEN</label></div>
-                            <details class="section" style="margin-top:20px">
-                                <summary>C5 起息日 / C6 限额 · 此覆盖行参数</summary>
-                                <div class="layout3" style="margin-top:14px">
-                                    <div class="field"><label for="zone">截单时区 *</label><input id="zone"
-                                                                                                  value="Asia/Hong_Kong"
-                                                                                                  required></div>
-                                    <div class="field"><label for="cutoff">截单时间 *</label><input id="cutoff"
-                                                                                                    type="time"
-                                                                                                    value="17:00"
-                                                                                                    step="1" required>
-                                    </div>
-                                    <div class="field"><label for="offsetDays">起息偏移工作日 *</label><input
-                                            id="offsetDays" type="number" min="0" max="5" value="0" required></div>
-                                    <div class="field"><label for="perPaymentUsd">单笔上限 USD *</label><input
-                                            id="perPaymentUsd" type="number" min="0" step="0.01" value="2000000"
-                                            required></div>
-                                    <div class="field"><label for="dailyUsd">每日上限 USD *</label><input id="dailyUsd"
-                                                                                                          type="number"
-                                                                                                          min="0"
-                                                                                                          step="0.01"
-                                                                                                          value="10000000"
-                                                                                                          required>
-                                    </div>
-                                    <div class="field"><label for="holidays">节假日（逗号分隔）</label><input
-                                            id="holidays" placeholder="2026-12-25,2026-12-26"></div>
-                                </div>
-                            </details>
-                            <div class="notice warn">交易不带地区编码时，只有地区为 ALL 的行能够匹配。C3
-                                通过只代表业务覆盖可达，最终路由仍须通过其他过滤器。
-                            </div>
-                            <div class="err" id="formError" role="alert"></div>
-                            <div class="good" id="formGood" role="status"></div>
-                            <div class="actions" style="margin-top:14px">
-                                <button class="btn" id="save" type="submit">保存业务覆盖</button>
-                                <button class="btn secondary" id="cancel" type="button">取消编辑</button>
-                            </div>
-                        </form>
                     </div>
                 </section>
                 <aside class="rightPanel">

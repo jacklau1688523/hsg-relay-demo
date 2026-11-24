@@ -12,7 +12,7 @@ import java.util.stream.IntStream;
 import static com.hsg.relay.routing.RoutingConfig.Reach;
 
 /**
- * C6 限额控制：限额配置在 C3 覆盖行上，页面仅维护 perPaymentUsd/dailyUsd 与当日累计演示快照（BRD 6.6、9.2）。
+ * C6 限额控制：限额配置在 C3 覆盖行上，合作方详情维护 perPaymentUsd/dailyUsd 与当日累计演示快照（BRD 6.6、9.2）。
  */
 @Service
 public class C6Service {
@@ -36,6 +36,9 @@ public class C6Service {
     }
 
     public record Today(Long revision, String provider, BigDecimal todayUsd) {
+    }
+
+    public record Revision(Long revision) {
     }
 
     public record Input(String providerCode, String paymentCurrency, BigDecimal amount, String beneficiaryBankCountry,
@@ -84,6 +87,19 @@ public class C6Service {
         return limits();
     }
 
+    @Transactional
+    public Listing deleteToday(String provider, Long revision) {
+        if (provider == null || !providers.existsById(provider))
+            throw new IllegalArgumentException("合作方不存在");
+        var cv = routing.config();
+        if (revision == null || revision != cv.revision())
+            throw new IllegalArgumentException("配置已更新，请刷新后重试");
+        Map<String, BigDecimal> map = new HashMap<>(cv.config().todayUsd());
+        map.remove(provider);
+        routing.saveConfig(new RoutingService.ConfigView(cv.revision(), cv.config().withTodayUsd(map)));
+        return limits();
+    }
+
     public Simulation simulate(Input in) {
         if (in == null) throw new IllegalArgumentException("模拟请求必填");
         var match = new C3Matcher.Input(in.providerCode(), in.paymentCurrency(), in.beneficiaryBankCountry(), in.beneficiaryRegion(), in.beneficiaryBankBic(), in.chargeOption());
@@ -94,7 +110,7 @@ public class C6Service {
         var cfg = cv.config();
         var selected = C3Matcher.select(cfg.reaches(), match).orElse(null);
         if (selected == null)
-            return new Simulation("NO_REACH", cv.revision(), null, null, null, "C3 未匹配覆盖行，C6 限额不适用；该候选已被 C3 剔除（NO_REACH）。请先在 C3 页面维护业务覆盖。");
+            return new Simulation("NO_REACH", cv.revision(), null, null, null, "C3 未匹配覆盖行，C6 限额不适用；该候选已被 C3 剔除（NO_REACH）。请先在合作方详情的业务覆盖页签维护。");
         BigDecimal usd = usd(cfg, in.amount(), in.paymentCurrency());
         BigDecimal today = in.todayUsd() != null ? in.todayUsd() : cfg.todayUsd().getOrDefault(in.providerCode(), BigDecimal.ZERO);
         var calc = C6Calculator.check(selected.reach(), usd, today);

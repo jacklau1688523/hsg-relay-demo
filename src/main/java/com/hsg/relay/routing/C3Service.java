@@ -73,6 +73,18 @@ public class C3Service {
         return list();
     }
 
+    @Transactional
+    public Listing delete(int index, Toggle in) {
+        var cv = routing.config();
+        if (in == null || in.revision() == null || in.revision() != cv.revision())
+            throw new IllegalArgumentException("配置已更新，请刷新后重试");
+        if (index < 0 || index >= cv.config().reaches().size()) throw new IllegalArgumentException("覆盖行不存在");
+        var rows = new ArrayList<>(cv.config().reaches());
+        rows.remove(index);
+        routing.saveConfig(new RoutingService.ConfigView(cv.revision(), cv.config().withReaches(rows)));
+        return list();
+    }
+
     public Simulation simulate(C3Matcher.Input in) {
         C3Matcher.validateInput(in);
         if (!providers.existsById(in.providerCode())) throw new IllegalArgumentException("合作方不存在");

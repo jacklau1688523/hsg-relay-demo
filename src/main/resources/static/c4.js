@@ -1,167 +1,24 @@
 'use strict';
-const $ = id => document.getElementById(id), esc = v => String(v ?? '—').replace(/[&<>"']/g, c => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-}[c]));
-const state = {revision: 0, rows: [], currencies: [], hkdRates: {}, switches: [], editIndex: null};
-const VENUE = {NONE: 'NONE · 无需换汇', TREASURY: 'TREASURY · 资金部换汇', PROVIDER: 'PROVIDER · 合作方换汇'};
-
-async function api(path, options = {}) {
-    const r = await fetch('/api' + path, {...options, headers: {'Content-Type': 'application/json'}});
-    const data = await r.json();
-    if (!r.ok) throw Error(data.error || data.message || `HTTP ${r.status}`);
-    return data;
+const $=id=>document.getElementById(id),esc=value=>String(value??'—').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const state={currencies:[],switches:[],balanceRows:[],balanceRevision:0};
+const VENUE={NONE:'NONE · 无需换汇',TREASURY:'TREASURY · 资金部换汇',PROVIDER:'PROVIDER · 合作方换汇'};
+async function api(path,options={}){const response=await fetch('/api'+path,{...options,headers:{'Content-Type':'application/json'}});const body=await response.json();if(!response.ok)throw Error(body.error||body.message||response.statusText);return body;}
+const fmt=(v,d=2)=>v==null||v===''?'—':Number(v).toLocaleString('en-US',{maximumFractionDigits:d});
+const switchOf=code=>state.switches.find(x=>x.code===code);
+function savedSwitchLabel(){const item=switchOf($('simProvider').value);$('simSwitch').options[0].textContent=`用合作方已保存的开关（当前 ${item?(item.fundingCheckEnabled?'ON':'OFF'):'—'}）`;}
+function renderBalanceQuery(){
+ const provider=$('balanceFilterProvider').value,currency=$('balanceFilterCurrency').value;
+ const rows=state.balanceRows.filter(row=>(!provider||row.balance.provider===provider)&&(!currency||row.balance.currency===currency));
+ $('balanceRowCount').textContent=`往来账余额与占用查询（${rows.length} 行）`;
+ $('balanceRevision').textContent=`配置版本 ${state.balanceRevision}`;
+ $('balanceRows').innerHTML=rows.map(({balance:b})=>{const sw=switchOf(b.provider),available=Number(b.balance)-Number(b.reserved);return `<tr><td><b>${esc(b.provider)}</b><br><span class="muted">${esc(sw?.name||'')}</span></td><td>${esc(b.currency)}</td><td>${esc(fmt(b.balance))}</td><td>${esc(fmt(b.reserved))}</td><td class="${available<0?'neg':''}">${esc(fmt(available))}</td><td>${sw?(sw.fundingCheckEnabled?'ON':'OFF'):'—'}</td><td><a href="/provider-detail.html?code=${encodeURIComponent(b.provider)}&tab=balances">合作方详情 ↗</a></td></tr>`;}).join('')||'<tr><td colspan="7">暂无符合条件的余额行。</td></tr>';
 }
-
-const fmt = (v, d = 2) => v == null || v === '' ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: d});
-const money = (v, cur) => `<span class="mono">${esc(fmt(v))}</span> ${esc(cur)}`;
-const available = b => Number(b.balance) - Number(b.reserved);
-const switchOf = code => state.switches.find(s => s.code === code);
-const providerName = code => switchOf(code)?.name || '';
-const badge = on => on ? '<span class="badge pass">ON</span>' : '<span class="badge pending">OFF</span>';
-const currencyOptions = () => state.currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-const providerOptions = () => state.switches.map(s => `<option value="${esc(s.code)}">${esc(s.code)} · ${esc(s.name)}</option>`).join('');
-
-/** 重建下拉选项时保留当前选中值；当前值为空或已不存在时取 fallback。 */
-function options(el, html, fallback) {
-    const v = el.value;
-    el.innerHTML = html;
-    el.value = [...el.options].some(o => o.value === v) ? v : fallback;
-}
-
-function savedSwitchLabel() {
-    const s = switchOf($('simProvider').value);
-    $('simSwitch').options[0].textContent = `用合作方已保存的开关（当前 ${s ? (s.fundingCheckEnabled ? 'ON' : 'OFF') : '—'}）`;
-}
-
-function render() {
-    const p = $('filterProvider').value, c = $('filterCurrency').value;
-    const rows = state.rows.filter(r => (!p || r.balance.provider === p) && (!c || r.balance.currency === c));
-    $('rowCount').textContent = `往来账余额（共 ${rows.length} 行）`;
-    $('rows').innerHTML = rows.map(r => {
-        const b = r.balance, avail = available(b), sw = switchOf(b.provider);
-        return `<tr class="${state.editIndex === r.index ? 'row-selected' : ''}"><td>#${r.index}</td><td><b>${esc(b.provider)}</b><br><span class="muted">${esc(providerName(b.provider))}</span></td><td>${esc(b.currency)}</td><td>${money(b.balance, b.currency)}</td><td>${money(b.reserved, b.currency)}</td><td class="${avail < 0 ? 'neg' : ''}">${money(avail, b.currency)}</td><td>${sw ? badge(sw.fundingCheckEnabled) : '—'}</td><td><button class="btn secondary tiny" data-edit="${r.index}">编辑</button></td></tr>`;
-    }).join('') || '<tr><td colspan="8" style="text-align:center">暂无符合条件的余额行。</td></tr>';
-    $('rates').textContent = `HSG 当日汇率（1 单位币种折合港币）：${state.currencies.map(c => `${c} ${fmt(state.hkdRates[c], 4)}`).join(' · ')}。PROVIDER 渠道以「交易币种汇率 ÷ 扣账币种汇率」把交易金额折算为扣账账户币种的等价金额。`;
-}
-
-function renderSwitches() {
-    $('switches').innerHTML = state.switches.map(s => `<tr><td><b>${esc(s.code)}</b><br><span class="muted">${esc(s.name)}</span></td><td>${s.status === 'LIVE' ? '<span class="badge pass">LIVE</span>' : '<span class="badge pending">NOT_LIVE</span>'}</td><td>${badge(s.fundingCheckEnabled)}</td><td>${esc(s.nostroAccount || '未设置')}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center">暂无合作方。</td></tr>';
-}
-
-function apply(data) {
-    state.rows = data.rows;
-    state.revision = data.revision;
-    state.currencies = [...data.currencies].sort();
-    state.hkdRates = data.hkdRates;
-    state.switches = data.fundingSwitches;
-    $('revision').textContent = `配置版本 ${state.revision}`;
-    options($('filterProvider'), '<option value="">全部合作方</option>' + [...new Set(data.rows.map(r => r.balance.provider))].map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join(''), '');
-    options($('filterCurrency'), '<option value="">全部币种</option>' + state.currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join(''), '');
-    options($('simDebit'), currencyOptions(), 'HKD');
-    options($('simPayment'), currencyOptions(), 'USD');
-    options($('balCurrency'), currencyOptions(), 'USD');
-    options($('simProvider'), providerOptions(), 'PROV-T1');
-    options($('balProvider'), providerOptions(), 'PROV-T1');
-    savedSwitchLabel();
-    render();
-    renderSwitches();
-}
-
-function fillForm(index) {
-    const row = typeof index === 'number' ? state.rows.find(r => r.index === index) : null;
-    state.editIndex = row ? row.index : null;
-    const b = row ? row.balance : {provider: $('balProvider').value, currency: 'USD', balance: 0, reserved: 0};
-    options($('balProvider'), providerOptions(), b.provider);
-    options($('balCurrency'), currencyOptions(), b.currency);
-    $('balBalance').value = b.balance;
-    $('balReserved').value = b.reserved;
-    $('balanceDelete').disabled = !row;
-    $('formTitle').textContent = row ? `编辑往来账余额 · #${row.index} ${b.provider} / ${b.currency}` : '新增往来账余额';
-    $('balanceError').textContent = '';
-    $('balanceGood').textContent = '';
-    render();
-}
-
-$('filterProvider').onchange = render;
-$('filterCurrency').onchange = render;
-$('query').onclick = render;
-$('new').onclick = () => {
-    fillForm();
-    $('formPanel').scrollIntoView({behavior: 'smooth'});
-};
-$('refresh').onclick = async () => {
-    try {
-        apply(await api('/c4/balances'));
-        fillForm(state.editIndex);
-        $('pageError').textContent = '';
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
-};
-$('rows').onclick = e => {
-    const b = e.target.closest('[data-edit]');
-    if (b) {
-        fillForm(Number(b.dataset.edit));
-        $('formPanel').scrollIntoView({behavior: 'smooth'});
-    }
-};
-$('balanceCancel').onclick = () => fillForm();
-
-function staleSim(text) {
-    $('simResult').className = 'notice';
-    $('simResult').textContent = text;
-}
-
-$('balanceForm').onsubmit = async e => {
-    e.preventDefault();
-    $('balanceError').textContent = '';
-    $('balanceGood').textContent = '';
-    $('balanceSave').disabled = true;
-    try {
-        const balance = {
-            provider: $('balProvider').value,
-            currency: $('balCurrency').value,
-            balance: Number($('balBalance').value),
-            reserved: Number($('balReserved').value || 0)
-        };
-        if (!(balance.balance >= 0) || !(balance.reserved >= 0)) throw Error('账户余额与未记账占用必须为不小于0的数字');
-        apply(await api('/c4/balances', {
-            method: 'PUT',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex, balance})
-        }));
-        const hit = state.rows.find(r => r.balance.provider === balance.provider && r.balance.currency === balance.currency);
-        fillForm(hit ? hit.index : null);
-        $('balanceGood').textContent = `已保存，配置版本 ${state.revision}。下一次路由试算即按新余额与占用判定 C4。`;
-        staleSim('余额已保存，请重新执行模拟查看最新判定。');
-    } catch (err) {
-        $('balanceError').textContent = err.message;
-    } finally {
-        $('balanceSave').disabled = false;
-    }
-};
-$('balanceDelete').onclick = async () => {
-    if (state.editIndex == null) return;
-    const row = state.rows.find(r => r.index === state.editIndex);
-    if (!row) return;
-    if (!confirm(`确定删除 ${row.balance.provider} / ${row.balance.currency} 的往来账余额行？删除后该币种可用头寸按 0 计。`)) return;
-    $('balanceError').textContent = '';
-    $('balanceGood').textContent = '';
-    try {
-        apply(await api('/c4/balances/delete', {
-            method: 'POST',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex})
-        }));
-        fillForm();
-        $('balanceGood').textContent = '余额行已删除。';
-        staleSim('余额行已删除，请重新执行模拟查看最新判定。');
-    } catch (err) {
-        $('balanceError').textContent = err.message;
-    }
-};
+function setBalanceOptions(select,values){const current=select.value;select.innerHTML='<option value="">全部</option>'+values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');select.value=values.includes(current)?current:'';}
+async function refreshBalanceQuery(){const data=await api('/c4/balances');state.balanceRows=data.rows;state.balanceRevision=data.revision;state.switches=data.fundingSwitches;setBalanceOptions($('balanceFilterProvider'),[...new Set(data.rows.map(row=>row.balance.provider))].sort());setBalanceOptions($('balanceFilterCurrency'),[...new Set(data.rows.map(row=>row.balance.currency))].sort());renderBalanceQuery();savedSwitchLabel();}
+$('balanceFilterProvider').onchange=renderBalanceQuery;
+$('balanceFilterCurrency').onchange=renderBalanceQuery;
+$('balanceQuery').onclick=renderBalanceQuery;
+$('balanceRefresh').onclick=async()=>{try{await refreshBalanceQuery();$('pageError').textContent='';}catch(error){$('pageError').textContent=error.message;}};
 $('simProvider').onchange = savedSwitchLabel;
 
 function step(n, title, value, detail) {
@@ -228,11 +85,5 @@ document.querySelectorAll('[data-sample]').forEach(b => b.onclick = () => {
     else if (s === 'off') set('PROV-W', 'USD', 'AUD', 78000000, 'false');
     else set('PROV-T1', 'HKD', 'EUR', 10000, '');
 });
-(async () => {
-    try {
-        apply(await api('/c4/balances'));
-        fillForm();
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
-})();
+
+(async()=>{try{const data=await api('/c4/balances');state.currencies=[...data.currencies].sort();state.switches=data.fundingSwitches;for(const id of ['simDebit','simPayment'])$(id).innerHTML=state.currencies.map(currency=>`<option value="${esc(currency)}">${esc(currency)}</option>`).join('');$('simProvider').innerHTML=state.switches.map(p=>`<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');$('simProvider').value='PROV-T1';$('simDebit').value='HKD';$('simPayment').value='USD';state.balanceRows=data.rows;state.balanceRevision=data.revision;setBalanceOptions($('balanceFilterProvider'),[...new Set(data.rows.map(row=>row.balance.provider))].sort());setBalanceOptions($('balanceFilterCurrency'),[...new Set(data.rows.map(row=>row.balance.currency))].sort());renderBalanceQuery();savedSwitchLabel();}catch(error){$('pageError').textContent=error.message;}})();

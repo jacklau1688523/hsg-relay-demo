@@ -216,7 +216,7 @@
                 </div>
             </div>
             <div class="tabs">
-                <button class="tab sel">手续费配置</button>
+                <button class="tab sel">手续费配置查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
             <div class="c7-grid">
@@ -254,63 +254,8 @@
                             </table>
                         </div>
                         <div class="notice">手续费行与全流程路由共用同一份参考配置；按扣费方式匹配时，精确行（OUR/SHA/BEN）优先于
-                            ALL 行。金额与费用按 HSG 中间汇率折算港币后进入打分。
+                            ALL 行。金额与费用按 HSG 中间汇率折算港币后进入打分。此处仅供查询；请在合作方详情的“手续费配置”页签维护。
                         </div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">维护手续费</h2><span
-                                class="badge pending">评分项 · 不剔除候选</span></div>
-                        <form id="feeForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="feeProvider">合作方 *</label><select
-                                        id="feeProvider"></select></div>
-                                <div class="field"><label for="feeCurrency">交易币种 *</label><select
-                                        id="feeCurrency"></select></div>
-                                <div class="field"><label for="feeCharge">扣费方式 *</label><select id="feeCharge">
-                                    <option value="ALL">ALL · 全部</option>
-                                    <option>OUR</option>
-                                    <option>SHA</option>
-                                    <option>BEN</option>
-                                </select></div>
-                                <div class="field"><label for="feeFixed">固定手续费 *</label><input id="feeFixed"
-                                                                                                    type="number"
-                                                                                                    min="0" step="0.01"
-                                                                                                    required></div>
-                                <div class="field"><label for="feeRate">百分比费率（小数）*</label><input id="feeRate"
-                                                                                                        type="number"
-                                                                                                        min="0"
-                                                                                                        step="0.000001"
-                                                                                                        required></div>
-                                <div class="field"><label for="feeMinimum">最低手续费 *</label><input id="feeMinimum"
-                                                                                                      type="number"
-                                                                                                      min="0"
-                                                                                                      step="0.01"
-                                                                                                      required></div>
-                                <div class="field"><label for="feeMaximum">最高手续费</label><input id="feeMaximum"
-                                                                                                    type="number"
-                                                                                                    min="0" step="0.01"
-                                                                                                    placeholder="留空不封顶">
-                                </div>
-                                <div class="field"><label for="feeCable">电报费 *</label><input id="feeCable"
-                                                                                                type="number" min="0"
-                                                                                                step="0.01" required>
-                                </div>
-                                <div class="field"><label for="feeIntermediary">预估中间行费用 *</label><input
-                                        id="feeIntermediary" type="number" min="0" step="0.01" required></div>
-                                <div class="field wide" style="grid-column:1 / -1"><label for="feeFeeCurrency">费用币种
-                                    *</label><select id="feeFeeCurrency"></select></div>
-                            </div>
-                            <div class="muted">
-                                同一【合作方＋币种＋扣费方式】已存在时为编辑，否则新增；全部金额必须非负，最高不可低于最低。保存递增配置版本并写审计。
-                            </div>
-                            <div class="err" id="feeError" role="alert"></div>
-                            <div class="good" id="feeGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="feeSave" type="submit">保存手续费</button>
-                                <button class="btn secondary" id="feeDelete" type="button">删除此行</button>
-                                <button class="btn secondary" id="feeCancel" type="button">重置</button>
-                            </div>
-                        </form>
                     </div>
                     <div class="panel">
                         <div class="rulebar"><h2 style="margin:0">HSG 中间汇率参考</h2></div>

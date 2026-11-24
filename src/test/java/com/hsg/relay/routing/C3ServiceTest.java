@@ -56,6 +56,17 @@ class C3ServiceTest {
     }
 
     @Test
+    void deletesCoverageWithRevisionCheckAndKeepsOtherRows() {
+        var before = c3.list();
+        var saved = c3.save(new C3Service.Save(before.revision(), null, "ALL", row("PROV-T1", "US", "ALL", List.of())));
+        int index = saved.rows().size() - 1;
+        assertThatThrownBy(() -> c3.delete(index, new C3Service.Toggle(before.revision()))).hasMessageContaining("更新");
+        var deleted = c3.delete(index, new C3Service.Toggle(saved.revision()));
+        assertThat(deleted.rows()).hasSize(before.rows().size());
+        assertThat(deleted.rows()).extracting(C3Service.RowView::reach).containsExactlyElementsOf(before.rows().stream().map(C3Service.RowView::reach).toList());
+    }
+
+    @Test
     void emptyListAndInvalidChargesAreRejected() {
         long rev = c3.list().revision();
         assertThatThrownBy(() -> c3.save(new C3Service.Save(rev, null, "LIST", row("PROV-T1", "US", "ALL", List.of())))).hasMessageContaining("LIST");

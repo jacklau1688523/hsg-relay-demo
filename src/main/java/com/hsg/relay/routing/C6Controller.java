@@ -29,6 +29,11 @@ public class C6Controller {
         return service.today(in);
     }
 
+    @PostMapping("/today/{provider}/delete")
+    public C6Service.Listing deleteToday(@PathVariable String provider, @RequestBody C6Service.Revision in) {
+        return service.deleteToday(provider, in.revision());
+    }
+
     @PostMapping("/simulate")
     public C6Service.Simulation simulate(@RequestBody C6Service.Input in) {
         return service.simulate(in);

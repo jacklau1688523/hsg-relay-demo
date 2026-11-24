@@ -193,7 +193,7 @@
                 </div>
             </div>
             <div class="tabs">
-                <button class="tab sel">覆盖行限额与当日累计</button>
+                <button class="tab sel">覆盖行限额与当日累计查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
             <div class="c6-grid">
@@ -228,55 +228,13 @@
                             </table>
                         </div>
                         <div class="notice">限额配置在覆盖行（BRD 9.2）上，与 C3 业务覆盖、C5
-                            截单参数共用同一行数据；本页只维护两项限额，不改动其他字段。
+                            截单参数共用同一行数据；此处仅供查询；两项限额在合作方详情的“交易限额”页签维护。
                         </div>
                     </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">维护覆盖行限额</h2><span
-                                class="badge pending">过滤器 · 剔除候选</span></div>
-                        <form id="limitForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="rowSelect">覆盖行 *</label><select
-                                        id="rowSelect"></select></div>
-                                <div class="field"><label for="perPayment">单笔最大限额 USD *</label><input
-                                        id="perPayment" type="number" min="0" step="0.01" required></div>
-                                <div class="field"><label for="daily">每日最大限额 USD *</label><input id="daily"
-                                                                                                       type="number"
-                                                                                                       min="0"
-                                                                                                       step="0.01"
-                                                                                                       required></div>
-                            </div>
-                            <div class="muted">
-                                金额为美元等价，必须非负。保存后立即对下一次路由试算生效；修改会递增配置版本并写入审计。
-                            </div>
-                            <div class="err" id="limitError" role="alert"></div>
-                            <div class="good" id="limitGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="limitSave" type="submit">保存限额</button>
-                                <button class="btn secondary" id="limitCancel" type="button">重置</button>
-                            </div>
-                        </form>
-                    </div>
                     <div class="panel">
-                        <div class="rulebar"><h2 style="margin:0">调整当日累计金额（演示输入）</h2></div>
-                        <form id="todayForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="todayProvider">合作方 *</label><select
-                                        id="todayProvider"></select></div>
-                                <div class="field wide" style="grid-column:span 2"><label for="todayUsd">当日累计交易金额
-                                    USD（today's amount）</label><input id="todayUsd" type="number" min="0" step="0.01">
-                                </div>
-                            </div>
-                            <div class="muted">当日累计＝该合作方当日已路由支付的美元等价合计（香港时间），重算时不含本笔自身。演示值与
-                                C3–C10 参考配置共用，真实环境由交易统计回填。
-                            </div>
-                            <div class="err" id="todayError" role="alert"></div>
-                            <div class="good" id="todayGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="todaySave" type="submit">保存当日累计</button>
-                                <button class="btn secondary" id="todayCancel" type="button">重置</button>
-                            </div>
-                        </form>
+                        <div class="rulebar"><h2 style="margin:0">合作方当日累计</h2><span class="muted">金额为 USD 等价；未配置按 0 计算</span></div>
+                        <div class="tablewrap"><table><thead><tr><th>合作方</th><th>当日累计 USD</th><th>来源</th><th>维护入口</th></tr></thead><tbody id="todayRows"></tbody></table></div>
+                        <div class="notice">当日累计不含本笔自身；实际环境由交易统计回填。此处查询演示快照，维护请到合作方详情的“交易限额”页签。</div>
                     </div>
                 </section>
                 <aside class="rightPanel">

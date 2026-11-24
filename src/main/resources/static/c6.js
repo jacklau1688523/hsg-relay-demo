@@ -26,12 +26,10 @@ function render() {
     $('rows').innerHTML = rows.map(r => {
         const x = r.reach;
         const on = x.enabled !== false;
-        return `<tr class="${state.editIndex === r.index ? 'row-selected' : ''}"><td>#${r.index}</td><td>${esc(x.provider)}<br><span class="muted">${esc(x.currency)}</span></td><td>${dim(x)}</td><td>${esc(fmt(x.perPaymentUsd))}</td><td>${esc(fmt(x.dailyUsd))}</td><td>${on ? '<span class="ok">启用</span>' : '<span class="bad">停用</span>'}</td><td><button class="btn secondary tiny" data-edit="${r.index}">调整限额</button></td></tr>`;
+        return `<tr><td>#${r.index}</td><td>${esc(x.provider)}<br><span class="muted">${esc(x.currency)}</span></td><td>${dim(x)}</td><td>${esc(fmt(x.perPaymentUsd))}</td><td>${esc(fmt(x.dailyUsd))}</td><td>${on ? '<span class="ok">启用</span>' : '<span class="bad">停用</span>'}</td><td><a href="/provider-detail.html?code=${encodeURIComponent(x.provider)}&tab=limits">合作方详情 ↗</a></td></tr>`;
     }).join('') || '<tr><td colspan="7">暂无符合条件的覆盖行。</td></tr>';
-}
-
-function rowOptions(selected) {
-    return state.rows.map(r => `<option value="${r.index}" ${r.index === selected ? 'selected' : ''}>#${r.index} · ${esc(r.reach.provider)} / ${esc(r.reach.currency)} / ${esc(r.reach.country)} / ${esc(r.reach.region)}</option>`).join('');
+    const providers=state.providers.filter(item=>!p||item.code===p);
+    $('todayRows').innerHTML=providers.map(item=>{const configured=Object.prototype.hasOwnProperty.call(state.today,item.code);return `<tr><td>${esc(item.code)} · ${esc(item.name)}</td><td>${esc(fmt(state.today[item.code]??0))}</td><td>${configured?'演示快照':'未配置，按 0 计算'}</td><td><a href="/provider-detail.html?code=${encodeURIComponent(item.code)}&tab=limits">合作方详情 ↗</a></td></tr>`;}).join('')||'<tr><td colspan="4">暂无合作方。</td></tr>';
 }
 
 function apply(data) {
@@ -40,104 +38,20 @@ function apply(data) {
     state.today = data.todayUsd;
     state.currencies = [...data.currencies].sort();
     $('revision').textContent = `配置版本 ${state.revision}`;
-    $('filterProvider').innerHTML = '<option value="">全部合作方</option>' + [...new Set(data.rows.map(r => r.reach.provider))].map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    $('filterProvider').innerHTML = '<option value="">全部合作方</option>' + state.providers.map(p => `<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');
     $('filterCurrency').innerHTML = '<option value="">全部币种</option>' + state.currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     $('simCurrency').innerHTML = state.currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
     $('simProvider').innerHTML = state.providers.map(p => `<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');
-    $('todayProvider').innerHTML = state.providers.map(p => `<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');
     render();
-}
-
-function fillForm(index) {
-    const row = state.rows.find(r => r.index === index) || state.rows[0];
-    if (!row) return;
-    state.editIndex = row.index;
-    $('rowSelect').innerHTML = rowOptions(row.index);
-    $('perPayment').value = row.reach.perPaymentUsd;
-    $('daily').value = row.reach.dailyUsd;
-    $('limitError').textContent = '';
-    $('limitGood').textContent = '';
-    render();
-}
-
-function fillToday() {
-    const provider = $('todayProvider').value || state.providers[0]?.code;
-    $('todayUsd').value = state.today[provider] ?? 0;
-    $('todayError').textContent = '';
-    $('todayGood').textContent = '';
 }
 
 $('filterProvider').onchange = render;
 $('filterCurrency').onchange = render;
 $('query').onclick = render;
-$('rowSelect').onchange = () => fillForm(Number($('rowSelect').value));
 $('refresh').onclick = async () => {
-    try {
-        apply(await api('/c6/limits'));
-        fillForm(state.editIndex);
-        fillToday();
-        $('pageError').textContent = '';
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
+    try { apply(await api('/c6/limits')); $('pageError').textContent = ''; }
+    catch (e) { $('pageError').textContent = e.message; }
 };
-$('rows').onclick = e => {
-    const b = e.target.closest('[data-edit]');
-    if (b) {
-        fillForm(Number(b.dataset.edit));
-        $('formPanel').scrollIntoView({behavior: 'smooth'});
-    }
-};
-$('limitForm').onsubmit = async e => {
-    e.preventDefault();
-    $('limitError').textContent = '';
-    $('limitGood').textContent = '';
-    $('limitSave').disabled = true;
-    try {
-        const input = {
-            revision: state.revision,
-            index: state.editIndex,
-            perPaymentUsd: Number($('perPayment').value),
-            dailyUsd: Number($('daily').value)
-        };
-        if (!(input.perPaymentUsd >= 0) || !(input.dailyUsd >= 0)) throw Error('两项限额必须为不小于0的数字');
-        apply(await api('/c6/limits', {method: 'PUT', body: JSON.stringify(input)}));
-        fillForm(input.index);
-        $('limitGood').textContent = `已保存，配置版本 ${state.revision}。下一次路由试算即按新限额判定。`;
-        $('simResult').className = 'notice';
-        $('simResult').textContent = '限额已保存，请重新执行模拟查看最新判定。';
-    } catch (err) {
-        $('limitError').textContent = err.message;
-    } finally {
-        $('limitSave').disabled = false;
-    }
-};
-$('limitCancel').onclick = () => fillForm(state.editIndex);
-$('todayForm').onsubmit = async e => {
-    e.preventDefault();
-    $('todayError').textContent = '';
-    $('todayGood').textContent = '';
-    $('todaySave').disabled = true;
-    try {
-        const input = {
-            revision: state.revision,
-            provider: $('todayProvider').value,
-            todayUsd: Number($('todayUsd').value)
-        };
-        if (!(input.todayUsd >= 0)) throw Error('当日累计必须为不小于0的数字');
-        apply(await api('/c6/today', {method: 'PUT', body: JSON.stringify(input)}));
-        fillToday();
-        $('todayGood').textContent = `已保存 ${input.provider} 的当日累计，配置版本 ${state.revision}。`;
-        $('simResult').className = 'notice';
-        $('simResult').textContent = '当日累计已保存，请重新执行模拟查看最新判定。';
-    } catch (err) {
-        $('todayError').textContent = err.message;
-    } finally {
-        $('todaySave').disabled = false;
-    }
-};
-$('todayProvider').onchange = fillToday;
-$('todayCancel').onclick = fillToday;
 
 function step(n, title, value, detail) {
     return `<div class="step"><span class="num">${n}</span><div><b>${esc(title)}</b><div style="margin-top:6px">${value}</div><small>${esc(detail)}</small></div></div>`;
@@ -210,8 +124,6 @@ document.querySelectorAll('[data-sample]').forEach(b => b.onclick = () => {
         const [providers, data] = await Promise.all([api('/providers'), api('/c6/limits')]);
         state.providers = providers;
         apply(data);
-        fillForm(data.rows[0]?.index);
-        fillToday();
     } catch (e) {
         $('pageError').textContent = e.message;
     }

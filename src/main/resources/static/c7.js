@@ -6,7 +6,7 @@ const $ = id => document.getElementById(id), esc = v => String(v ?? '—').repla
     '"': '&quot;',
     "'": '&#39;'
 }[c]));
-const state = {revision: 0, rows: [], currencies: [], rates: {}, providers: [], editIndex: null};
+const state = {revision: 0, rows: [], currencies: [], rates: {}, providers: []};
 
 async function api(path, options = {}) {
     const r = await fetch('/api' + path, {...options, headers: {'Content-Type': 'application/json'}});
@@ -27,7 +27,7 @@ function render() {
     $('rowCount').textContent = `手续费配置行（共 ${rows.length} 行）`;
     $('rows').innerHTML = rows.map(r => {
         const f = r.fee;
-        return `<tr class="${state.editIndex === r.index ? 'row-selected' : ''}"><td>#${r.index}</td><td>${esc(f.provider)}<br><span class="muted">${esc(f.currency)}</span></td><td>${esc(f.charge)}</td><td>${esc(fmt(f.fixed))} ${esc(f.feeCurrency)}</td><td>${esc(f.rate)}</td><td>${esc(fmt(f.minimum))} / ${f.maximum == null ? '不封顶' : esc(fmt(f.maximum))}</td><td>${esc(fmt(f.cable))}</td><td>${esc(fmt(f.intermediary))}</td><td>${esc(f.feeCurrency)}</td><td><button class="btn secondary tiny" data-edit="${r.index}">编辑</button></td></tr>`;
+        return `<tr><td>#${r.index}</td><td>${esc(f.provider)}<br><span class="muted">${esc(f.currency)}</span></td><td>${esc(f.charge)}</td><td>${esc(fmt(f.fixed))} ${esc(f.feeCurrency)}</td><td>${esc(f.rate)}</td><td>${esc(fmt(f.minimum))} / ${f.maximum == null ? '不封顶' : esc(fmt(f.maximum))}</td><td>${esc(fmt(f.cable))}</td><td>${esc(fmt(f.intermediary))}</td><td>${esc(f.feeCurrency)}</td><td><a href="/provider-detail.html?code=${encodeURIComponent(f.provider)}&tab=fees">合作方详情 ↗</a></td></tr>`;
     }).join('') || '<tr><td colspan="10">暂无符合条件的手续费行。</td></tr>';
     $('rates').innerHTML = Object.entries(state.rates).map(([k, v]) => `<span>${esc(k)}→HKD ${esc(v)}</span>`).join('');
 }
@@ -43,40 +43,8 @@ function apply(data) {
     $('revision').textContent = `配置版本 ${state.revision}`;
     $('filterProvider').innerHTML = '<option value="">全部合作方</option>' + [...new Set(data.rows.map(r => r.fee.provider))].map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
     $('filterCurrency').innerHTML = '<option value="">全部币种</option>' + state.currencies.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    for (const id of ['feeCurrency', 'feeFeeCurrency', 'simDebit', 'simPayment']) $(id).innerHTML = currencyOptions($(id).value || ($(id).id === 'feeFeeCurrency' ? 'HKD' : 'USD'));
+    for (const id of ['simDebit', 'simPayment']) $(id).innerHTML = currencyOptions($(id).value || 'USD');
     $('simProvider').innerHTML = providerOptions($('simProvider').value);
-    render();
-}
-
-function fillForm(index) {
-    const row = typeof index === 'number' ? state.rows.find(r => r.index === index) : null;
-    state.editIndex = row ? row.index : null;
-    const f = row ? row.fee : {
-        provider: state.providers[0]?.code,
-        currency: 'USD',
-        charge: 'ALL',
-        feeCurrency: 'HKD',
-        fixed: 50,
-        rate: 0,
-        minimum: 0,
-        maximum: null,
-        cable: 30,
-        intermediary: 20
-    };
-    $('feeProvider').innerHTML = providerOptions(f.provider);
-    $('feeCurrency').innerHTML = currencyOptions(f.currency);
-    $('feeFeeCurrency').innerHTML = currencyOptions(f.feeCurrency);
-    $('feeCharge').value = f.charge;
-    $('feeFixed').value = f.fixed;
-    $('feeRate').value = f.rate;
-    $('feeMinimum').value = f.minimum;
-    $('feeMaximum').value = f.maximum ?? '';
-    $('feeCable').value = f.cable;
-    $('feeIntermediary').value = f.intermediary;
-    $('feeDelete').disabled = !row;
-    $('formTitle').textContent = row ? `编辑手续费 · #${row.index} ${f.provider}/${f.currency}/${f.charge}` : '新增手续费行';
-    $('feeError').textContent = '';
-    $('feeGood').textContent = '';
     render();
 }
 
@@ -84,72 +52,8 @@ $('filterProvider').onchange = render;
 $('filterCurrency').onchange = render;
 $('query').onclick = render;
 $('refresh').onclick = async () => {
-    try {
-        apply(await api('/c7/fees'));
-        fillForm();
-        $('pageError').textContent = '';
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
-};
-$('rows').onclick = e => {
-    const b = e.target.closest('[data-edit]');
-    if (b) {
-        fillForm(Number(b.dataset.edit));
-        $('formPanel').scrollIntoView({behavior: 'smooth'});
-    }
-};
-$('feeCancel').onclick = () => fillForm();
-$('feeForm').onsubmit = async e => {
-    e.preventDefault();
-    $('feeError').textContent = '';
-    $('feeGood').textContent = '';
-    $('feeSave').disabled = true;
-    try {
-        const fee = {
-            provider: $('feeProvider').value,
-            currency: $('feeCurrency').value,
-            charge: $('feeCharge').value,
-            feeCurrency: $('feeFeeCurrency').value,
-            fixed: Number($('feeFixed').value),
-            rate: Number($('feeRate').value),
-            minimum: Number($('feeMinimum').value),
-            maximum: $('feeMaximum').value === '' ? null : Number($('feeMaximum').value),
-            cable: Number($('feeCable').value),
-            intermediary: Number($('feeIntermediary').value)
-        };
-        for (const k of ['fixed', 'rate', 'minimum', 'cable', 'intermediary']) if (!(fee[k] >= 0)) throw Error('费用金额必须为不小于0的数字');
-        if (fee.maximum != null && fee.maximum < fee.minimum) throw Error('最高手续费不可小于最低手续费');
-        apply(await api('/c7/fees', {
-            method: 'PUT',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex, fee})
-        }));
-        const hit = state.rows.find(r => r.fee.provider === fee.provider && r.fee.currency === fee.currency && r.fee.charge === fee.charge);
-        fillForm(hit?.index);
-        $('feeGood').textContent = `已保存，配置版本 ${state.revision}。下一次路由试算即按新费用计算 C7。`;
-        $('simResult').className = 'notice';
-        $('simResult').textContent = '手续费已保存，请重新试算查看最新成本。';
-    } catch (err) {
-        $('feeError').textContent = err.message;
-    } finally {
-        $('feeSave').disabled = false;
-    }
-};
-$('feeDelete').onclick = async () => {
-    if (state.editIndex == null) return;
-    if (!confirm(`确定删除手续费行 #${state.editIndex}？删除后该维度无费用配置，路由试算将报「缺少手续费配置」。`)) return;
-    $('feeError').textContent = '';
-    $('feeGood').textContent = '';
-    try {
-        apply(await api('/c7/fees/delete', {
-            method: 'POST',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex})
-        }));
-        fillForm();
-        $('feeGood').textContent = '手续费行已删除。';
-    } catch (err) {
-        $('feeError').textContent = err.message;
-    }
+    try { apply(await api('/c7/fees')); $('pageError').textContent = ''; }
+    catch (e) { $('pageError').textContent = e.message; }
 };
 
 function step(n, title, value, detail) {
@@ -228,7 +132,6 @@ document.querySelectorAll('[data-sample]').forEach(b => b.onclick = () => {
         const [providers, data] = await Promise.all([api('/providers'), api('/c7/fees')]);
         state.providers = providers;
         apply(data);
-        fillForm();
     } catch (e) {
         $('pageError').textContent = e.message;
     }

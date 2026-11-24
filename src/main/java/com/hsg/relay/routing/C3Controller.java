@@ -29,6 +29,11 @@ public class C3Controller {
         return service.toggle(index, in);
     }
 
+    @PostMapping("/reaches/{index}/delete")
+    public C3Service.Listing delete(@PathVariable int index, @RequestBody C3Service.Toggle in) {
+        return service.delete(index, in);
+    }
+
     @PostMapping("/simulate")
     public C3Service.Simulation simulate(@RequestBody C3Matcher.Input in) {
         return service.simulate(in);

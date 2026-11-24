@@ -7,6 +7,10 @@
     <link rel="stylesheet" href="/hsg-style.css">
     <link rel="stylesheet" href="/provider.css">
     <style>
+        #providerReachForm .checks {display:flex;gap:18px;flex-wrap:wrap}
+        #providerReachForm .checks label {display:flex;align-items:center;gap:6px;margin:0}
+        #providerReachForm .checks input {width:16px;min-height:16px;margin:0}
+        #providerReachForm textarea {width:100%;min-height:76px;border:1px solid #cdd8e7;border-radius:6px;padding:9px;color:#243b59;font:inherit}
         .profile {
             display: flex;
             justify-content: space-between;
@@ -182,6 +186,11 @@
                                 <button type="button" class="tab sel" data-tab="base">基础信息</button>
                                 <button type="button" class="tab" data-tab="appetites">准入规则配置</button>
                                 <button type="button" class="tab" data-tab="usage">MTD 使用情况</button>
+                                <button type="button" class="tab" data-tab="balances">往来账余额与占用</button>
+                                <button type="button" class="tab" data-tab="reaches">业务覆盖</button>
+                                <button type="button" class="tab" data-tab="limits">交易限额</button>
+                                <button type="button" class="tab" data-tab="fees">手续费配置</button>
+                                <button type="button" class="tab" data-tab="schedules">截单与工作日日历</button>
                                 <button type="button" class="tab" data-tab="exclusions">客户排除管理</button>
                                 <button type="button" class="tab" data-tab="approvals">个案审批管理</button>
                                 <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
@@ -190,6 +199,11 @@
                             <div id="baseView"></div>
                             <div id="appetitesView" class="hidden"></div>
                             <div id="usageView" class="hidden"></div>
+                            <div id="balancesView" class="hidden"></div>
+                            <div id="reachesView" class="hidden"></div>
+                            <div id="limitsView" class="hidden"></div>
+                            <div id="feesView" class="hidden"></div>
+                            <div id="schedulesView" class="hidden"></div>
                             <div id="exclusionsView" class="hidden"></div>
                             <div id="approvalsView" class="hidden"></div>
                             <div id="restrictionsView" class="hidden"></div>

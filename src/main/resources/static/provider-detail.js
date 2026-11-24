@@ -4,7 +4,7 @@
 const state = {view: null, tags: [], tab: 'base', request: 0};
 const params = new URLSearchParams(location.search);
 const code = params.get('code');
-const TABS = ['base', 'appetites', 'usage', 'exclusions', 'approvals', 'restrictions', 'audit'];
+const TABS = ['base', 'appetites', 'usage', 'balances', 'reaches', 'limits', 'fees', 'schedules', 'exclusions', 'approvals', 'restrictions', 'audit'];
 
 // 基础资料在独立编辑页维护
 function editHref() {
@@ -208,17 +208,131 @@ function renderAudit(data) {
         : '<div class="notice">暂无合作方基础信息或能力标签变更记录。</div>';
 }
 
+let balanceListing = null, balanceGood = '';
+const balanceMoney = value => Number(value).toLocaleString('en-US', {maximumFractionDigits: 2});
+function renderBalances(data) {
+    balanceListing = data;
+    const rows = data.rows.filter(row => row.balance.provider === code);
+    const funding = data.fundingSwitches.find(item => item.code === code);
+    $('balancesView').innerHTML = `<div class="rulebar"><div><h2 style="margin:0">${esc(code)} · 往来账余额与占用</h2><div class="muted">配置版本 ${data.revision} · 资金校验开关 ${funding?.fundingCheckEnabled ? 'ON' : 'OFF'}（基础信息中维护）</div></div><button type="button" class="btn" data-balance-new>＋ 新增余额行</button></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>币种</th><th>账户余额</th><th>未记账占用</th><th>可用头寸</th><th>操作</th></tr></thead><tbody>${rows.map(row => {const b=row.balance, available=Number(b.balance)-Number(b.reserved);return `<tr><td>${esc(b.currency)}</td><td>${esc(balanceMoney(b.balance))}</td><td>${esc(balanceMoney(b.reserved))}</td><td>${esc(balanceMoney(available))}</td><td><button type="button" class="btn secondary tiny" data-balance-edit="${row.index}">编辑</button> <button type="button" class="btn secondary tiny" data-balance-delete="${row.index}">删除</button></td></tr>`;}).join('')||'<tr><td colspan="5">该合作方暂无往来账余额行。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">同一合作方、同一币种仅一行。可用头寸＝账户余额 − 未记账占用；保存后下一次路由试算立即生效。</div><div id="balancePageGood" class="good" role="status">${esc(balanceGood)}</div><div id="balanceFormPanel"></div>`;
+    renderBalanceForm();
+}
+function renderBalanceForm(row = null) {
+    const currencies=[...new Set([...(balanceListing?.currencies||[]),row?.balance.currency])].filter(Boolean).sort();
+    $('balanceFormPanel').dataset.index=row?.index ?? '';
+    $('balanceFormPanel').innerHTML=`<form id="providerBalanceForm" class="panel" style="background:#f8fbff" novalidate><h2 style="margin:0 0 12px">${row ? '编辑' : '新增'}往来账余额 · ${esc(code)}</h2><div class="layout3"><div class="field"><label>币种 *</label><select name="currency">${currencies.map(currency=>`<option value="${esc(currency)}"${currency===(row?.balance.currency||'USD')?' selected':''}>${esc(currency)}</option>`).join('')}</select></div><div class="field"><label>账户余额 *</label><input name="balance" type="number" min="0" step="0.01" value="${esc(row?.balance.balance??'0')}" required></div><div class="field"><label>未记账占用 *</label><input name="reserved" type="number" min="0" step="0.01" value="${esc(row?.balance.reserved??'0')}" required></div></div><div id="balancePageError" class="err" role="alert"></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存余额</button>${row?'<button type="button" class="btn secondary" data-balance-cancel>取消编辑</button>':''}</div></form>`;
+}
+
+let scheduleListing = null, scheduleGood = '';
+let reachListing = null, reachGood = '';
+function renderReaches(data) {
+    reachListing = data;
+    const rows = data.rows.filter(item => item.reach.provider === code);
+    $('reachesView').innerHTML = `<div class="rulebar"><div><h2 style="margin:0">${esc(code)} · 业务覆盖</h2><div class="muted">配置版本 ${data.revision} · ${rows.length} 条覆盖行</div></div><button type="button" class="btn" data-reach-new>＋ 新增覆盖行</button></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>行号</th><th>币种</th><th>国家 / 地区</th><th>银行范围</th><th>扣费方式</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(({index,reach:r})=>`<tr><td>#${index+1}</td><td>${esc(r.currency)}</td><td>${esc(r.country)} / ${esc(r.region)}</td><td>${r.bics.length?`LIST<br>${esc(r.bics.join(', '))}`:'ALL'}</td><td>${esc(r.charges.join(' / '))}</td><td><span class="badge ${r.enabled===false?'pending':'pass'}">${r.enabled===false?'停用':'启用'}</span></td><td><button type="button" class="btn secondary tiny" data-reach-edit="${index}">编辑</button> <button type="button" class="btn secondary tiny" data-reach-toggle="${index}">${r.enabled===false?'启用':'停用'}</button> <button type="button" class="btn secondary tiny" data-reach-delete="${index}">删除</button></td></tr>`).join('')||'<tr><td colspan="7">该合作方暂无覆盖行。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">地区填 ALL 可匹配未提供地区的交易；银行范围选 LIST 时须填写 BIC 前 8 位。C3 按地区、国家、银行范围选取最精确行。覆盖行同时承载 C5 截单日历和 C6 限额参数。</div><div id="reachPageGood" class="good" role="status">${esc(reachGood)}</div><div id="reachPageError" class="err" role="alert"></div><div id="reachFormPanel"></div>`;
+}
+function renderReachForm(entry = null) {
+    const r = entry?.reach;
+    const currencies = [...new Set([...(reachListing?.currencies || []), r?.currency])].filter(Boolean).sort();
+    $('reachFormPanel').dataset.index = entry?.index ?? '';
+    $('reachFormPanel').innerHTML = `<form id="providerReachForm" class="panel" style="background:#f8fbff" novalidate><h2 style="margin:0 0 12px">${r?'编辑':'新增'}业务覆盖 · ${esc(code)}</h2><div class="layout3"><div class="field"><label>交易币种 *</label><select name="currency" required>${currencies.map(c=>`<option value="${esc(c)}"${c===(r?.currency||'USD')?' selected':''}>${esc(c)}</option>`).join('')}</select></div><div class="field"><label>受益行国家 *</label><input name="country" value="${esc(r?.country||'ALL')}" maxlength="3" required></div><div class="field"><label>受益人地区 *</label><input name="region" value="${esc(r?.region||'ALL')}" maxlength="6" required></div><div class="field"><label>银行范围 *</label><select name="bankScope"><option value="ALL"${r?.bics?.length?'':' selected'}>ALL · 全部银行</option><option value="LIST"${r?.bics?.length?' selected':''}>LIST · 指定 BIC8</option></select></div><div class="field"><label>状态</label><select name="enabled"><option value="true"${r?.enabled===false?'':' selected'}>启用</option><option value="false"${r?.enabled===false?' selected':''}>停用</option></select></div></div><div class="field" style="margin-top:12px" data-reach-bics><label>BIC8 列表（逗号或换行分隔）</label><textarea name="bics" placeholder="ICBKCNBJ, BKCHCNBJ">${esc((r?.bics||[]).join(', '))}</textarea></div><div class="field" style="margin-top:12px"><label>支持的扣费方式 *</label><div class="checks">${['OUR','SHA','BEN'].map(c=>`<label><input type="checkbox" name="charges" value="${c}"${(r?.charges||['OUR','SHA','BEN']).includes(c)?' checked':''}>${c}</label>`).join('')}</div></div><div class="notice">截单与节假日在“截单与工作日日历”页签维护；现有覆盖行的 C5/C6 参数会保留。</div><div id="reachFormError" class="err" role="alert"></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存业务覆盖</button><button type="button" class="btn secondary" data-reach-cancel>取消</button></div></form>`;
+    syncReachBics();
+}
+function syncReachBics() {
+    const form=$('providerReachForm'); if(!form)return;
+    const isList=form.elements.bankScope.value==='LIST';
+    form.querySelector('[data-reach-bics]').classList.toggle('hidden',!isList);
+    form.elements.bics.disabled=!isList;
+}
+async function deleteReach(index, entry) {
+    try {
+        return await api(`/c3/reaches/${index}/delete`,{method:'POST',body:JSON.stringify({revision:reachListing.revision})});
+    } catch(error) {
+        if(error.message!=='Not Found')throw error;
+        // 运行中的旧版服务尚未加载删除接口时，沿用已有的带版本校验的完整配置保存接口。
+        const current=await api('/routing/config');
+        if(current.revision!==reachListing.revision || current.config.reaches[index]?.provider!==code || JSON.stringify(current.config.reaches[index])!==JSON.stringify(entry.reach))
+            throw new Error('配置已更新，请刷新后重试');
+        current.config.reaches.splice(index,1);
+        return api('/routing/config',{method:'PUT',body:JSON.stringify(current)});
+    }
+}
+let limitListing = null, limitGood = '';
+const limitMoney = value => Number(value ?? 0).toLocaleString('en-US',{maximumFractionDigits:2});
+function renderLimits(data) {
+    limitListing = data;
+    const rows=data.rows.filter(item=>item.reach.provider===code);
+    const hasToday=Object.prototype.hasOwnProperty.call(data.todayUsd,code);
+    $('limitsView').innerHTML=`<div class="rulebar"><div><h2 style="margin:0">${esc(code)} · 覆盖行限额与当日累计</h2><div class="muted">配置版本 ${data.revision} · ${rows.length} 条覆盖行</div></div><button type="button" class="btn" data-limit-new>＋ 新增覆盖行</button></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>覆盖行</th><th>币种 / 国家 / 地区</th><th>单笔最大限额 USD</th><th>每日最大限额 USD</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(({index,reach:r})=>`<tr><td>#${index+1}</td><td>${esc(r.currency)} / ${esc(r.country)} / ${esc(r.region)} · ${r.bics.length?'LIST':'ALL'}</td><td>${esc(limitMoney(r.perPaymentUsd))}</td><td>${esc(limitMoney(r.dailyUsd))}</td><td>${r.enabled===false?'停用':'启用'}</td><td><button type="button" class="btn secondary tiny" data-limit-edit="${index}">编辑限额</button> <button type="button" class="btn secondary tiny" data-limit-delete="${index}">删除覆盖行</button></td></tr>`).join('')||'<tr><td colspan="6">该合作方暂无覆盖行，请先新增。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">限额保存在业务覆盖行中。新增或删除覆盖行会同时影响 C3 覆盖判断和 C5 截单配置；修改两项限额不会影响覆盖条件。</div><div id="limitFormPanel"></div>`
+      + `<div class="panel" style="background:#f8fbff;margin-top:16px"><div class="rulebar"><h2 style="margin:0">当日累计交易金额 · USD</h2><span class="badge ${hasToday?'pass':'pending'}">${hasToday?'已配置':'未配置，按 0 计算'}</span></div><div class="muted">当前值：${esc(limitMoney(data.todayUsd[code]??0))} USD。香港当日已路由金额的演示快照；重算时不含本笔自身。</div><form id="providerTodayForm" class="layout3" style="margin-top:12px" novalidate><div class="field"><label>当日累计金额 USD *</label><input name="todayUsd" type="number" min="0" step="0.01" value="${esc(data.todayUsd[code]??0)}" required></div><div class="actions" style="align-items:end"><button type="submit" class="btn">保存当日累计</button>${hasToday?'<button type="button" class="btn secondary" data-today-delete>删除累计记录</button>':''}</div></form><div id="todayPageError" class="err" role="alert"></div></div>`
+      + `<div id="limitPageGood" class="good" role="status">${esc(limitGood)}</div><div id="limitPageError" class="err" role="alert"></div>`;
+}
+function renderLimitForm(entry) {
+    const r=entry.reach;
+    $('limitFormPanel').dataset.index=entry.index;
+    $('limitFormPanel').innerHTML=`<form id="providerLimitForm" class="panel" style="background:#f8fbff;margin-top:16px" novalidate><h2 style="margin:0 0 12px">覆盖行 #${entry.index+1} · ${esc(r.currency)} / ${esc(r.country)} / ${esc(r.region)}</h2><div class="layout3"><div class="field"><label>单笔最大限额 USD *</label><input name="perPaymentUsd" type="number" min="0" step="0.01" value="${esc(r.perPaymentUsd)}" required></div><div class="field"><label>每日最大限额 USD *</label><input name="dailyUsd" type="number" min="0" step="0.01" value="${esc(r.dailyUsd)}" required></div></div><div id="limitFormError" class="err" role="alert"></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存限额</button><button type="button" class="btn secondary" data-limit-cancel>取消</button></div></form>`;
+}
+async function deleteTodaySnapshot() {
+    try{return await api(`/c6/today/${encodeURIComponent(code)}/delete`,{method:'POST',body:JSON.stringify({revision:limitListing.revision})});}
+    catch(error){
+        if(error.message!=='Not Found')throw error;
+        const current=await api('/routing/config');
+        if(current.revision!==limitListing.revision)throw new Error('配置已更新，请刷新后重试');
+        delete current.config.todayUsd[code];
+        return api('/routing/config',{method:'PUT',body:JSON.stringify(current)});
+    }
+}
+function renderSchedules(data) {
+    scheduleListing = data;
+    const rows = data.rows.filter(item => item.reach.provider === code);
+    $('schedulesView').innerHTML = `<div class="rulebar"><div><h2 style="margin:0">${esc(code)} · 截单与工作日日历</h2><div class="muted">配置版本 ${data.revision} · 每条 C3 覆盖行独立维护</div></div></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>覆盖行</th><th>币种 / 国家 / 地区</th><th>截单 / 时区</th><th>偏移工作日</th><th>节假日日历</th><th>操作</th></tr></thead><tbody>${rows.map(({index,reach:r})=>`<tr><td>#${index+1}</td><td>${esc(r.currency)} / ${esc(r.country)} / ${esc(r.region)}</td><td>${esc(r.cutoff)}<br>${esc(r.zone)}</td><td>+${esc(r.offsetDays)}</td><td>${r.holidays.length?`<details><summary>${r.holidays.length} 个节假日</summary>${r.holidays.map(day=>`<div>${esc(day)}</div>`).join('')}</details>`:'仅周末'}</td><td><button type="button" class="btn secondary tiny" data-schedule-edit="${index}">维护</button></td></tr>`).join('')||'<tr><td colspan="6">该合作方暂无覆盖行，请先在“业务覆盖”页签新增。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">截单与日历存储在 C3 业务覆盖行中；新增或删除覆盖行在“业务覆盖”页签管理，节假日可在下方表单增删并保存。</div><div id="schedulePageGood" class="good" role="status">${esc(scheduleGood)}</div><div id="scheduleFormPanel"></div>`;
+}
+function renderScheduleForm(entry) {
+    const r=entry.reach;
+    $('scheduleFormPanel').dataset.index=entry.index;
+    $('scheduleFormPanel').innerHTML=`<form id="providerScheduleForm" class="panel" style="background:#f8fbff" novalidate><h2>覆盖行 #${entry.index+1} · ${esc(r.currency)} / ${esc(r.country)} / ${esc(r.region)}</h2><div class="layout3"><div class="field"><label>截单时区 *</label><input name="zone" value="${esc(r.zone)}" required></div><div class="field"><label>截单时间 *</label><input name="cutoff" type="time" step="1" value="${esc(r.cutoff)}" required></div><div class="field"><label>起息偏移工作日 *</label><input name="offsetDays" type="number" min="0" max="5" value="${esc(r.offsetDays)}" required></div></div><div class="field" style="margin-top:12px"><label>节假日（每行一个日期；可新增或删去日期）</label><textarea name="holidays" placeholder="2026-12-25">${esc(r.holidays.join('\n'))}</textarea></div><div id="schedulePageError" class="err" role="alert"></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存截单与日历</button><button type="button" class="btn secondary" data-schedule-cancel>取消</button></div></form>`;
+}
+
+let feeListing = null, feeGood = '';
+const feeMoney = value => value == null ? '—' : Number(value).toLocaleString('en-US', {maximumFractionDigits: 2});
+function renderFees(data) {
+    feeListing = data;
+    const rows = data.rows.filter(item => item.fee.provider === code);
+    $('feesView').innerHTML = `<div class="rulebar"><div><h2 style="margin:0">${esc(code)} · 手续费配置</h2><div class="muted">配置版本 ${data.revision} · ${rows.length} 条手续费行</div></div><button type="button" class="btn" data-fee-new>＋ 新增手续费</button></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>行号</th><th>交易币种 / 扣费</th><th>固定费</th><th>费率</th><th>最低 / 最高</th><th>电报费</th><th>中间行费</th><th>费用币种</th><th>操作</th></tr></thead><tbody>${rows.map(({index,fee:f})=>`<tr><td>#${index+1}</td><td>${esc(f.currency)} / ${esc(f.charge)}</td><td>${esc(feeMoney(f.fixed))}</td><td>${esc(f.rate)}</td><td>${esc(feeMoney(f.minimum))} / ${f.maximum==null?'不封顶':esc(feeMoney(f.maximum))}</td><td>${esc(feeMoney(f.cable))}</td><td>${esc(feeMoney(f.intermediary))}</td><td>${esc(f.feeCurrency)}</td><td><button type="button" class="btn secondary tiny" data-fee-edit="${index}">编辑</button> <button type="button" class="btn secondary tiny" data-fee-delete="${index}">删除</button></td></tr>`).join('')||'<tr><td colspan="9">该合作方暂无手续费配置。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">维度为合作方＋交易币种＋扣费方式。精确扣费方式优先于 ALL；费率填小数，0.001 表示 0.1%。删除后若没有可匹配的费用行，成本试算会提示缺少手续费配置。</div><div id="feePageGood" class="good" role="status">${esc(feeGood)}</div><div id="feePageError" class="err" role="alert"></div><div id="feeFormPanel"></div>`;
+}
+function renderFeeForm(entry = null) {
+    const f = entry?.fee || {currency:'USD',charge:'ALL',feeCurrency:'HKD',fixed:50,rate:0,minimum:0,maximum:null,cable:30,intermediary:20};
+    const currencies = [...new Set([...(feeListing?.currencies || []), f.currency, f.feeCurrency])].filter(Boolean).sort();
+    const currencyOptions = selected => currencies.map(c => `<option value="${esc(c)}"${c===selected?' selected':''}>${esc(c)}</option>`).join('');
+    $('feeFormPanel').dataset.index = entry?.index ?? '';
+    $('feeFormPanel').innerHTML = `<form id="providerFeeForm" class="panel" style="background:#f8fbff;margin-top:16px" novalidate><h2 style="margin:0 0 12px">${entry?'编辑':'新增'}手续费 · ${esc(code)}</h2><div class="layout3"><div class="field"><label>交易币种 *</label><select name="currency" required>${currencyOptions(f.currency)}</select></div><div class="field"><label>扣费方式 *</label><select name="charge">${['ALL','OUR','SHA','BEN'].map(c=>`<option value="${c}"${c===f.charge?' selected':''}>${c}</option>`).join('')}</select></div><div class="field"><label>费用币种 *</label><select name="feeCurrency" required>${currencyOptions(f.feeCurrency)}</select></div><div class="field"><label>固定手续费 *</label><input name="fixed" type="number" min="0" step="0.01" value="${esc(f.fixed)}" required></div><div class="field"><label>百分比费率（小数）*</label><input name="rate" type="number" min="0" step="0.000001" value="${esc(f.rate)}" required></div><div class="field"><label>最低手续费 *</label><input name="minimum" type="number" min="0" step="0.01" value="${esc(f.minimum)}" required></div><div class="field"><label>最高手续费（留空不封顶）</label><input name="maximum" type="number" min="0" step="0.01" value="${esc(f.maximum??'')}"></div><div class="field"><label>电报费 *</label><input name="cable" type="number" min="0" step="0.01" value="${esc(f.cable)}" required></div><div class="field"><label>预估中间行费用 *</label><input name="intermediary" type="number" min="0" step="0.01" value="${esc(f.intermediary)}" required></div></div><div id="feeFormError" class="err" role="alert"></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存手续费</button><button type="button" class="btn secondary" data-fee-cancel>取消</button></div></form>`;
+}
+
 // 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；变更记录取合作方管理的聚合接口；
 // MTD 取全部记录按合作方筛选，并取本合作方的准入规则用于显示月度上限与当月剩余额度
 const LOAD = {
     appetites: () => api(`/appetites?providerCode=${encodeURIComponent(code)}`),
     usage: async () => { const [rows, rules] = await Promise.all([api('/usage'), api(`/appetites?providerCode=${encodeURIComponent(code)}`)]); return {rows: rows.filter(x => x.providerCode === code), rules}; },
+    balances: () => api('/c4/balances'),
+    reaches: () => api('/c3/reaches'),
+    limits: () => api('/c6/limits'),
+    fees: () => api('/c7/fees'),
+    schedules: () => api('/c5/schedules'),
     exclusions: async () => { const [rows, clients] = await Promise.all([api(`/exclusions?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     approvals: async () => { const [rows, clients] = await Promise.all([api(`/approvals?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     restrictions: async () => (await api('/c2/restrictions')).filter(r => r.providerCode === code),
     audit: () => api(`/provider-management/${encodeURIComponent(code)}/audit`)
 };
-const RENDER = {appetites: renderAppetites, usage: renderUsage, exclusions: renderExclusions, approvals: renderApprovals, restrictions: renderRestrictions, audit: renderAudit};
+const RENDER = {appetites: renderAppetites, usage: renderUsage, balances: renderBalances, reaches: renderReaches, limits: renderLimits, fees: renderFees, schedules: renderSchedules, exclusions: renderExclusions, approvals: renderApprovals, restrictions: renderRestrictions, audit: renderAudit};
 
 // silent：重读期间保留已显示的内容，不先换成「正在加载…」
 async function activate(tab, silent = false) {
@@ -387,6 +501,170 @@ $('restrictionsView').addEventListener('submit', async e => {
         restrictionGood = `限制记录 #${saved.id} 保存成功，版本 v${saved.versionNo}。`;
         await show(true);
     } catch (errorValue) { error.textContent = errorValue.message; save.disabled = false; }
+});
+$('balancesView').addEventListener('click', async e => {
+    if (e.target.closest('[data-balance-new], [data-balance-cancel]')) { renderBalanceForm(); return; }
+    const edit=e.target.closest('[data-balance-edit]');
+    if (edit) { const row=balanceListing.rows.find(r=>r.index===Number(edit.dataset.balanceEdit)&&r.balance.provider===code);if(row)renderBalanceForm(row);return; }
+    const remove=e.target.closest('[data-balance-delete]');
+    if (!remove) return;
+    const row=balanceListing.rows.find(r=>r.index===Number(remove.dataset.balanceDelete)&&r.balance.provider===code);
+    if (!row || !confirm(`确定删除 ${code} / ${row.balance.currency} 的余额行？删除后该币种可用头寸按 0 计。`)) return;
+    remove.disabled=true;
+    try { await api('/c4/balances/delete',{method:'POST',body:JSON.stringify({revision:balanceListing.revision,index:row.index})});markChanged();balanceGood=`已删除 ${row.balance.currency} 余额行。`;await activate('balances',true); }
+    catch(error){$('balancePageError').textContent=error.message;remove.disabled=false;}
+});
+$('balancesView').addEventListener('submit', async e => {
+    if(e.target.id!=='providerBalanceForm')return;
+    e.preventDefault();
+    const form=e.target, values=Object.fromEntries(new FormData(form).entries()), error=$('balancePageError');
+    const index=$('balanceFormPanel').dataset.index;
+    const previous=index===''?null:balanceListing.rows.find(r=>r.index===Number(index)&&r.balance.provider===code);
+    error.textContent='';
+    if(values.balance===''||values.reserved===''||!Number.isFinite(Number(values.balance))||!Number.isFinite(Number(values.reserved))||Number(values.balance)<0||Number(values.reserved)<0){error.textContent='余额与占用必须为非负数字';return;}
+    const save=form.querySelector('[type="submit"]');save.disabled=true;
+    try { await api('/c4/balances',{method:'PUT',body:JSON.stringify({revision:balanceListing.revision,index:previous?.index??null,balance:{provider:code,currency:values.currency,balance:Number(values.balance),reserved:Number(values.reserved)}})});markChanged();balanceGood=`${values.currency} 余额与占用已保存。`;await activate('balances',true); }
+    catch(failure){error.textContent=failure.message;save.disabled=false;}
+});
+$('reachesView').addEventListener('change',e=>{if(e.target.name==='bankScope')syncReachBics();});
+$('reachesView').addEventListener('click',async e=>{
+    if(e.target.closest('[data-reach-new]')){renderReachForm();return;}
+    if(e.target.closest('[data-reach-cancel]')){$('reachFormPanel').innerHTML='';return;}
+    const edit=e.target.closest('[data-reach-edit]');
+    if(edit){const entry=reachListing.rows.find(item=>item.index===Number(edit.dataset.reachEdit)&&item.reach.provider===code);if(entry)renderReachForm(entry);return;}
+    const toggle=e.target.closest('[data-reach-toggle]'),remove=e.target.closest('[data-reach-delete]'),button=toggle||remove;
+    if(!button)return;
+    const index=Number(toggle?.dataset.reachToggle??remove.dataset.reachDelete);
+    const entry=reachListing.rows.find(item=>item.index===index&&item.reach.provider===code);
+    if(!entry)return;
+    if(remove&&!confirm(`确定删除 ${code} 的覆盖行 #${index+1}？该行的 C5 截单日历和 C6 限额参数也会一并删除。`))return;
+    button.disabled=true;
+    try{if(remove)await deleteReach(index,entry);else await api(`/c3/reaches/${index}/toggle`,{method:'POST',body:JSON.stringify({revision:reachListing.revision})});markChanged();reachGood=`覆盖行 #${index+1} 已${remove?'删除':entry.reach.enabled===false?'启用':'停用'}。`;await activate('reaches',true);}
+    catch(error){$('reachPageError').textContent=error.message;button.disabled=false;}
+});
+$('reachesView').addEventListener('submit',async e=>{
+    if(e.target.id!=='providerReachForm')return;
+    e.preventDefault();
+    const form=e.target,error=$('reachFormError'),values=Object.fromEntries(new FormData(form).entries());
+    const index=$('reachFormPanel').dataset.index;
+    const previous=index===''?null:reachListing.rows.find(item=>item.index===Number(index)&&item.reach.provider===code);
+    if(index!==''&&!previous){error.textContent='覆盖行已变化，请刷新后重试';return;}
+    const charges=[...form.querySelectorAll('[name="charges"]:checked')].map(input=>input.value);
+    const bics=values.bankScope==='LIST'?values.bics.toUpperCase().split(/[,\s]+/).map(value=>value.trim()).filter(Boolean):[];
+    const country=values.country.trim().toUpperCase(),region=values.region.trim().toUpperCase();
+    if(!country||!region){error.textContent='受益行国家和受益人地区必填';return;}
+    if(!charges.length){error.textContent='至少选择一种扣费方式';return;}
+    if(values.bankScope==='LIST'&&!bics.length){error.textContent='LIST 范围至少填写一个 BIC8';return;}
+    const reach={...(previous?.reach||{zone:'Asia/Hong_Kong',cutoff:'17:00',offsetDays:0,perPaymentUsd:2000000,dailyUsd:10000000,holidays:[]}),provider:code,currency:values.currency,country,region,bics,charges,enabled:values.enabled==='true'};
+    const save=form.querySelector('[type="submit"]');save.disabled=true;error.textContent='';
+    try{await api('/c3/reaches',{method:'POST',body:JSON.stringify({revision:reachListing.revision,index:previous?.index??null,bankScope:values.bankScope,reach})});markChanged();reachGood=`${values.currency} / ${country} / ${region} 覆盖行已保存。`;await activate('reaches',true);}
+    catch(failure){error.textContent=failure.message;save.disabled=false;}
+});
+$('limitsView').addEventListener('click',async e=>{
+    if(e.target.closest('[data-limit-new]')){
+        await activate('reaches');
+        renderReachForm();
+        $('reachFormPanel').scrollIntoView({behavior:'smooth',block:'start'});
+        return;
+    }
+    if(e.target.closest('[data-limit-cancel]')){$('limitFormPanel').innerHTML='';return;}
+    const edit=e.target.closest('[data-limit-edit]');
+    if(edit){const entry=limitListing.rows.find(item=>item.index===Number(edit.dataset.limitEdit)&&item.reach.provider===code);if(entry){renderLimitForm(entry);$('limitFormPanel').scrollIntoView({behavior:'smooth',block:'start'});}return;}
+    const remove=e.target.closest('[data-limit-delete]');
+    if(remove){
+        const index=Number(remove.dataset.limitDelete);
+        const entry=limitListing.rows.find(item=>item.index===index&&item.reach.provider===code);
+        if(!entry||!confirm(`确定删除 ${code} 的覆盖行 #${index+1}？C3 覆盖、C5 截单和 C6 限额参数都会一并删除。`))return;
+        remove.disabled=true;
+        try{
+            reachListing=await api('/c3/reaches');
+            const current=reachListing.rows.find(item=>item.index===index&&item.reach.provider===code);
+            if(reachListing.revision!==limitListing.revision||!current||JSON.stringify(current.reach)!==JSON.stringify(entry.reach))throw new Error('配置已更新，请刷新后重试');
+            await deleteReach(index,current);markChanged();limitGood=`覆盖行 #${index+1} 已删除。`;await activate('limits',true);
+        }catch(error){$('limitPageError').textContent=error.message;remove.disabled=false;}
+        return;
+    }
+    const delToday=e.target.closest('[data-today-delete]');
+    if(delToday){
+        if(!confirm(`确定删除 ${code} 的当日累计记录？删除后本次累计按 0 USD 计算。`))return;
+        delToday.disabled=true;
+        try{await deleteTodaySnapshot();markChanged();limitGood='当日累计记录已删除，当前按 0 USD 计算。';await activate('limits',true);}
+        catch(error){$('todayPageError').textContent=error.message;delToday.disabled=false;}
+    }
+});
+$('limitsView').addEventListener('submit',async e=>{
+    if(e.target.id==='providerLimitForm'){
+        e.preventDefault();
+        const form=e.target,error=$('limitFormError'),index=Number($('limitFormPanel').dataset.index);
+        const entry=limitListing.rows.find(item=>item.index===index&&item.reach.provider===code);
+        if(!entry){error.textContent='覆盖行已变化，请刷新后重试';return;}
+        const per=form.elements.perPaymentUsd.value,daily=form.elements.dailyUsd.value;
+        if(per===''||daily===''||!Number.isFinite(Number(per))||!Number.isFinite(Number(daily))||Number(per)<0||Number(daily)<0){error.textContent='两项限额必须为非负数字';return;}
+        const save=form.querySelector('[type="submit"]');save.disabled=true;error.textContent='';
+        try{await api('/c6/limits',{method:'PUT',body:JSON.stringify({revision:limitListing.revision,index,perPaymentUsd:Number(per),dailyUsd:Number(daily)})});markChanged();limitGood=`覆盖行 #${index+1} 限额已保存。`;await activate('limits',true);}
+        catch(failure){error.textContent=failure.message;save.disabled=false;}
+        return;
+    }
+    if(e.target.id==='providerTodayForm'){
+        e.preventDefault();
+        const form=e.target,error=$('todayPageError'),value=form.elements.todayUsd.value;
+        if(value===''||!Number.isFinite(Number(value))||Number(value)<0){error.textContent='当日累计必须为非负数字';return;}
+        const save=form.querySelector('[type="submit"]');save.disabled=true;error.textContent='';
+        try{await api('/c6/today',{method:'PUT',body:JSON.stringify({revision:limitListing.revision,provider:code,todayUsd:Number(value)})});markChanged();limitGood=`当日累计已保存：${limitMoney(value)} USD。`;await activate('limits',true);}
+        catch(failure){error.textContent=failure.message;save.disabled=false;}
+    }
+});
+$('feesView').addEventListener('click', async e => {
+    if (e.target.closest('[data-fee-new]')) { renderFeeForm(); return; }
+    if (e.target.closest('[data-fee-cancel]')) { $('feeFormPanel').innerHTML=''; return; }
+    const edit=e.target.closest('[data-fee-edit]');
+    if (edit) { const entry=feeListing.rows.find(item=>item.index===Number(edit.dataset.feeEdit)&&item.fee.provider===code); if(entry){renderFeeForm(entry);$('feeFormPanel').scrollIntoView({behavior:'smooth',block:'start'});} return; }
+    const remove=e.target.closest('[data-fee-delete]');
+    if (!remove) return;
+    const index=Number(remove.dataset.feeDelete);
+    const entry=feeListing.rows.find(item=>item.index===index&&item.fee.provider===code);
+    if (!entry || !confirm(`确定删除 ${code} / ${entry.fee.currency} / ${entry.fee.charge} 的手续费行？若没有其他匹配行，C7 将无法预估该维度的成本。`)) return;
+    remove.disabled=true;
+    try { await api('/c7/fees/delete',{method:'POST',body:JSON.stringify({revision:feeListing.revision,index})}); markChanged(); feeGood=`${entry.fee.currency} / ${entry.fee.charge} 手续费行已删除。`; await activate('fees',true); }
+    catch(error) { $('feePageError').textContent=error.message; remove.disabled=false; }
+});
+$('feesView').addEventListener('submit', async e => {
+    if(e.target.id!=='providerFeeForm')return;
+    e.preventDefault();
+    const form=e.target,error=$('feeFormError'),values=Object.fromEntries(new FormData(form).entries());
+    const index=$('feeFormPanel').dataset.index;
+    const previous=index===''?null:feeListing.rows.find(item=>item.index===Number(index)&&item.fee.provider===code);
+    if(index!==''&&!previous){error.textContent='手续费行已变化，请刷新后重试';return;}
+    const fee={provider:code,currency:values.currency,charge:values.charge,feeCurrency:values.feeCurrency};
+    for(const key of ['fixed','rate','minimum','cable','intermediary']){
+        const raw=values[key];
+        if(raw===''||!Number.isFinite(Number(raw))||Number(raw)<0){error.textContent='所有必填费用必须为非负数字';return;}
+        fee[key]=Number(raw);
+    }
+    fee.maximum=values.maximum===''?null:Number(values.maximum);
+    if(fee.maximum!==null&&(!Number.isFinite(fee.maximum)||fee.maximum<fee.minimum)){error.textContent='最高手续费不可小于最低手续费';return;}
+    const save=form.querySelector('[type="submit"]');save.disabled=true;error.textContent='';
+    try{await api('/c7/fees',{method:'PUT',body:JSON.stringify({revision:feeListing.revision,index:previous?.index??null,fee})});markChanged();feeGood=`${fee.currency} / ${fee.charge} 手续费行已保存。`;await activate('fees',true);}
+    catch(failure){error.textContent=failure.message;save.disabled=false;}
+});
+$('schedulesView').addEventListener('click', e => {
+    if(e.target.closest('[data-schedule-cancel]')){$('scheduleFormPanel').innerHTML='';return;}
+    const edit=e.target.closest('[data-schedule-edit]');if(!edit)return;
+    const entry=scheduleListing.rows.find(item=>item.index===Number(edit.dataset.scheduleEdit)&&item.reach.provider===code);
+    if(entry){renderScheduleForm(entry);$('scheduleFormPanel').scrollIntoView({behavior:'smooth',block:'start'});}
+});
+$('schedulesView').addEventListener('submit',async e=>{
+    if(e.target.id!=='providerScheduleForm')return;
+    e.preventDefault();
+    const form=e.target,values=Object.fromEntries(new FormData(form).entries()),error=$('schedulePageError');
+    const index=Number($('scheduleFormPanel').dataset.index);
+    const entry=scheduleListing.rows.find(item=>item.index===index&&item.reach.provider===code);
+    if(!entry){error.textContent='覆盖行已变化，请刷新后重试';return;}
+    const holidays=values.holidays.split(/[,\s]+/).map(day=>day.trim()).filter(Boolean);
+    if(holidays.some(day=>!/^\d{4}-\d{2}-\d{2}$/.test(day))){error.textContent='节假日请使用 YYYY-MM-DD 格式';return;}
+    const save=form.querySelector('[type="submit"]');save.disabled=true;error.textContent='';
+    try{await api('/c5/schedules',{method:'PUT',body:JSON.stringify({revision:scheduleListing.revision,index,zone:values.zone.trim(),cutoff:values.cutoff,offsetDays:Number(values.offsetDays),holidays})});markChanged();scheduleGood=`覆盖行 #${index+1} 的截单与日历已保存。`;await activate('schedules',true);}
+    catch(failure){error.textContent=failure.message;save.disabled=false;}
 });
 // MTD 表单：读取当前输入；任一字段变化后刷新标题、提示与「删除此行」的可用状态
 function usageRead(form) {

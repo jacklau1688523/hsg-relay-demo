@@ -72,6 +72,16 @@ class C6ServiceTest {
     }
 
     @Test
+    void deleteTodayReturnsToZeroWithoutChangingReachLimits() {
+        var before = c6.limits();
+        assertThat(before.todayUsd()).containsKey("PROV-T1");
+        assertThatThrownBy(() -> c6.deleteToday("PROV-T1", before.revision() - 1)).hasMessageContaining("更新");
+        var after = c6.deleteToday("PROV-T1", before.revision());
+        assertThat(after.todayUsd()).doesNotContainKey("PROV-T1");
+        assertThat(after.rows()).isEqualTo(before.rows());
+    }
+
+    @Test
     void simulatePassesAndConvertsToUsd() {
         var sim = c6.simulate(new C6Service.Input("PROV-T1", "USD", new BigDecimal("10000"), "US", null, "CHASUS33", "SHA", null, AT));
         assertThat(sim.status()).isEqualTo("PASS");

@@ -244,7 +244,7 @@
             <div class="toplinks"><a href="/c3.html">C3 业务覆盖</a><a href="/c5.html">C5 起息日</a><a
                     href="/providers.html">合作方管理</a><a href="/routing.html">全流程 Check</a></div>
             <div class="heading"><h1>C4 头寸资金校验</h1>
-                <div class="muted">数据源为合作方资金校验开关（9.1）、我行在合作方的往来账 nostro 余额，以及尚未记账的已路由交易占用金额。C4
+                <div class="muted">数据源为合作方资金校验开关（9.1）、合作方详情中维护的往来账 nostro 余额，以及尚未记账的已路由交易占用金额。C4
                     为过滤器：可用头寸不足本笔账户币种等价金额时剔除候选并返回 FUNDING_SHORTFALL。
                 </div>
             </div>
@@ -256,93 +256,21 @@
                 <div class="scorecard"><span>步骤 3–4 · 可用头寸</span><b>可用头寸 ≥ 本笔等价金额</b><span>可用头寸＝账户余额 − 未记账已路由占用；不通过返回 <span
                         class="mono">FUNDING_SHORTFALL</span></span></div>
             </div>
-            <div class="tabs">
-                <button class="tab sel">往来账余额与占用</button>
-                <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
             <div class="c4-grid">
                 <section>
                     <div class="panel">
+                        <div class="rulebar"><h2 id="balanceRowCount" style="margin:0">往来账余额与占用查询</h2><span id="balanceRevision" class="muted"></span></div>
                         <div class="filterbar">
-                            <div class="field"><label for="filterProvider">合作方</label><select
-                                    id="filterProvider"></select></div>
-                            <div class="field"><label for="filterCurrency">币种</label><select
-                                    id="filterCurrency"></select></div>
-                            <button class="btn" id="query">查询</button>
-                            <button class="btn secondary" id="refresh">↻ 刷新</button>
+                            <div class="field"><label for="balanceFilterProvider">合作方</label><select id="balanceFilterProvider"><option value="">全部合作方</option></select></div>
+                            <div class="field"><label for="balanceFilterCurrency">币种</label><select id="balanceFilterCurrency"><option value="">全部币种</option></select></div>
+                            <button type="button" class="btn" id="balanceQuery">查询</button>
+                            <button type="button" class="btn secondary" id="balanceRefresh">↻ 刷新</button>
                         </div>
                     </div>
                     <div class="panel">
-                        <div class="rulebar"><h2 id="rowCount" style="margin:0">往来账余额</h2>
-                            <div class="actions">
-                                <button class="btn" id="new">＋ 新增余额行</button>
-                            </div>
-                        </div>
-                        <div class="tablewrap">
-                            <table>
-                                <thead>
-                                <tr>
-                                    <th>行号</th>
-                                    <th>合作方</th>
-                                    <th>币种</th>
-                                    <th>账户余额</th>
-                                    <th>未记账占用</th>
-                                    <th>可用头寸</th>
-                                    <th>资金校验</th>
-                                    <th>操作</th>
-                                </tr>
-                                </thead>
-                                <tbody id="rows"></tbody>
-                            </table>
-                        </div>
-                        <div class="notice" id="rates"></div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">新增往来账余额</h2><span
-                                class="badge pending">过滤器 · 剔除候选</span></div>
-                        <form id="balanceForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="balProvider">合作方 *</label><select
-                                        id="balProvider"></select></div>
-                                <div class="field"><label for="balCurrency">币种 *</label><select
-                                        id="balCurrency"></select></div>
-                                <div class="field"><label for="balBalance">账户余额（该币种）*</label><input
-                                        id="balBalance" type="number" min="0" step="0.01" required></div>
-                                <div class="field"><label for="balReserved">未记账的已路由交易占用（该币种）</label><input
-                                        id="balReserved" type="number" min="0" step="0.01" value="0" required></div>
-                            </div>
-                            <div class="muted">
-                                同一合作方同一币种仅一行；余额与占用均为该币种金额且须非负（占用大于余额时可用头寸为负）。保存后立即对下一次路由试算生效，递增配置版本并写入审计。真实环境由
-                                HSG 往来账实时回填，本页数值仅用于演示。
-                            </div>
-                            <div class="err" id="balanceError" role="alert"></div>
-                            <div class="good" id="balanceGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="balanceSave" type="submit">保存余额</button>
-                                <button class="btn secondary" id="balanceDelete" type="button">删除此行</button>
-                                <button class="btn secondary" id="balanceCancel" type="button">重置</button>
-                            </div>
-                        </form>
-                    </div>
-                    <div class="panel">
-                        <div class="rulebar"><h2 style="margin:0">合作方资金校验开关（9.1）</h2><span class="muted">只读 · 请到 <a
-                                href="/providers.html">合作方管理</a> 的「C4 资金校验」字段维护</span></div>
-                        <div class="tablewrap">
-                            <table>
-                                <thead>
-                                <tr>
-                                    <th>合作方</th>
-                                    <th>状态</th>
-                                    <th>资金校验开关</th>
-                                    <th>HSG 往来账号</th>
-                                </tr>
-                                </thead>
-                                <tbody id="switches"></tbody>
-                            </table>
-                        </div>
-                        <div class="notice">开关 ON：逐笔校验往来账可用头寸；开关 OFF：直接通过，头寸由资金部在合作方出款前补足（逻辑在
-                            RELAY 模块之外）。仅 LIVE 合作方参与全流程路由候选。
-                        </div>
+                        <div class="tablewrap"><table><thead><tr><th>合作方</th><th>币种</th><th>账户余额</th><th>未记账占用</th><th>可用头寸</th><th>资金校验</th><th>维护入口</th></tr></thead><tbody id="balanceRows"></tbody></table></div>
+                        <div class="notice">此处只查询已保存的余额与占用。新增、编辑、删除请到对应合作方详情的「往来账余额与占用」页签。</div>
                     </div>
                 </section>
                 <aside class="rightPanel">
