@@ -6,9 +6,9 @@ const params = new URLSearchParams(location.search);
 const code = params.get('code');
 const TABS = ['base', 'appetites', 'usage', 'exclusions', 'approvals', 'restrictions', 'audit'];
 
-// 打开独立编辑页；带 tab 时直接切到对应页签
-function editHref(tab) {
-    return `/provider-edit.html?code=${encodeURIComponent(state.view.provider.code)}${tab ? `&tab=${tab}` : ''}`;
+// 基础资料在独立编辑页维护
+function editHref() {
+    return `/provider-edit.html?code=${encodeURIComponent(state.view.provider.code)}`;
 }
 
 function pretty(text) {
@@ -163,20 +163,42 @@ function renderApprovals({rows, clients}) {
         + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>客户</th><th>流转类别</th><th>审批编号</th><th>生效时间</th><th>失效时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(x => {const active=x.effectiveFrom<=now&&x.expiresAt>now;return `<tr><td>#${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.approvalReference)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.expiresAt)}</td><td>${active?'<span class="badge pass">有效</span>':'已失效 / 未生效'}</td><td>${active?`<button type="button" class="btn secondary tiny" data-revoke="${x.id}">撤销</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="8">当前合作方暂无个案审批记录</td></tr>'}</tbody></table></div><div class="err" id="approvalError" role="alert"></div><div class="good" id="approvalGood" role="status"></div>`;
 }
 
+let restrictionRows = [], restrictionGood = '';
 function renderRestrictions(rows) {
+    restrictionRows = rows;
     const list = rows.length ? rows.map(r => {
         const [label, reason] = restrictTypes[r.restrictionType] || [];
         return `<tr><td>#${r.id}</td><td title="${esc(r.restrictionType)}">${esc(label || r.restrictionType)}<br><span class="muted">${esc(reason || '')}</span></td>`
             + `<td>${esc(r.blockedValues)}</td><td>${esc((r.effectiveFrom || '').replace('T', ' ').slice(0, 16))}</td>`
             + `<td>${esc((r.effectiveTo || '—').replace('T', ' ').slice(0, 16))}</td><td>v${r.versionNo}</td>`
             + `<td>${r.enabled ? '<span class="badge pass">启用</span>' : '<span class="badge pending">停用</span>'}</td>`
-            + `<td>${esc(r.remark || '—')}</td></tr>`;
-    }).join('') : '<tr><td colspan="8">该合作方暂无限制记录。</td></tr>';
+            + `<td>${esc(r.remark || '—')}</td><td><button type="button" class="btn secondary tiny" data-restriction-edit="${r.id}">编辑</button> <button type="button" class="btn secondary tiny" data-restriction-toggle="${r.id}">${r.enabled ? '停用' : '启用'}</button></td></tr>`;
+    }).join('') : '<tr><td colspan="9">该合作方暂无限制记录。</td></tr>';
     $('restrictionsView').innerHTML = `<div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 合作方限制（制裁及监管屏蔽）· ${rows.length} 条</div>`
-        + `<a class="btn secondary tiny" href="${editHref('restrictions')}">前往维护 ↗</a></div>`
-        + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>限制类型</th><th>屏蔽值</th><th>生效时间</th><th>失效时间</th><th>版本</th><th>状态</th><th>备注</th></tr></thead>`
+        + `<button type="button" class="btn" data-restriction-new>＋ 新增限制</button></div>`
+        + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>限制类型</th><th>屏蔽值</th><th>生效时间</th><th>失效时间</th><th>版本</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>`
         + `<tbody>${list}</tbody></table></div>`
-        + `<div class="notice">合作方限制按合作方独立配置，C2 校验实时读取：受益行国家/地址国家、客户国家/发起方国家、扣账币种/交易币种分别采用 OR 匹配；董事及 UBO 国籍遍历全部值；中间行为空时不触发该项。</div>`;
+        + `<div class="notice">合作方限制按合作方独立配置，C2 校验实时读取：受益行国家/地址国家、客户国家/发起方国家、扣账币种/交易币种分别采用 OR 匹配；董事及 UBO 国籍遍历全部值；中间行为空时不触发该项。</div>`
+        + `<div id="restrictionGood" class="good" role="status">${esc(restrictionGood)}</div><div id="restrictionFormPanel"></div>`;
+    renderRestrictionForm();
+}
+
+function renderRestrictionForm(row = null) {
+    const panel = $('restrictionFormPanel');
+    if (!panel) return;
+    panel.innerHTML = `<form id="restrictionForm" class="panel" style="background:#f8fbff" novalidate>
+      <h2 style="margin:0 0 12px">${row ? `编辑合作方限制 · #${row.id}` : `新增合作方限制 · ${esc(code)}`}</h2>
+      <div class="layout2">
+        <div class="field"><label>限制类型 *</label><select name="restrictionType">${Object.entries(restrictTypes).map(([value, [label, reason]]) => `<option value="${esc(value)}"${row?.restrictionType === value ? ' selected' : ''}>${esc(label)}（${esc(reason)}）</option>`).join('')}</select></div>
+        <div class="field"><label>屏蔽编码（逗号分隔）*</label><input name="blockedValues" value="${esc(row?.blockedValues || '')}" placeholder="KG,RU" required></div>
+        <div class="field"><label>启用状态</label><select name="enabled"><option value="true"${!row || row.enabled ? ' selected' : ''}>启用</option><option value="false"${row && !row.enabled ? ' selected' : ''}>停用</option></select></div>
+        <div class="field"><label>生效时间（HKT）*</label><input name="effectiveFrom" type="datetime-local" value="${esc(row?.effectiveFrom?.slice(0, 16) || hkDateTime())}" required></div>
+        <div class="field"><label>失效时间（HKT）</label><input name="effectiveTo" type="datetime-local" value="${esc(row?.effectiveTo?.slice(0, 16) || '')}"></div>
+        <div class="field"><label>备注</label><input name="remark" value="${esc(row?.remark || '')}"></div>
+      </div><div id="restrictionError" class="err" role="alert"></div>
+      <div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存合作方限制</button>${row ? '<button type="button" class="btn secondary" data-restriction-cancel>取消编辑</button>' : ''}</div>
+    </form>`;
+    panel.dataset.editingId = row?.id || '';
 }
 
 function renderAudit(data) {
@@ -317,6 +339,54 @@ $('approvalsView').addEventListener('click', async e => {
     if (!id || !confirm('确定撤销这条个案审批？历史记录会保留。')) return;
     try { await api(`/approvals/${id}/revoke`, {method:'POST'}); await activate('approvals'); }
     catch (error) { $('approvalError').textContent = error.message; }
+});
+$('restrictionsView').addEventListener('click', async e => {
+    if (e.target.closest('[data-restriction-new], [data-restriction-cancel]')) {
+        restrictionGood = '';
+        $('restrictionGood').textContent = '';
+        renderRestrictionForm();
+        return;
+    }
+    const edit = e.target.closest('[data-restriction-edit]');
+    if (edit) {
+        const row = restrictionRows.find(r => r.id === Number(edit.dataset.restrictionEdit));
+        if (row) { restrictionGood = ''; $('restrictionGood').textContent = ''; renderRestrictionForm(row); $('restrictionFormPanel').scrollIntoView({behavior:'smooth', block:'start'}); }
+        return;
+    }
+    const toggle = e.target.closest('[data-restriction-toggle]');
+    if (!toggle) return;
+    const row = restrictionRows.find(r => r.id === Number(toggle.dataset.restrictionToggle));
+    if (!row || !confirm(`确定${row.enabled ? '停用' : '启用'}限制记录 #${row.id}？`)) return;
+    toggle.disabled = true;
+    try {
+        const saved = await api(`/c2/restrictions/${row.id}/toggle`, {method:'POST'});
+        markChanged();
+        restrictionGood = `限制记录 #${saved.id} 已${saved.enabled ? '启用' : '停用'}，版本 v${saved.versionNo}。`;
+        await show(true);
+    } catch (error) { $('restrictionError').textContent = error.message; toggle.disabled = false; }
+});
+$('restrictionsView').addEventListener('submit', async e => {
+    if (e.target.id !== 'restrictionForm') return;
+    e.preventDefault();
+    const form = e.target, error = $('restrictionError'), save = form.querySelector('[type="submit"]');
+    const previous = restrictionRows.find(r => r.id === Number($('restrictionFormPanel').dataset.editingId));
+    const fields = Object.fromEntries(new FormData(form).entries());
+    error.textContent = '';
+    if (!fields.blockedValues.trim()) { error.textContent = '屏蔽编码不能为空'; return; }
+    if (!fields.effectiveFrom) { error.textContent = '请选择生效时间'; return; }
+    if (fields.effectiveTo && fields.effectiveTo <= fields.effectiveFrom) { error.textContent = '失效时间须晚于生效时间'; return; }
+    save.disabled = true;
+    try {
+        const saved = await api('/c2/restrictions', {method:'POST', body:JSON.stringify({
+            id:previous?.id || null, versionNo:previous?.versionNo || null, providerCode:code,
+            restrictionType:fields.restrictionType, blockedValues:fields.blockedValues,
+            enabled:fields.enabled === 'true', effectiveFrom:fields.effectiveFrom,
+            effectiveTo:fields.effectiveTo || null, remark:fields.remark || null
+        })});
+        markChanged();
+        restrictionGood = `限制记录 #${saved.id} 保存成功，版本 v${saved.versionNo}。`;
+        await show(true);
+    } catch (errorValue) { error.textContent = errorValue.message; save.disabled = false; }
 });
 // MTD 表单：读取当前输入；任一字段变化后刷新标题、提示与「删除此行」的可用状态
 function usageRead(form) {

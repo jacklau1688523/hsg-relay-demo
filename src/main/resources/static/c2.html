@@ -17,7 +17,7 @@
 
         .c2-flex {
             display: grid;
-            grid-template-columns:minmax(0, 1fr) 370px;
+            grid-template-columns:minmax(0, 1fr);
             gap: 18px
         }
 
@@ -191,6 +191,7 @@
         <div class="navhead">路由规则配置</div>
         <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
         <div class="nav indent sel">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
         <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
         <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
         <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
@@ -211,88 +212,11 @@
             <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
         </div>
         <div class="content">
-            <div class="heading"><h1>C2 制裁及监管限制配置</h1>
-                <div class="muted">合作方屏蔽清单 + 全局监管规则。字段库动态构建 AND / OR 组合条件；命中监管规则且合作方缺少要求能力标签时返回
-                    REG_RULE_NOT_MET。
+            <div class="heading"><h1>C2 制裁及监管限制模拟</h1>
+                <div class="muted">合作方限制和监管路由规则在合作方详情页维护。这里模拟 C2 判定；命中监管规则且候选合作方缺少要求能力标签时返回 REG_RULE_NOT_MET。
                 </div>
             </div>
-            <div class="tabs">
-                <button class="tab sel" data-c2tab="regulatory" onclick="c2SetTab('regulatory')">监管路由规则</button>
-            </div>
             <div class="c2-flex">
-                <section>
-                    <div id="c2Regulatory">
-                        <div class="panel">
-                            <div class="rulebar">
-                                <div class="ptitle" style="margin:0">全局监管规则列表</div>
-                                <button class="btn" onclick="c2NewRegulatory()">＋ 新增监管规则</button>
-                            </div>
-                            <div class="tablewrap">
-                                <table>
-                                    <thead>
-                                    <tr>
-                                        <th>规则编码</th>
-                                        <th>名称</th>
-                                        <th>作用域</th>
-                                        <th>必需标签</th>
-                                        <th>版本</th>
-                                        <th>状态</th>
-                                        <th>操作</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="c2RegRows"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="panel" id="c2RegForm">
-                            <div class="rulebar"><h2 id="c2FormTitle">编辑监管规则</h2><span class="badge pending">规则仅约束候选合作方</span>
-                            </div>
-                            <div class="layout3">
-                                <div class="field"><label>规则编码 *</label><input id="c2RuleId" placeholder="REG-002">
-                                </div>
-                                <div class="field"><label>规则名称 *</label><input id="c2RuleName"
-                                                                                   placeholder="CNY 境内清算能力要求">
-                                </div>
-                                <div class="field"><label>范围（固定）</label><input value="GLOBAL · 全部合作方" disabled>
-                                </div>
-                                <div class="field"><label>生效时间（HKT） *</label><input type="datetime-local"
-                                                                                        id="c2From"></div>
-                                <div class="field"><label>失效时间（HKT）</label><input type="datetime-local" id="c2To">
-                                </div>
-                                <div class="field"><label>规则启用</label><select id="c2Enabled">
-                                    <option value="true">启用</option>
-                                    <option value="false">停用</option>
-                                </select></div>
-                            </div>
-                            <div class="rule-subhead">① 触发条件：按字段库构建</div>
-                            <div class="c2-context">使用条件组表达式，支持递归嵌套 AND / OR。前端保存 JSON 条件树；后端校验白名单后生成
-                                AviatorScript 表达式。
-                            </div>
-                            <div id="c2ConditionTree"></div>
-                            <div class="rule-subhead">② 规则命中后：合作方必需能力</div>
-                            <div class="tag-grid" id="c2RequiredTags"></div>
-                            <div class="rule-subhead">③ 不满足要求时的动作</div>
-                            <div class="layout2">
-                                <div class="field"><label>处理方式</label><input value="REJECT · 过滤当前候选路由"
-                                                                                 readonly></div>
-                                <div class="field"><label>原因码（固定）</label><input value="REG_RULE_NOT_MET" readonly>
-                                </div>
-                            </div>
-                            <div class="rule-subhead">④ 备注</div>
-                            <div class="field"><input id="c2Remark" placeholder="例如：监管参考号、配置说明"></div>
-                            <div class="err" id="c2RegError"></div>
-                            <div class="good" id="c2RegGood"></div>
-                            <div class="actionrow">
-                                <button class="btn secondary" onclick="c2Compile()">⚙ 校验并生成表达式</button>
-                                <button class="btn secondary" onclick="c2CopyJson()">复制规则 JSON</button>
-                                <button class="btn" onclick="c2SaveRegulatory()">保存监管规则</button>
-                            </div>
-                            <div class="codeframe" id="c2Compiled" style="margin-top:12px">生成的 AviatorScript
-                                表达式将在这里展示
-                            </div>
-                        </div>
-                    </div>
-                </section>
                 <aside class="rightPanel">
                     <div class="panel">
                         <div class="ptitle">C2 规则模拟校验 ⓘ</div>

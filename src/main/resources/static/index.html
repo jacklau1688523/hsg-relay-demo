@@ -503,6 +503,7 @@
         <div class="navhead">路由规则配置</div>
         <div class="nav indent sel">C1 业务准入</div>
         <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
         <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
         <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
         <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
@@ -530,7 +531,6 @@
             <div class="grid c1-workspace">
             <section id="conditionView" class="panel">
                 <div class="rowbetween"><div><h2>① 触发条件：按字段库构建</h2><div class="muted">使用元数据中心已启用的 C1 字段配置附加触发条件，支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新规则 / 字段库</button></div>
-                <label style="display:block;margin:16px 0"><input id="c1UseCondition" type="checkbox" style="width:auto;min-height:0" onchange="c1ToggleCondition()"> 启用附加条件</label>
                 <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
                 <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
                 <div class="actions" style="justify-content:flex-end;margin-top:22px"><button id="c1SaveButton" type="button" class="btn" onclick="c1SaveCondition()">保存条件配置</button></div>

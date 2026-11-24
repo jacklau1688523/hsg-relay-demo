@@ -11,10 +11,9 @@ function c1DefaultLeaf(){const f=c1Fields()[0];return {field:f?.fieldCode||'',op
 function c1InitCondition(json){
  try{c1ConditionTree=json?JSON.parse(json):{logic:'AND',children:[c1DefaultLeaf()]};}
  catch(_){c1ConditionTree={logic:'AND',children:[c1DefaultLeaf()]};}
- $('c1UseCondition').checked=!!json;$('c1UseCondition').disabled=!c1Fields().length;c1ToggleCondition();
+ c1RenderTree();
  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
 }
-function c1ToggleCondition(){$('c1ConditionArea').style.opacity=$('c1UseCondition').checked?'1':'.72';c1RenderTree();}
 function c1Node(path){let n=c1ConditionTree;for(const part of path.split('.').filter(Boolean))n=n.children[Number(part)];return n;}
 function c1Remove(path){const parts=path.split('.'),index=Number(parts.pop()),parent=c1Node(parts.join('.'));if(parent.children.length===1){alert('条件组至少保留一项');return;}parent.children.splice(index,1);c1RenderTree();}
 function c1Add(path,kind){const group=c1Node(path);if(group.children.length>=20){alert('每组最多20项');return;}if(kind==='group'&&path.split('.').filter(Boolean).length>=5){alert('最多6层条件组');return;}group.children.push(kind==='group'?{logic:'OR',children:[c1DefaultLeaf()]}:c1DefaultLeaf());c1RenderTree();}
@@ -67,7 +66,7 @@ async function c1SaveCondition(){
  const id=c1ActiveRule?.id;if(!id)return;
  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
  try{
-  const saved=await api('/appetites/'+encodeURIComponent(id)+'/condition',{method:'PUT',body:JSON.stringify({enabled:$('c1UseCondition').checked,tree:c1ConditionTree})});
+  const saved=await api('/appetites/'+encodeURIComponent(id)+'/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree})});
   const index=allRules.findIndex(r=>String(r.id)===String(id));if(index>=0)allRules[index]=saved;
   c1ActiveRule=saved;
   $('c1ConditionGood').textContent=`条件配置已保存 · 规则 #${id} · 版本 ${saved.versionNo}`;

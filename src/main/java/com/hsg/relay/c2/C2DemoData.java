@@ -14,7 +14,8 @@ import java.util.*;
 public class C2DemoData {
     @Bean
     ApplicationListener<ApplicationReadyEvent> seedC2(RegulatoryRuleRepository regs, ProviderRestrictionRepository restrictions,
-                                                      CapabilityTagRepository tagRepo, ProviderCapabilityRepository caps, FieldDefinitionRepository fields, ObjectMapper mapper) {
+                                                      CapabilityTagRepository tagRepo, ProviderCapabilityRepository caps, FieldDefinitionRepository fields,
+                                                      com.hsg.relay.repo.RuleAuditRepository audit, ObjectMapper mapper) {
         return event -> {
             // All C2 selectable fields and operators are DB metadata rather than code-side frontend definitions.
             register(fields, "paymentCurrency", "交易币种", "CNY,USD,HKD,KGS,CNH,EUR,AUD");
@@ -40,7 +41,7 @@ public class C2DemoData {
                 caps.save(new ProviderCapability("PROV-W", "LOCAL_CLEARING"));
             }
             LocalDateTime from = LocalDateTime.of(2025, 10, 1, 0, 0);
-            if (regs.count() == 0) {
+            if (regs.count() == 0 && audit.findAll().stream().noneMatch(a -> "REGULATORY".equals(a.objectType) && "DELETE".equals(a.operation))) {
                 RegulatoryRule r = new RegulatoryRule();
                 r.ruleId = "REG-001";
                 r.ruleName = "CNY 境内清算能力要求";

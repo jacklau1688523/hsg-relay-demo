@@ -100,7 +100,7 @@ public class C2Service {
     }
 
     private void audit(String type, String id, String action, String before, Object after) {
-        auditRepo.save(new RuleAudit(type, id, action, "demo.operator", before, encode(after)));
+        auditRepo.save(new RuleAudit(type, id, action, "demo.operator", before, after == null ? null : encode(after)));
     }
 
     private void validateDates(LocalDateTime from, LocalDateTime to) {
@@ -186,6 +186,16 @@ public class C2Service {
         RegulatoryView updated = view(regulatoryRepo.save(rule));
         audit("REGULATORY", id, rule.enabled ? "ENABLE" : "DISABLE", before, updated);
         return updated;
+    }
+
+    @Transactional
+    public void deleteRegulatory(String id, Integer versionNo) {
+        RegulatoryRule rule = regulatoryRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("规则不存在"));
+        if (versionNo == null || rule.versionNo != versionNo)
+            throw new IllegalArgumentException("规则版本已变化，请刷新后重试");
+        String before = encode(view(rule));
+        regulatoryRepo.delete(rule);
+        audit("REGULATORY", id, "DELETE", before, null);
     }
 
     public static final Map<String, String> REASONS = Map.of(

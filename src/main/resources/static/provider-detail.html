@@ -121,6 +121,12 @@
                 grid-template-columns:minmax(0, 1fr)
             }
         }
+
+        @media (max-width: 640px) {
+            #restrictionForm .layout2 {
+                grid-template-columns:1fr
+            }
+        }
     </style>
 </head>
 <body>
@@ -132,6 +138,7 @@
         <div class="navhead">路由规则配置</div>
         <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
         <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
         <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
         <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
         <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
@@ -154,7 +161,7 @@
             <div class="toplinks"><a href="/providers.html">← 合作方管理</a></div>
             <div class="heading page-intro">
                 <div><h1>合作方详情</h1>
-                    <div class="muted">查看合作方资料，并在本页维护准入规则、MTD 使用情况、客户排除和个案审批。附加条件在 C1 页面配置，合作方限制在编辑页维护。
+                    <div class="muted">查看合作方资料，并在本页维护准入规则、MTD 使用情况、客户排除、个案审批和合作方限制。附加条件在 C1 页面配置。
                     </div>
                 </div>
                 <div class="actions">

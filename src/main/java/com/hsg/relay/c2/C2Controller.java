@@ -42,6 +42,11 @@ public class C2Controller {
         return service.toggleRegulatory(id);
     }
 
+    @DeleteMapping("/regulatory-rules/{id}")
+    public void delete(@PathVariable String id, @RequestParam Integer versionNo) {
+        service.deleteRegulatory(id, versionNo);
+    }
+
     @PostMapping("/regulatory-rules/compile")
     public C2Service.CompileView compile(@RequestBody JsonNode condition) {
         return service.compile(condition);

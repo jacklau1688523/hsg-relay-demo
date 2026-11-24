@@ -38,12 +38,6 @@
             }
         }
 
-        @media (max-width: 640px) {
-            /* 日期时间选择器在半列宽度下会遮住分钟位：窄屏下限制表单改为单列 */
-            #restrictFormPanel .layout2 {
-                grid-template-columns:1fr
-            }
-        }
     </style>
 </head>
 <body>
@@ -55,6 +49,7 @@
         <div class="navhead">路由规则配置</div>
         <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
         <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
         <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
         <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
         <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
@@ -91,10 +86,6 @@
                 <div class="provider-grid">
                     <section>
                         <div class="panel">
-                            <div class="tabs">
-                                <button type="button" class="tab sel" data-tab="base">基础信息</button>
-                                <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
-                            </div>
                             <div id="baseView">
                                 <form id="providerForm">
                                     <div class="layout3">
@@ -140,6 +131,7 @@
                                     <div class="notice">合作方能力标签在本页维护（原 C2
                                         页「合作方能力标签」配置已并入此处）。监管条件命中时，合作方必须具备规则要求的全部标签。优先级仅在总分、成本和起息日相同时参与排序。
                                     </div>
+                                    <div class="notice">合作方限制请在合作方详情的「合作方限制」页签维护；新增合作方请先保存基础信息。</div>
                                     <div class="notice warn" id="legacyHint" style="display:none"></div>
                                     <div class="err" id="formError" role="alert"></div>
                                     <div class="good" id="formGood" role="status"></div>
@@ -149,7 +141,6 @@
                                     </div>
                                 </form>
                             </div>
-                            <div id="restrictionsView" class="hidden"></div>
                         </div>
                     </section>
                     <aside class="rightPanel">
