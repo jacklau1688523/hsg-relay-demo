@@ -16,15 +16,18 @@ function render() {
         && (!trigger || (trigger === 'without' ? !r.triggerCondition : trigger === 'stale' ? !!r.triggerProblem : !!r.triggerCondition)));
     c2$('rows').innerHTML = shown.map(r => {
         const code = encodeURIComponent(r.ruleId), validity = VALIDITY[c2Validity(r)];
-        // 旧版规则仍按原自由条件树执行，表单里无法用「币种 + 受益行国家」表达，进入编辑页重新保存后转为标准形态
+        // 旧版规则仍按原自由条件树执行，表单里无法用「币种 + 受益行国家」表达，进入编辑页重新保存后转为标准形态。
+        // 编码 / 名称、适用范围、附加触发条件、能力标签四列内容可能较长：在列内换行，较长的文本放进限宽的 .celltext
+        // （列宽按限定后的宽度计算，更长的内容折行，不把整列撑宽）
         const scope = r.legacy
-            ? `<span class="badge pending">旧版条件</span><br><span class="mono">${c2Esc(r.conditionText)}</span>`
-            : `<b>${c2Esc(r.currency)}</b> 且受益行国家 ${c2Esc(c2CountryLabel(r.bankCountry))}`;
+            ? `<span class="badge pending">旧版条件</span><br><div class="celltext mono">${c2Esc(r.conditionText)}</div>`
+            : `<div class="celltext"><b>${c2Esc(r.currency)}</b> 且受益行国家 ${c2Esc(c2CountryLabel(r.bankCountry))}</div>`;
         const condition = r.triggerCondition
-            ? `<span class="badge ${r.triggerProblem ? 'pending' : 'pass'}"${r.triggerProblem ? ` title="${c2Esc(r.triggerProblem)}"` : ''}>${r.triggerProblem ? '附加条件已失效' : '附加触发条件'}</span><br><span class="mono">${c2Esc(r.triggerText)}</span>`
+            ? `<span class="badge ${r.triggerProblem ? 'pending' : 'pass'}"${r.triggerProblem ? ` title="${c2Esc(r.triggerProblem)}"` : ''}>${r.triggerProblem ? '附加条件已失效' : '附加触发条件'}</span><br><div class="celltext mono">${c2Esc(r.triggerText)}</div>`
             : '<span class="muted">无 · 落在适用范围内即触发</span>';
         const period = `${c2Esc(c2ShowTime(r.effectiveFrom))} 起<br>${r.effectiveTo ? c2ShowTime(r.effectiveTo) + ' 止' : '<span class="muted">长期有效</span>'}${validity ? `<br><span class="badge ${validity[0]}">${validity[1]}</span>` : ''}`;
-        return `<tr><td><b>${c2Esc(r.ruleId)}</b><br>${c2Esc(r.ruleName)}</td><td>${scope}</td><td class="wrap">${condition}</td><td class="tags-cell">${c2SortedTags(r.requirement.requiredTags).map(tag => `<span class="tagchip" title="${c2Esc(c2TagName(tag))}">${c2Esc(tag)}</span>`).join('')}</td><td>${period}</td><td>${r.enabled ? '<span class="dot"></span>启用' : '停用'}</td><td>v${r.versionNo}</td><td class="nowrap"><a class="btn secondary tiny" href="/c2-regulatory-edit.html?rule=${code}">编辑</a><button type="button" class="btn secondary tiny" data-toggle="${code}">${r.enabled ? '停用' : '启用'}</button><button type="button" class="btn secondary tiny" data-delete="${code}">删除</button></td></tr>`;
+        const tags = c2SortedTags(r.requirement.requiredTags).map(tag => `<span class="tagchip" title="${c2Esc(c2TagName(tag))}">${c2Esc(tag)}</span>`).join('');
+        return `<tr><td class="wrap"><b>${c2Esc(r.ruleId)}</b><br><div class="celltext">${c2Esc(r.ruleName)}</div></td><td class="wrap">${scope}</td><td class="wrap">${condition}</td><td class="tags-cell"><div class="celltext">${tags}</div></td><td>${period}</td><td>${r.enabled ? '<span class="dot"></span>启用' : '停用'}</td><td>v${r.versionNo}</td><td class="nowrap"><a class="btn secondary tiny" href="/c2-regulatory-edit.html?rule=${code}">编辑</a><button type="button" class="btn secondary tiny" data-toggle="${code}">${r.enabled ? '停用' : '启用'}</button><button type="button" class="btn secondary tiny" data-delete="${code}">删除</button></td></tr>`;
     }).join('') || `<tr><td colspan="8">${state.rules.length ? '没有符合筛选条件的监管规则' : '暂无监管规则，点击右上角「新增监管规则」创建'}</td></tr>`;
     // 当前生效：启用且在有效期内
     const metrics = [

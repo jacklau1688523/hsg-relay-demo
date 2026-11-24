@@ -77,19 +77,47 @@ a.btn {
     max-height: 560px
 }
 
-/* 名称、附加触发条件、能力标签这几列内容较长，在列内换行 */
+/* 编码 / 名称、适用范围、附加触发条件、能力标签四列内容较长：在列内换行，较长的文本放在限宽的 .celltext 里。
+   列宽按限定后的宽度计算，更长的内容折行，不会把整列（乃至整张表）撑宽；其余列不换行。 */
 #rows td {
     vertical-align: top
 }
 
-#rows .wrap {
-    min-width: 220px;
+#rows .wrap, #rows .tags-cell {
     white-space: normal
 }
 
-#rows .tags-cell {
-    min-width: 150px;
-    white-space: normal
+#rows td:nth-child(1) .celltext {
+    max-width: 140px
+}
+
+#rows td:nth-child(2) .celltext {
+    max-width: 195px
+}
+
+#rows td:nth-child(3) .celltext {
+    max-width: 215px
+}
+
+#rows td:nth-child(4) .celltext {
+    max-width: 150px
+}
+
+/* 表头宽度是各列的首选宽度（自动布局下，列的实际宽度仍随窗口宽度和内容伸缩） */
+#rows th:nth-child(1) {
+    width: 160px
+}
+
+#rows th:nth-child(2) {
+    width: 190px
+}
+
+#rows th:nth-child(3) {
+    width: 200px
+}
+
+#rows th:nth-child(4) {
+    width: 150px
 }
 
 /* 操作列：「编辑」是链接、「停用」「删除」是按钮，统一按小按钮显示；间距沿用全局链接的 9px */
@@ -194,7 +222,8 @@ a.btn {
 }
 
 .c2-preview b {
-    color: #172844
+    color: #172844;
+    white-space: nowrap
 }
 
 .c2-warn {

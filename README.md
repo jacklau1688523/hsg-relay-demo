@@ -50,15 +50,21 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 
 ## C2 功能（本次新增）
 
-- **监管路由规则页面**：独立页 `/c2-regulatory.html`（各页左侧「合作方管理」下方的「监管路由规则」），列出所有全局规则的币种、受益行国家、必需能力标签、版本和启用状态，支持新增、编辑、启用/停用、删除。
+- **监管路由规则页面**（参照合作方管理，列表与表单分成两个页面，监管规则的维护全部在这两页完成）：
+  - 列表 `/c2-regulatory.html`（各页左侧「合作方管理」下方的「监管路由规则」）：顶部四张汇总卡（规则总数、当前生效、已停用、附加条件已失效）；筛选条件为编码 / 名称、交易币种、状态、附加触发条件（全部规则、
+    有附加条件、无附加条件、附加条件已失效）；表格列出规则编码与名称、适用范围、附加触发条件、必需能力标签、有效期（HKT）、状态、版本，行内提供「编辑」「停用 / 启用」「删除」（启停和删除需确认）。
+    未到生效时间、已过失效时间的规则在有效期列标出，这两种规则当前不执行。
+  - 新增 `/c2-regulatory-edit.html`、编辑 `/c2-regulatory-edit.html?rule=规则编码`（由列表行「编辑」进入）：规则编码、名称、生效 / 失效时间、备注、适用范围、必需能力标签、附加触发条件在同一个表单里，一次保存，
+    版本号加 1；编码仅在新增时可填（默认给出尚未占用的 `REG-00N`），保存后地址栏变为该规则的编辑地址。右侧「规则预览」随表单实时更新；编辑页另有「C2 模拟验证 ↗」打开 C2 模拟页。
 - **适用范围 = 交易币种 + 受益行国家**：规则是全局配置，适用范围不再使用自由 AND/OR 条件树。交易币种单选，可选值取自元数据中心「交易币种」（`paymentCurrency`）字段；受益行国家为
-  `ALL`（不限）或任一 ISO 3166-1 两位代码（下拉带中文名称，`GET /api/c2/regulatory-rules/options` 返回全部选项）。表单底部实时预览整条规则。
+  `ALL`（不限）或任一 ISO 3166-1 两位代码（下拉带中文名称，`GET /api/c2/regulatory-rules/options` 返回全部选项）。表单右侧实时预览整条规则。
 - **落库形态不变**：范围仍以标准条件树写入 `condition_json`（`paymentCurrency EQ X` 且 `beneficiaryBankCountry EQ Y`，不限国家时只有前一个叶子），C2
   模拟和全流程 Check 照常读取；标准规则按币种、国家直接比对，不依赖字段库里这两个字段的状态。旧版页面保存的自由条件树在列表里标记为「旧版条件」，仍按原条件编译执行，在页面重新保存后转为标准形态。
-- **C2 触发条件按字段库构建（附加触发条件）**：C2 模拟页（`/c2.html`）左侧新增「① 触发条件：按字段库构建」。为选中的监管路由规则另配一组触发条件：交易须落在规则范围（币种 +
-  受益行国家）内**且**满足该条件，规则才触发；不配则范围内一律触发。字段下拉读取 `GET /api/c2/fields`（元数据中心里已启用且适用规则含 C2 的全部字段），运算符取字段的允许运算符，
-  有可选值的字段渲染下拉，支持嵌套 AND / OR；规则下拉可用 `/c2.html?rule=规则编号` 直接定位（监管路由规则页列表的「配置 →」链接）。页面提供「校验并生成表达式」「保存条件至规则」「清除附加条件」
-  「↻ 刷新规则 / 字段库」（操作员改过编辑器里的条件、且选中的规则在别处没有被改过时，刷新保留编辑中的条件）。监管路由规则页的表单不变（范围和标签仍在那页维护），只在列表的规则名下方和编辑预览里标出附加触发条件；范围、标签的重新保存和启停都不会改动附加条件。
+- **C2 触发条件按字段库构建（附加触发条件）**：在监管路由规则的新增 / 编辑页（`/c2-regulatory-edit.html`）维护，和适用范围、能力标签同在一个表单里、随规则一次保存。交易须落在规则范围（币种 +
+  受益行国家）内**且**满足该条件，规则才触发；不启用则范围内一律触发。勾选「启用附加触发条件」后出现条件编辑器：字段下拉读取 `GET /api/c2/fields`（元数据中心里已启用且适用规则含 C2 的全部字段），运算符取字段的允许运算符，
+  有可选值的字段渲染下拉，支持嵌套 AND / OR；提供「校验并生成表达式」「↻ 刷新字段库」（重新读取下拉项和字段库；操作员改过编辑器里的条件时保留编辑中的条件）「复制规则 JSON」（复制本次保存的请求体）。
+  取消勾选后保存即清除已保存的附加条件（清除前页面先确认）。已保存的条件失效时，列表的「附加触发条件」列标出「附加条件已失效」，进入编辑页核对后重新保存即可。
+  `/c2.html` 只做模拟校验，不再承载规则配置：原列表的「配置 →」链接和 `/c2.html?rule=` 深链接已移除，带该参数打开等同于直接打开模拟页。列表在「附加触发条件」一列显示条件摘要；启停不涉及附加条件。
 - **监管能力要求**：每条 GLOBAL 监管规则可勾选多个 `requiredTags`（ALL 语义），范围命中但合作方缺失任何一项，返回
   `REG_RULE_NOT_MET`。原因码不可修改。
 - **合作方限制**：`BENEFICIARY_COUNTRY` / `DIRECTOR_UBO_NATIONALITY` / `BENEFICIARY_REGION` / `ORDERING_COUNTRY` /
@@ -71,7 +77,8 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
   / 受益行国家）和缺失标签；旧版规则另附编译表达式。受益行国家下拉在字段库可选值之外补齐全部 ISO 代码，任意国家的监管规则都能在这里模拟；不会释放交易或占用额度。
   配置了附加触发条件、且条件引用了九个固定输入项之外的字段时，右侧自动出现这些字段的取值控件（「附加触发条件字段（按字段库生成）」）；执行过程里每条规则另附附加条件摘要、
   编译后的表达式，以及缺值 / 失效时的处理说明。
-- **版本与审计**：每次修改规则递增 `version_no` 并写入 `relay_rule_audit`（保存 / 清除附加触发条件的审计操作为 `UPDATE_CONDITION`）；演示项目为覆盖式编辑+审计，生产需改为不可变发布版本。
+- **版本与审计**：每次修改规则递增 `version_no` 并写入 `relay_rule_audit`（新增 / 编辑页的保存记为 `CREATE` / `UPDATE`，附加触发条件随规则一并保存时也是这一条记录；仅单独调用 `PUT /api/c2/regulatory-rules/{id}/condition` 时记为
+  `UPDATE_CONDITION`）；演示项目为覆盖式编辑+审计，生产需改为不可变发布版本。
 
 **附加触发条件的取值与处理：**
 
@@ -82,11 +89,12 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - 条件引用的字段本次**没有取值**（选了「（不提供）」、留空，或调用方没有传 `variables`）时，该规则按**未触发**处理，`regulatoryChecks[].note` 说明原因，校验不报错——与
   C2「未填写的可选字段按未命中处理」一致。
 - 条件**已失效**（规则保存后，所引用的字段在元数据中心被停用、不再适用 C2、运算符被取消，或条件值已不在可选值中）时，该规则按**触发**处理并给出 `note`：监管规则是限制而不是准入，
-  失效时不能放宽，退化成只按范围触发；列表里标记「附加条件已失效」，需在 C2 模拟页核对后重新保存。（C1 附加条件失效时按不命中处理、默认拒绝；两者方向相反，但都是不放宽。）
+  失效时不能放宽，退化成只按范围触发；列表里标记「附加条件已失效」，需在「监管路由规则」编辑页核对后重新保存。（C1 附加条件失效时按不命中处理、默认拒绝；两者方向相反，但都是不放宽。）
 - 取值与字段类型不符（布尔字段传 `yes`、数字字段传非数字）返回 400 并指出字段，与 C1 相同。
-- 编辑器载入的条件引用了当前不可用的字段或运算符时，会把该条件换成当前可用项并提示核对，表达式区同时标明「编辑器里的条件与已保存的不同」；操作员没有另外改动时，字段恢复可用后点「↻
-  刷新规则 / 字段库」即还原为已保存的条件。条件值已不在可选值中时，下拉原样列出该值并标注「已不在可选值中」，不会悄悄改成其它值。保存前按元数据中心校验，
-  不通过返回 400、规则不变；保存时带上编辑器载入条件时的版本号，规则在别处被改过则提示「规则版本已变化，请刷新后重试」。清除附加条件提交 `enabled=false`。
+- 编辑器载入的条件引用了当前不可用的字段或运算符时，会把该条件换成当前可用项并提示核对，条件区下方同时标明「编辑器里的条件与已保存的不同」；操作员没有另外改动时，字段恢复可用后点「↻
+  刷新字段库」即还原为已保存的条件。条件值已不在可选值中时，下拉原样列出该值并标注「已不在可选值中」，不会悄悄改成其它值。保存前按元数据中心校验，
+  不通过返回 400、规则不变（连同一起提交的范围、标签等整条规则都不保存）；保存时带上页面载入时的版本号，规则在别处被改过则提示「规则版本已变化，请刷新后重试」。清除附加条件即不勾选「启用附加触发条件」
+  （接口层为提交 `trigger.enabled=false`）。
 - C1–C10 Check（`/routing.html`）的 C2 校验只传九个固定交易要素、不传 `variables`：附加条件只引用这九个要素（例如 `purpose`）的监管规则在 Check
   中照常生效；引用了其它字段的规则在 Check 中按未触发处理（缺值）。Check 页的 C2 规则表在规则名下方显示附加触发条件摘要（已失效的条件标注「已失效，按触发处理」）。
 
@@ -107,6 +115,17 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 缺值未触发 / 条件未命中、监管路由规则页的标识与「配置 →」链接、编辑预览、`/c2.html?rule=` 深链接、Check 页的附加条件摘要、清除（版本 3）；C2 模拟页、监管路由规则页、
 Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的入口位置逐页文本核对；无前端 JavaScript 异常。失效条件在编辑器里的状态、刷新时保留 / 还原编辑中的条件、版本过期时的
 保存提示、新面板在 390 宽度下的布局未做浏览器验证（处理逻辑由上述测试覆盖）。验证未读写 8080 / 8081 实例的数据库。
+这一轮加入 C2 模拟页的「① 触发条件」面板、列表的「配置 →」链接和 `/c2.html?rule=` 深链接，已在下一条调整中移除。
+
+2026-11-24（监管路由规则改为独立的新增 / 编辑页）：参照合作方管理，`/c2-regulatory.html` 改为纯列表页（汇总卡、筛选、行内操作），新增 / 编辑移到独立页 `/c2-regulatory-edit.html`，附加触发条件并入同一个表单、随规则一次保存；
+`POST /api/c2/regulatory-rules` 增加可选的 `trigger` 字段，新增 `GET /api/c2/regulatory-rules/{id}`；C2 模拟页（`/c2.html`）只保留模拟校验。全套218项测试通过（新增2项）：`C2RegulatoryRuleTest.ruleAndTriggerConditionAreSavedInOneRequest`
+覆盖规则与附加条件一次保存（版本 1）、不带 `trigger` 的保存保留附加条件、带 `trigger` 替换、条件不合法或缺少条件树时整条规则不保存、版本过期被拒绝、`enabled=false` 清除、每次保存一条 `CREATE` / `UPDATE`
+审计；`C2RegulatoryControllerTest.editPageSavesTheTriggerWithTheRuleAndLoadsOneRule` 覆盖新增 / 编辑页用到的 HTTP 契约（带 `trigger` 的新增、按编码载入单条规则与不存在的编码返回 400、条件不合法返回 400
+且不保存、版本过期、清除）。在独立端口与临时数据库上以无头 Chrome 完成 52 项检查：列表（汇总卡、编码 / 币种 / 状态 / 附加条件四类筛选、「旧版条件」标记、启停的确认文案与版本变化）、新增页（默认编码、
+未选能力标签被拦截、启用附加触发条件 → 组装条件 → 生成表达式 → 实时预览 → 保存后地址栏变为编辑地址、编码变为只读）、保存后的条件驱动 C2 模拟（`INVESTMENT` 触发、`GOODS`
+不触发）、编辑页（回显、修改条件后保存为版本 2、取消勾选后确认清除并保存为版本 3）、规则不存在时的提示、旧版规则的回填提示、附加条件失效（列表标记与筛选、编辑页说明、模拟仍触发并提示到「监管路由规则」页处理）、
+未到生效时间 / 已过失效时间的标记、删除（确认文案、行与汇总卡更新），以及 `/c2.html`（`?rule=` 参数不再有专门处理、「▶ 执行 C2 校验」结果与接口一致、窄屏时表单在结果上方）；列表表格在 1500 / 1440 /
+1366 / 1280 / 1100 宽度下均不横向溢出；无前端 JavaScript 异常。验证未读写 8080 / 8081 实例的数据库。
 
 ### C2 预置数据验证场景
 
@@ -191,12 +210,13 @@ curl -X PUT http://localhost:8080/api/usage \
 - `GET /api/c2/fields`：返回 C2 字段库（DB 驱动）
 - `GET /api/c2/capability-tags`：能力标签字典
 - `GET /api/c2/regulatory-rules`：监管规则列表（含 `currency`、`bankCountry`、`legacy`、`conditionText`，以及附加触发条件 `triggerCondition`（条件树）、`triggerText`（摘要）、`triggerProblem`（条件按当前字段库不能执行的原因，可执行时为空）；未配置附加条件时三者均为空）
+- `GET /api/c2/regulatory-rules/{id}`：单条监管规则（新增 / 编辑页载入），形态同列表项；规则不存在返回 400 + `error`（规则不存在）
 - `GET /api/c2/regulatory-rules/options`：表单下拉项——`currencies`（字段库「交易币种」可选值）、`countries`（ALL + ISO 3166-1，带中文名）、`tags`
-- `POST /api/c2/regulatory-rules`：新增或更新监管规则（按 ruleId），提交 `currency` + `bankCountry`；不改动已保存的附加触发条件
+- `POST /api/c2/regulatory-rules`：新增或更新监管规则（按 ruleId），提交 `currency` + `bankCountry`，可带 `versionNo`（与当前版本不一致返回 400）和 `trigger`（附加触发条件，形态见下文）；不带 `trigger` 时不改动已保存的附加触发条件
 - `DELETE /api/c2/regulatory-rules/{id}?versionNo=`：删除监管规则
 - `POST /api/c2/regulatory-rules/{id}/toggle`：启用/停用
 - `POST /api/c2/regulatory-rules/compile`：按字段库校验附加触发条件并返回 `{expression}`，不保存；校验失败返回 400 + `error`
-- `PUT /api/c2/regulatory-rules/{id}/condition`：保存 / 清除监管规则的附加触发条件，提交 `{enabled, tree, versionNo?}`；`enabled` 缺省或为 `true` 保存 `tree`，`enabled=false` 清除。`versionNo`
+- `PUT /api/c2/regulatory-rules/{id}/condition`：单独保存 / 清除监管规则的附加触发条件（接口保留；页面已改为随规则一并保存），提交 `{enabled, tree, versionNo?}`；`enabled` 缺省或为 `true` 保存 `tree`，`enabled=false` 清除。`versionNo`
   可选，带上时须与规则当前版本一致；返回更新后的规则（`versionNo` +1），规则不存在、条件不合法或版本不一致返回 400
 - `GET /api/c2/restrictions`、`POST /api/c2/restrictions`、`POST /api/c2/restrictions/{id}/toggle`：合作方限制管理
 - `GET /api/c2/providers/{code}/capabilities`、`PUT /api/c2/providers/{code}/capabilities`：合作方标签
@@ -226,6 +246,9 @@ curl -X PUT http://localhost:8080/api/usage \
   "effectiveTo": null
 }
 ```
+
+新增 / 编辑页提交的请求另带 `trigger`（不带则保持已保存的附加触发条件不变）：`{"enabled": true, "tree": {…}}` 保存条件树（`tree` 形态见下文「附加触发条件」，保存前按字段库校验，不通过返回 400、整条规则不保存）；
+`{"enabled": false}` 清除。规则与附加触发条件一起保存时版本号只加 1。
 
 **模拟示例：**
 
@@ -271,7 +294,7 @@ curl -s -X POST http://localhost:8080/api/c2/simulate \
 }
 ```
 
-`PUT /api/c2/regulatory-rules/REG-001/condition` 提交上述内容后，规则只在「币种 + 受益行国家」命中、且用途为 `INVESTMENT`、同时 `highRisk` 为 `true` 或 `riskScore ≥ 1000000`
+`PUT /api/c2/regulatory-rules/REG-001/condition` 提交上述内容后（在监管路由规则新增 / 编辑页保存时，同一棵 `tree` 作为保存请求的 `trigger` 字段随规则一并提交，页面用的就是这种方式），规则只在「币种 + 受益行国家」命中、且用途为 `INVESTMENT`、同时 `highRisk` 为 `true` 或 `riskScore ≥ 1000000`
 时触发；返回的 `triggerText` 为 `(purpose = INVESTMENT 且 (highRisk = true 或 riskScore ≥ 1000000))`（`highRisk`、`riskScore` 需先在元数据中心建为适用 C2 的字段）。模拟时通过
 `variables` 提供取值：
 
@@ -312,7 +335,8 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 
 `src/test/java/com/hsg/relay/c2/C2ServiceTest.java` 包含 CNY/CN 能力校验、Wise 国家与国籍屏蔽、嵌套 AND/OR、非法字段拒绝等测试；`C2RegulatoryRuleTest`、`C2RegulatoryControllerTest`、`RegulatoryScopeTest`
 覆盖监管规则按「币种 + 受益行国家」的保存、校验、求值、旧版条件树兼容及 HTTP 契约。附加触发条件由 `C2RegulatoryRuleTest`（附加条件收窄触发、缺值 / 失效的处理、布尔和数字比较、固定要素不能被
-`variables` 覆盖、非法条件拒绝、范围重新保存与启停保留条件、清除与审计）、`C2RegulatoryControllerTest`（compile / condition / simulate 的 HTTP 契约）、`RegulatoryTriggerTest`（条件树解析与摘要）和
+`variables` 覆盖、非法条件拒绝、不带 `trigger` 的范围重新保存与启停保留条件、清除与审计、规则与附加条件随同一个请求保存）、`C2RegulatoryControllerTest`（compile / condition / simulate 的 HTTP
+契约，以及新增 / 编辑页的保存与单条载入）、`RegulatoryTriggerTest`（条件树解析与摘要）和
 `SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。执行：
 
 ```bash
@@ -719,7 +743,7 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方详情页（`/provider-detail.html`）的「变更记录」页签查看。
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
-控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入试算菜单的 C2 筛选和 C2 模拟页左侧「① 触发条件」的字段下拉，C2
+控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入试算菜单的 C2 筛选和监管路由规则新增 / 编辑页附加触发条件的字段下拉，C2
 模拟页各输入项的下拉可选值也从这里读取，九个固定交易要素之外的字段还会在模拟面板自动生成取值控件；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉，停用字段从下拉消失但历史规则表达式按原样存档）。
 
 右侧为 AND / OR 可视化表达式试算（字段定义与各规则页面共用）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
@@ -749,10 +773,10 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 接口（均为既有接口，无后端改动）：
 
 - `GET /api/fields`：返回字段库全量（含停用）。
-- `GET /api/c2/fields`：C2 模拟页使用，仅 `allowedRules` 含 C2 且启用的字段：左侧「① 触发条件」的字段下拉、右侧模拟面板的下拉可选值，以及九个固定交易要素之外字段的取值控件都从这里读取。
+- `GET /api/c2/fields`：C2 页面使用，仅 `allowedRules` 含 C2 且启用的字段：监管路由规则新增 / 编辑页附加触发条件的字段下拉、C2 模拟页的下拉可选值，以及九个固定交易要素之外字段的取值控件都从这里读取。
 - `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉、C2
-  模拟页和试算菜单都按这里的 `allowedRules` 取字段。「适用规则」的 C2 可对任意数据类型勾选：勾选后字段出现在试算菜单的「C2」筛选下并按字段类型比较取值，进入 C2 模拟页左侧「①
-  触发条件」的字段下拉（可保存为监管路由规则的附加触发条件），并在右侧模拟面板自动生成取值控件；监管路由规则的适用范围（币种 + 受益行国家）本身不使用字段库条件树。
+  页面和试算菜单都按这里的 `allowedRules` 取字段。「适用规则」的 C2 可对任意数据类型勾选：勾选后字段出现在试算菜单的「C2」筛选下并按字段类型比较取值，进入监管路由规则新增 / 编辑页
+  附加触发条件的字段下拉，并在 C2 模拟面板自动生成取值控件；监管路由规则的适用范围（币种 + 受益行国家）本身不使用字段库条件树。
 - `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回
   `{matched,expression}`。
 
