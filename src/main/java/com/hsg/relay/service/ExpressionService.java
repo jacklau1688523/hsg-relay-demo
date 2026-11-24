@@ -28,6 +28,11 @@ public class ExpressionService {
     public record PreviewResult(String expression, boolean matched) {
     }
 
+    public String compile(Node tree, String ruleCode) {
+        if (tree == null) throw new IllegalArgumentException("条件树不能为空");
+        return compile(tree, 0, ruleCode);
+    }
+
     public PreviewResult preview(Preview req) {
         if (req.tree() == null || req.variables() == null) throw new IllegalArgumentException("tree / variables 必填");
         if (req.ruleCode() != null && !req.ruleCode().matches("C([1-9]|10)"))

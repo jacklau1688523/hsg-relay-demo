@@ -2,6 +2,7 @@ package com.hsg.relay.service;
 
 import com.hsg.relay.domain.*;
 import com.hsg.relay.repo.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -16,14 +17,18 @@ public class C1Service {
     private final ClientExclusionRepository exclusions;
     private final CaseApprovalRepository approvals;
     private final ProviderUsageRepository usages;
+    private final ExpressionService expressions;
+    private final ObjectMapper json;
 
-    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ClientExclusionRepository e, CaseApprovalRepository ap, ProviderUsageRepository u) {
+    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ClientExclusionRepository e, CaseApprovalRepository ap, ProviderUsageRepository u, ExpressionService expressions, ObjectMapper json) {
         providers = p;
         appetites = a;
         clients = c;
         exclusions = e;
         approvals = ap;
         usages = u;
+        this.expressions = expressions;
+        this.json = json;
     }
 
     public record Simulation(String clientId, String providerCode, String paymentCurrency,
@@ -60,11 +65,12 @@ public class C1Service {
         boolean excluded = exclusions.findAll().stream().anyMatch(e -> e.clientId.equals(req.clientId()) && e.providerCode.equals(req.providerCode()) && active(e.effectiveFrom, e.effectiveTo, now));
         if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, "命中合作方客户排除记录");
         steps.add(new Trace("2. 客户排除", "PASS", "未命中排除记录"));
-        List<String> flows = client.flowCategories == null || client.flowCategories.isBlank() ? List.of("STANDARD") : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+        List<String> flows = client.flowCategories == null ? List.of() : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+        if (flows.isEmpty()) flows = List.of("STANDARD");
         Long lastId = null;
         String lastAction = null;
         for (String flow : flows) {
-            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry())).max(Comparator.comparingInt(a -> specificity(a, req)));
+            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, flow)).max(Comparator.comparingInt(a -> specificity(a, req)));
             if (match.isEmpty()) return fail("APPETITE_NOT_SET", null, null, steps, flow + " 无有效准入配置（默认拒绝）");
             Appetite a = match.get();
             lastId = a.id;
@@ -102,5 +108,17 @@ public class C1Service {
 
     private int specificity(Appetite a, Simulation r) {
         return (a.currency.equalsIgnoreCase(r.paymentCurrency()) ? 2 : 0) + (a.bankCountry.equalsIgnoreCase(r.beneficiaryBankCountry()) ? 1 : 0);
+    }
+
+    private boolean conditionMatches(Appetite rule, Simulation req, String flow) {
+        if (rule.conditionJson == null || rule.conditionJson.isBlank()) return true;
+        try {
+            var tree = json.readValue(rule.conditionJson, ExpressionService.Node.class);
+            return expressions.preview(new ExpressionService.Preview(tree, Map.of(
+                    "flowCategory", flow, "paymentCurrency", req.paymentCurrency(),
+                    "beneficiaryBankCountry", req.beneficiaryBankCountry(), "amountUsd", req.amountUsd()), "C1")).matched();
+        } catch (Exception ex) {
+            throw new IllegalStateException("C1 规则 #" + rule.id + " 条件执行失败: " + ex.getMessage(), ex);
+        }
     }
 }

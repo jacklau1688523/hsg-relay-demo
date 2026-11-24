@@ -154,8 +154,7 @@
             <div class="toplinks"><a href="/providers.html">← 合作方管理</a></div>
             <div class="heading page-intro">
                 <div><h1>合作方详情</h1>
-                    <div class="muted">只读展示单个合作方的基础资料、准入规则配置、关联配置、合作方限制和变更记录。修改基础资料请点「编辑合作方」；新增
-                        / 编辑 / 启停准入规则在 C1 业务准入页（准入规则配置页签的「前往维护」直达）、合作方限制在编辑页的「合作方限制」页签操作。
+                    <div class="muted">查看合作方资料及关联配置，并在本页维护准入规则、MTD 使用情况、客户排除和个案审批。附加条件在 C1 页面配置，合作方限制在编辑页维护。
                     </div>
                 </div>
                 <div class="actions">
@@ -175,12 +174,18 @@
                             <div class="tabs">
                                 <button type="button" class="tab sel" data-tab="base">基础信息</button>
                                 <button type="button" class="tab" data-tab="appetites">准入规则配置</button>
+                                <button type="button" class="tab" data-tab="usage">MTD 使用情况</button>
+                                <button type="button" class="tab" data-tab="exclusions">客户排除管理</button>
+                                <button type="button" class="tab" data-tab="approvals">个案审批管理</button>
                                 <button type="button" class="tab" data-tab="related">关联配置</button>
                                 <button type="button" class="tab" data-tab="restrictions">合作方限制</button>
                                 <button type="button" class="tab" data-tab="audit">变更记录</button>
                             </div>
                             <div id="baseView"></div>
                             <div id="appetitesView" class="hidden"></div>
+                            <div id="usageView" class="hidden"></div>
+                            <div id="exclusionsView" class="hidden"></div>
+                            <div id="approvalsView" class="hidden"></div>
                             <div id="relatedView" class="hidden"></div>
                             <div id="restrictionsView" class="hidden"></div>
                             <div id="auditView" class="hidden"></div>
@@ -209,6 +214,7 @@
         </div>
     </main>
 </div>
+<div class="modalback" id="appetiteModal"><div class="modal"><div class="rowbetween"><h2 id="appetiteModalTitle">新增准入规则</h2><button type="button" class="btn secondary tiny" onclick="closeProviderAppetite()">✕ 关闭</button></div><form id="appetiteForm"><div id="appetiteFields"></div><div class="err" id="appetiteError" role="alert"></div><div class="actions" style="justify-content:flex-end;margin-top:18px"><button type="button" class="btn secondary" onclick="closeProviderAppetite()">取消</button><button type="submit" class="btn">保存配置</button></div></form></div></div>
 <script src="/provider-common.js"></script>
 <script src="/provider-detail.js"></script>
 </body>

@@ -36,6 +36,8 @@ public class Appetite {
     public int versionNo = 1;
     @Column(length = 512)
     public String remark;
+    @Column(columnDefinition = "TEXT")
+    public String conditionJson;
 
     public Appetite() {
     }

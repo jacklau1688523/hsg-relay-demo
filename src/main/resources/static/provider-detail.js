@@ -1,10 +1,10 @@
 'use strict';
-// 合作方详情：/provider-detail.html?code=合作方编码[&tab=appetites|related|restrictions|audit]
-// 只读展示，数据来自 /api/provider-management/{code}；写操作在独立的编辑页 /provider-edit.html 和 C1 业务准入页完成。
+// 合作方详情：/provider-detail.html?code=合作方编码[&tab=appetites|usage|exclusions|approvals|related|restrictions|audit]
+// 基础资料只读；准入规则、MTD、客户排除和个案审批在本页按合作方管理。
 const state = {view: null, tags: [], tab: 'base', request: 0};
 const params = new URLSearchParams(location.search);
 const code = params.get('code');
-const TABS = ['base', 'appetites', 'related', 'restrictions', 'audit'];
+const TABS = ['base', 'appetites', 'usage', 'exclusions', 'approvals', 'related', 'restrictions', 'audit'];
 
 // 打开独立编辑页；带 tab 时直接切到对应页签
 function editHref(tab) {
@@ -76,26 +76,50 @@ function renderBase(v) {
         + `<div class="notice">监管条件命中时，合作方必须具备规则要求的全部标签。优先级仅在总分、成本和起息日相同时参与排序；状态、资金开关、通道及优先级在下次路由试算生效。</div>`;
 }
 
-// 准入规则配置：列与 C1 页「准入规则配置」列表相同，只显示本合作方的规则。只读，维护入口是右上角的「前往维护」
+// 准入规则配置：只显示当前合作方的规则，表单与启停操作均在此页。
+let appetiteRows = [];
 function renderAppetites(rows) {
-    const when = text => String(text ?? '').replace('T', ' ').slice(0, 16) || '—';
+    appetiteRows = rows;
+    const when = text => String(text ?? '').replace('T',' ').slice(0,16) || '—';
     const on = rows.filter(a => a.enabled).length;
-    const list = rows.length ? rows.map(a => `<tr class="appetite"><td>#${esc(a.id)}</td><td>${esc(a.flowCategory)}</td><td>${esc(a.currency)}</td><td>${esc(a.bankCountry)}</td>`
-        + `<td><span class="badge ${esc(a.action)}">${esc(a.action)}</span></td><td>${a.monthlyCapUsd == null ? '—' : esc(Number(a.monthlyCapUsd).toLocaleString('en-US'))}</td>`
-        + `<td>${esc(when(a.effectiveFrom))}</td><td>${a.enabled ? '<span class="badge pass">启用</span>' : '<span class="badge pending">停用</span>'}</td></tr>`
-        + `<tr class="appetite-more"><td colspan="8">${esc(`失效时间 ${when(a.effectiveTo)} · 证据文档号 ${a.evidenceDocNo ?? '—'} · 下次复核 ${a.nextReviewDate ?? '—'} · 版本 ${a.versionNo ?? '—'} · 备注 ${a.remark || '—'}`)}</td></tr>`).join('')
-        : '<tr><td colspan="8">该合作方暂无准入规则。</td></tr>';
-    $('appetitesView').innerHTML = `<div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 准入规则配置 · ${rows.length} 条${rows.length ? `（启用 ${on} · 停用 ${rows.length - on}）` : ''}</div>`
-        + `<a class="btn secondary tiny" href="/?provider=${encodeURIComponent(code)}">前往维护 ↗</a></div>`
-        + `<div class="tablewrap"><table><thead><tr><th>规则ID</th><th>流转类别</th><th>币种</th><th>受益行国家</th><th>准入方式</th><th>月度上限 USD</th><th>生效时间</th><th>状态</th></tr></thead>`
-        + `<tbody>${list}</tbody></table></div>`
-        + `<div class="notice">准入规则按「流转类别 + 币种 + 受益行国家」配置，币种、国家为 ALL 时匹配全部。C1 校验对客户的每个流转类别取当前生效、匹配最具体的一条规则，没有命中的流转类别默认拒绝；EXCLUDE 直接拒绝，CASE_BY_CASE 须有有效的个案审批，设置了月度上限的 ACCEPT 规则按香港当月的 MTD 累计校验。相同范围且生效期重叠的规则不能同时启用。</div>`
-        + `<div class="notice">「启用 / 停用」是规则开关；是否当前生效还取决于生效时间和失效时间（HKT）。上线准备检查中的「业务准入」要求至少一条当前生效的准入行。</div>`;
+    const list = rows.length ? rows.map(a => `<tr class="appetite"><td>#${esc(a.id)}</td><td>${esc(a.flowCategory)}</td><td>${esc(a.currency)}</td><td>${esc(a.bankCountry)}</td><td><span class="badge ${esc(a.action)}">${esc(a.action)}</span></td><td>${a.monthlyCapUsd == null ? '—' : esc(Number(a.monthlyCapUsd).toLocaleString('en-US'))}</td><td>${esc(when(a.effectiveFrom))}</td><td>${a.enabled ? '<span class="badge pass">启用</span>' : '<span class="badge pending">停用</span>'}</td><td><button type="button" class="btn secondary tiny" data-appetite-edit="${a.id}">编辑</button> <button type="button" class="btn secondary tiny" data-appetite-toggle="${a.id}">${a.enabled?'停用':'启用'}</button> <a href="/?rule=${a.id}" class="btn secondary tiny">条件</a></td></tr><tr class="appetite-more"><td colspan="9">${esc(`失效时间 ${when(a.effectiveTo)} · 证据文档号 ${a.evidenceDocNo ?? '—'} · 下次复核 ${a.nextReviewDate ?? '—'} · 版本 ${a.versionNo ?? '—'} · 备注 ${a.remark || '—'}`)}</td></tr>`).join('') : '<tr><td colspan="9">该合作方暂无准入规则。</td></tr>';
+    $('appetitesView').innerHTML = `<div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 准入规则配置 · ${rows.length} 条${rows.length ? `（启用 ${on} · 停用 ${rows.length-on}）` : ''}</div><button type="button" class="btn" data-appetite-new>＋ 新增准入规则</button></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>规则ID</th><th>流转类别</th><th>币种</th><th>受益行国家</th><th>准入方式</th><th>月度上限 USD</th><th>生效时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${list}</tbody></table></div>`
+      + `<div class="notice">币种、国家为 ALL 时匹配全部；同范围且生效期重叠的规则不能同时启用。附加条件在 C1 页面配置。无命中的流转类别默认拒绝。</div><div id="appetitesPageError" class="err" role="alert"></div>`;
+}
+
+function renderUsage(rows) {
+    const month = hkDateTime().slice(0,7);
+    const sorted = rows.slice().sort((a,b)=>b.monthKey.localeCompare(a.monthKey)||a.flowCategory.localeCompare(b.flowCategory));
+    $('usageView').innerHTML = `<div class="rulebar"><div><h2>${esc(code)} · MTD 使用情况</h2><div class="muted">C1 只读取香港当月的合作方、流转类别累计金额；模拟校验不占用 MTD。</div></div><a class="btn secondary tiny" href="/mtd.html?provider=${encodeURIComponent(code)}">调整 / 模拟 MTD ↗</a></div>`
+      + `<div class="tablewrap"><table><thead><tr><th>流转类别</th><th>月份（HKT）</th><th>累计金额 USD</th><th>操作</th></tr></thead><tbody>${sorted.map(x=>`<tr><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)} ${x.monthKey===month?'<span class="badge pass">当月</span>':'<span class="muted">不参与当前校验</span>'}</td><td>${esc(Number(x.amountUsd).toLocaleString('en-US'))}</td><td><a href="/mtd.html?provider=${encodeURIComponent(code)}&flow=${encodeURIComponent(x.flowCategory)}&month=${encodeURIComponent(x.monthKey)}">调整</a></td></tr>`).join('')||'<tr><td colspan="4">暂无 MTD 记录，可前往 MTD 模拟数据页新增。</td></tr>'}</tbody></table></div>`;
+}
+
+function hkDateTime(offsetDays = 0) {
+    return new Date(Date.now() + offsetDays * 86400000).toLocaleString('sv-SE', {timeZone: 'Asia/Hong_Kong', hour12: false}).replace(' ', 'T').slice(0, 16);
+}
+
+function clientOptions(clients) {
+    return clients.map(c => `<option value="${esc(c.clientId)}">${esc(c.clientId)} · ${esc(c.classificationStatus)}</option>`).join('');
+}
+
+function renderExclusions({rows, clients}) {
+    const now = hkDateTime();
+    $('exclusionsView').innerHTML = `<div class="rulebar"><div><h2>${esc(code)} · 客户排除管理</h2><div class="muted">合规维护的「客户 + 合作方」排除记录；解除后保留历史与审计。</div></div></div>`
+        + `<form id="exclusionForm" class="panel" style="background:#f8fbff"><div class="layout3"><div class="field"><label>客户 *</label><select name="clientId" required>${clientOptions(clients)}</select></div><div class="field"><label>排除原因 *</label><input name="reason" required maxlength="512" placeholder="合规复核原因"></div><div class="field"><label>生效时间 HKT *</label><input name="effectiveFrom" type="datetime-local" value="${hkDateTime()}" required></div><div class="field"><label>截止时间 HKT</label><input name="effectiveTo" type="datetime-local"></div></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">＋ 新增排除</button></div></form>`
+        + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>客户</th><th>排除原因</th><th>生效时间</th><th>截止时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(x => {const active=x.effectiveFrom<=now&&(!x.effectiveTo||x.effectiveTo>now);return `<tr><td>#${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.reason)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.effectiveTo||'—')}</td><td>${active?'<span class="badge fail">有效</span>':'已结束 / 未生效'}</td><td>${active?`<button type="button" class="btn secondary tiny" data-release="${x.id}">解除</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="7">当前合作方暂无客户排除记录</td></tr>'}</tbody></table></div><div class="err" id="exclusionError" role="alert"></div><div class="good" id="exclusionGood" role="status"></div>`;
+}
+
+function renderApprovals({rows, clients}) {
+    const now = hkDateTime();
+    $('approvalsView').innerHTML = `<div class="rulebar"><div><h2>${esc(code)} · 个案审批管理</h2><div class="muted">审批仅适用于当前合作方、指定客户与流转类别。</div></div></div>`
+        + `<form id="approvalForm" class="panel" style="background:#f8fbff"><div class="layout3"><div class="field"><label>客户 *</label><select name="clientId" required>${clientOptions(clients)}</select></div><div class="field"><label>流转类别 *</label><select name="flowCategory"><option>STANDARD</option><option>PSP</option><option>WEB3</option></select></div><div class="field"><label>审批参考号 *</label><input name="approvalReference" required maxlength="128" placeholder="APR-2026-001"></div><div class="field"><label>生效时间 HKT *</label><input name="effectiveFrom" type="datetime-local" value="${hkDateTime()}" required></div><div class="field"><label>过期时间 HKT *</label><input name="expiresAt" type="datetime-local" value="${hkDateTime(30)}" required></div></div><div class="actions" style="margin-top:12px"><button type="submit" class="btn">＋ 新增审批</button></div></form>`
+        + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>客户</th><th>流转类别</th><th>审批编号</th><th>生效时间</th><th>失效时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(x => {const active=x.effectiveFrom<=now&&x.expiresAt>now;return `<tr><td>#${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.approvalReference)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.expiresAt)}</td><td>${active?'<span class="badge pass">有效</span>':'已失效 / 未生效'}</td><td>${active?`<button type="button" class="btn secondary tiny" data-revoke="${x.id}">撤销</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="8">当前合作方暂无个案审批记录</td></tr>'}</tbody></table></div><div class="err" id="approvalError" role="alert"></div><div class="good" id="approvalGood" role="status"></div>`;
 }
 
 function renderRelated(d) {
     $('relatedView').innerHTML = `<div class="notice">以下为当前已保存配置。修改配置后可刷新本页重新检查上线条件；最终候选仍须通过完整 C1–C10 校验。</div>`
-        + section(`C1 业务准入 · ${d.appetites.length} 条`, '/', table(
+        + section(`C1 业务准入 · ${d.appetites.length} 条`, `/provider-detail.html?code=${encodeURIComponent(code)}&tab=appetites`, table(
             ['流转类别', '币种', '国家', '准入方式', '状态', '生效时间', '截止时间'],
             d.appetites.map(a => [a.flowCategory, a.currency, a.bankCountry, a.action, a.enabled ? '启用' : '停用', a.effectiveFrom, a.effectiveTo])))
         + section(`C3 业务覆盖 · ${d.reaches.length} 条`, '/c3.html', table(
@@ -137,11 +161,14 @@ function renderAudit(data) {
 // 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；关联配置、变更记录取合作方管理的聚合接口
 const LOAD = {
     appetites: () => api(`/appetites?providerCode=${encodeURIComponent(code)}`),
+    usage: async () => (await api('/usage')).filter(x => x.providerCode === code),
+    exclusions: async () => { const [rows, clients] = await Promise.all([api(`/exclusions?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
+    approvals: async () => { const [rows, clients] = await Promise.all([api(`/approvals?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     related: () => api(`/provider-management/${encodeURIComponent(code)}/related`),
     restrictions: async () => (await api('/c2/restrictions')).filter(r => r.providerCode === code),
     audit: () => api(`/provider-management/${encodeURIComponent(code)}/audit`)
 };
-const RENDER = {appetites: renderAppetites, related: renderRelated, restrictions: renderRestrictions, audit: renderAudit};
+const RENDER = {appetites: renderAppetites, usage: renderUsage, exclusions: renderExclusions, approvals: renderApprovals, related: renderRelated, restrictions: renderRestrictions, audit: renderAudit};
 
 // silent：重读期间保留已显示的内容，不先换成「正在加载…」
 async function activate(tab, silent = false) {
@@ -193,6 +220,76 @@ async function show(quiet = false) {
 }
 
 document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => activate(b.dataset.tab));
+let providerAppetiteId = null;
+function appetiteSelect(name, label, values, selected) {
+    return `<div class="field"><label>${label} *</label><select name="${name}">${values.map(v=>`<option value="${esc(v)}" ${v===selected?'selected':''}>${esc(v)}</option>`).join('')}</select></div>`;
+}
+function appetiteInput(name, label, value='', type='text', required=true, extra='') {
+    return `<div class="field"><label>${label}${required?' *':''}</label><input name="${name}" type="${type}" value="${esc(value)}" ${required?'required':''} ${extra}></div>`;
+}
+function openProviderAppetite(id) {
+    const row=appetiteRows.find(x=>x.id===id)||{};providerAppetiteId=id||null;
+    $('appetiteModalTitle').textContent=id?`编辑准入规则 #${id}`:`${code} · 新增准入规则`;
+    const flows=[...new Set(['STANDARD','PSP','WEB3',...appetiteRows.map(x=>x.flowCategory)])];
+    const currencies=[...new Set(['ALL','USD','HKD','CNH','EUR','AUD',...appetiteRows.map(x=>x.currency)])];
+    const countries=[...new Set(['ALL','CN','HK','US','KG','SG',...appetiteRows.map(x=>x.bankCountry)])];
+    $('appetiteFields').innerHTML=`<div class="notice">所属合作方：<b>${esc(code)}</b>。附加条件保存后可从列表“条件”入口配置。</div><div class="layout3" style="margin-top:14px">`
+      +appetiteSelect('flowCategory','流转类别',flows,row.flowCategory||'STANDARD')
+      +appetiteSelect('currency','交易币种',currencies,row.currency||'ALL')
+      +appetiteSelect('bankCountry','受益行国家',countries,row.bankCountry||'ALL')
+      +appetiteSelect('action','准入方式',['ACCEPT','EXCLUDE','CASE_BY_CASE'],row.action||'ACCEPT')
+      +appetiteInput('monthlyCapUsd','月度上限 USD',row.monthlyCapUsd??'','number',false,'min="0" step="0.01"')
+      +appetiteInput('effectiveFrom','生效时间 HKT',row.effectiveFrom?.slice(0,16)||hkDateTime(),'datetime-local')
+      +appetiteInput('effectiveTo','失效时间 HKT',row.effectiveTo?.slice(0,16)||'','datetime-local',false)
+      +appetiteInput('evidenceDocNo','证据文档号',row.evidenceDocNo||`APP-${code}-${hkDateTime().slice(0,10)}`)
+      +appetiteInput('nextReviewDate','下次复核日期',row.nextReviewDate||hkDateTime(365).slice(0,10),'date')
+      +appetiteInput('remark','备注',row.remark||'','text',false)+'</div>';
+    const action=$('appetiteForm').querySelector('[name="action"]'),cap=$('appetiteForm').querySelector('[name="monthlyCapUsd"]');
+    action.onchange=()=>{cap.disabled=action.value!=='ACCEPT';};action.onchange();
+    $('appetiteError').textContent='';$('appetiteModal').classList.add('show');
+}
+function closeProviderAppetite(){$('appetiteModal').classList.remove('show');providerAppetiteId=null;}
+$('appetitesView').addEventListener('click',async e=>{
+    if(e.target.closest('[data-appetite-new]')){openProviderAppetite();return;}
+    const edit=e.target.closest('[data-appetite-edit]');if(edit){openProviderAppetite(Number(edit.dataset.appetiteEdit));return;}
+    const toggle=e.target.closest('[data-appetite-toggle]');if(!toggle)return;
+    const id=Number(toggle.dataset.appetiteToggle);if(!confirm(`确定切换准入规则 #${id} 的启用状态？`))return;
+    try{await api(`/appetites/${id}/toggle`,{method:'POST'});await show(true);}catch(error){$('appetitesPageError').textContent=error.message;}
+});
+$('appetiteForm').addEventListener('submit',async e=>{
+    e.preventDefault();const data=Object.fromEntries(new FormData(e.target).entries());
+    for(const key of Object.keys(data))if(data[key]==='')data[key]=null;
+    data.providerCode=code;data.enabled=providerAppetiteId?appetiteRows.find(x=>x.id===providerAppetiteId).enabled:true;
+    if(providerAppetiteId)data.id=providerAppetiteId;
+    $('appetiteError').textContent='';
+    try{await api('/appetites',{method:'POST',body:JSON.stringify(data)});closeProviderAppetite();await show(true);}
+    catch(error){$('appetiteError').textContent=error.message;}
+});
+async function saveProviderRecord(kind, form) {
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.providerCode = code;
+    for (const key of Object.keys(data)) if (data[key] === '') data[key] = null;
+    const error = $(kind === 'exclusions' ? 'exclusionError' : 'approvalError');
+    error.textContent = '';
+    if (kind === 'exclusions' && data.effectiveTo && data.effectiveTo <= data.effectiveFrom) {error.textContent = '截止时间须晚于生效时间';return;}
+    try { await api(kind === 'exclusions' ? '/exclusions' : '/approvals', {method:'POST', body:JSON.stringify(data)}); await activate(kind); }
+    catch (e) { error.textContent = e.message; }
+}
+for (const kind of ['exclusions', 'approvals']) {
+    $(kind + 'View').addEventListener('submit', e => {e.preventDefault(); saveProviderRecord(kind, e.target);});
+}
+$('exclusionsView').addEventListener('click', async e => {
+    const id = e.target.closest('[data-release]')?.dataset.release;
+    if (!id || !confirm('确定解除这条客户排除？历史记录会保留。')) return;
+    try { await api(`/exclusions/${id}/release`, {method:'POST'}); await activate('exclusions'); }
+    catch (error) { $('exclusionError').textContent = error.message; }
+});
+$('approvalsView').addEventListener('click', async e => {
+    const id = e.target.closest('[data-revoke]')?.dataset.revoke;
+    if (!id || !confirm('确定撤销这条个案审批？历史记录会保留。')) return;
+    try { await api(`/approvals/${id}/revoke`, {method:'POST'}); await activate('approvals'); }
+    catch (error) { $('approvalError').textContent = error.message; }
+});
 $('refresh').onclick = () => show();
 const initial = params.get('tab');
 state.tab = TABS.includes(initial) ? initial : 'base';

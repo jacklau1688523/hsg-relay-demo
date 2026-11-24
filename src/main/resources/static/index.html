@@ -440,12 +440,19 @@
             color: #53708e
         }
 
+        .c1-workspace {align-items:start}
+
         .builderLine {
             border: 1px solid #dfe8f4;
             border-radius: 8px;
             padding: 12px;
             margin: 10px 0
         }
+        .c1-group {border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}
+        .c1-group .c1-group {margin-left:16px;background:#fff}
+        .c1-head,.c1-line {display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+        .c1-head strong{flex:1}.c1-head select{width:190px}.c1-line select:first-child{flex:2;min-width:150px}.c1-line select:nth-child(2){flex:1;min-width:100px}.c1-line input,.c1-line select:nth-child(3){flex:1.5;min-width:120px}
+        .c1-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}
 
         .footer {
             color: #8b98ac;
@@ -515,155 +522,21 @@
             <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
         </div>
         <div class="content">
-            <div class="heading"><h1>C1 代理行业务准入配置</h1>
-                <div class="muted">维护各合作方对不同流转类别、币种、受益行国家的准入规则（ACCEPT / EXCLUDE /
-                    CASE_BY_CASE），并可设置月度上限。
+            <div class="heading"><h1>C1 业务准入条件与模拟</h1>
+                <div class="muted">准入规则、客户排除、个案审批和 MTD 使用情况在合作方详情页维护；这里配置附加条件并模拟 C1 判定。
                 </div>
             </div>
-            <div class="tabs">
-                <button class="tab sel" data-tab="rules" onclick="setTab('rules')">准入规则配置</button>
-                <button class="tab" data-tab="exclusions" onclick="setTab('exclusions')">客户排除管理</button>
-                <button class="tab" data-tab="approvals" onclick="setTab('approvals')">个案审批管理</button>
-                <button class="tab" data-tab="usage" onclick="setTab('usage')">MTD 使用情况</button>
-            </div>
-            <div class="grid">
-                <section>
-                    <div id="rulesView">
-                        <div class="panel">
-                            <div class="filters">
-                                <div class="field"><label>合作方</label><select id="filterProvider"></select></div>
-                                <div class="field"><label>流转类别</label><select id="filterFlow">
-                                    <option value="">全部</option>
-                                    <option>STANDARD</option>
-                                    <option>PSP</option>
-                                    <option>WEB3</option>
-                                </select></div>
-                                <div class="field"><label>币种</label><select id="filterCurrency">
-                                    <option value="">全部</option>
-                                    <option>ALL</option>
-                                    <option>USD</option>
-                                    <option>HKD</option>
-                                </select></div>
-                                <div class="field"><label>准入方式</label><select id="filterAction">
-                                    <option value="">全部</option>
-                                    <option>ACCEPT</option>
-                                    <option>EXCLUDE</option>
-                                    <option>CASE_BY_CASE</option>
-                                </select></div>
-                                <div class="field"><label>状态</label><select id="filterStatus">
-                                    <option value="">全部</option>
-                                    <option value="true">启用</option>
-                                    <option value="false">停用</option>
-                                </select></div>
-                                <button class="btn" onclick="loadRules()">查询</button>
-                            </div>
-                        </div>
-                        <div class="panel">
-                            <div class="rowbetween">
-                                <div class="ptitle" id="ruleCount">准入规则列表</div>
-                                <div class="actions">
-                                    <button class="btn" onclick="openAppetite()">＋ 新增规则</button>
-                                    <button class="btn secondary" onclick="loadRules()">↻ 刷新</button>
-                                </div>
-                            </div>
-                            <div class="tablewrap">
-                                <table>
-                                    <thead>
-                                    <tr>
-                                        <th>规则ID</th>
-                                        <th>合作方</th>
-                                        <th>流转类别</th>
-                                        <th>币种</th>
-                                        <th>受益行国家</th>
-                                        <th>准入方式</th>
-                                        <th>月度上限 USD</th>
-                                        <th>生效日期</th>
-                                        <th>状态</th>
-                                        <th>操作</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="rulesRows"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="panel"><h2>新增 / 编辑准入规则</h2>
-                            <div class="notice">点击「新增规则」或列表中的「编辑」打开配置表单。规则会保存到 H2/MySQL
-                                数据库，并自动进行相同范围及生效期冲突校验。
-                            </div>
-                        </div>
-                    </div>
-                    <div id="exclusionsView" class="hidden">
-                        <div class="panel">
-                            <div class="rowbetween"><h2>客户排除管理</h2>
-                                <button class="btn" onclick="openSimple('exclusion')">＋ 新增排除</button>
-                            </div>
-                            <div class="tablewrap">
-                                <table>
-                                    <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>客户</th>
-                                        <th>合作方</th>
-                                        <th>排除原因</th>
-                                        <th>生效时间</th>
-                                        <th>截止时间</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="exclusionRows"></tbody>
-                                </table>
-                            </div>
-                            <div class="notice">C1
-                                首先检查客户与合作方是否存在有效排除记录；合规排除在准入规则匹配前生效。
-                            </div>
-                        </div>
-                    </div>
-                    <div id="approvalsView" class="hidden">
-                        <div class="panel">
-                            <div class="rowbetween"><h2>个案审批管理</h2>
-                                <button class="btn" onclick="openSimple('approval')">＋ 新增个案审批</button>
-                            </div>
-                            <div class="tablewrap">
-                                <table>
-                                    <thead>
-                                    <tr>
-                                        <th>ID</th>
-                                        <th>客户</th>
-                                        <th>合作方</th>
-                                        <th>流转类别</th>
-                                        <th>审批编号</th>
-                                        <th>生效时间</th>
-                                        <th>失效时间</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="approvalRows"></tbody>
-                                </table>
-                            </div>
-                            <div class="notice">审批仅适用于对应的「合作方 + 客户 + 流转类别」，且必须在有效期内。</div>
-                        </div>
-                    </div>
-                    <div id="usageView" class="hidden">
-                        <div class="panel"><div class="rowbetween"><h2>MTD 月累计使用情况</h2>
-                            <a href="/mtd.html">调整 / 模拟 MTD ↗</a></div>
-                            <div class="tablewrap">
-                                <table>
-                                    <thead>
-                                    <tr>
-                                        <th>合作方</th>
-                                        <th>流转类别</th>
-                                        <th>月份（HKT）</th>
-                                        <th>累计金额 USD</th>
-                                        <th>操作</th>
-                                    </tr>
-                                    </thead>
-                                    <tbody id="usageRows"></tbody>
-                                </table>
-                            </div>
-                            <div class="notice warn">演示环境的 MTD
-                                为预置数据（没有定时任务，首次启动按当月写入），C1 只读取香港当月的记录，模拟校验不写入占用。需要模拟时可通过「工具 → MTD 模拟数据」页面或
-                                PUT /api/usage 调整。真实生产环境需对接路由已占用统计及事务原子占用/释放机制。
-                            </div>
-                        </div>
-                    </div>
+            <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：分类须为 COMPLETE；未配置流转类别时取 STANDARD。</div><div class="notice">② 客户排除：命中有效的「客户 + 合作方」记录立即拒绝；记录在合作方详情维护。</div><div class="notice">③ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
+            <div class="grid c1-workspace">
+            <section id="conditionView" class="panel">
+                <div class="rowbetween"><div><h2>① 触发条件：按字段库构建</h2><div class="muted">选择准入规则后，配置该规则的附加触发条件。支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新规则</button></div>
+                <div class="field" style="max-width:580px;margin:16px 0"><label for="c1RuleSelect">选择准入规则</label><select id="c1RuleSelect" onchange="c1SelectRule()"></select></div>
+                <div id="c1RuleScope" class="notice"></div>
+                <label style="display:block;margin:16px 0"><input id="c1UseCondition" type="checkbox" style="width:auto;min-height:0" onchange="c1ToggleCondition()"> 启用附加条件</label>
+                <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
+                <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
+                <div class="actions" style="justify-content:flex-end;margin-top:22px"><button type="button" class="btn" onclick="c1SaveCondition()">保存条件配置</button></div>
+            </section>
                     <aside class="rightPanel">
                         <div class="panel">
                             <div class="ptitle">C1 规则模拟校验 ⓘ</div>
@@ -702,191 +575,15 @@
         </div>
     </main>
 </div>
-<div class="modalback" id="modal">
-    <div class="modal">
-        <div class="rowbetween"><h2 id="modalTitle">新增配置</h2>
-            <button class="btn secondary tiny" onclick="closeModal()">✕ 关闭</button>
-        </div>
-        <form id="modalForm" onsubmit="submitModal(event)">
-            <div id="modalFields"></div>
-            <div class="err" id="modalError"></div>
-            <div class="actions" style="justify-content:flex-end;margin-top:18px">
-                <button class="btn secondary" type="button" onclick="closeModal()">取消</button>
-                <button class="btn" type="submit">保存配置</button>
-            </div>
-        </form>
-    </div>
-</div>
 <script>
-    const $ = id => document.getElementById(id), esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;'
-    }[ch]));
-    let providers = [], clients = [], allRules = [], editId = null, modalType = 'appetite';
-
-    async function api(path, opt) {
-        const r = await fetch('/api' + path, {
-            ...opt,
-            headers: {'Content-Type': 'application/json', ...(opt?.headers || {})}
-        });
-        const body = await r.json();
-        if (!r.ok) throw Error(body.error || r.statusText);
-        return body;
-    }
-
-    const opt = (values, v) => values.map(x => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('');
-
-    function providerSelect(selected) {
-        return providers.map(p => `<option value="${esc(p.code)}" ${p.code === selected ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');
-    }
-
-    function setTab(tab) {
-        document.querySelectorAll('.tab').forEach(el => el.classList.toggle('sel', el.dataset.tab === tab));
-        ['rules', 'exclusions', 'approvals', 'usage'].forEach(t => $(t + 'View').classList.toggle('hidden', t !== tab));
-        ({rules: loadRules, exclusions: loadExclusions, approvals: loadApprovals, usage: loadUsage,})[tab]();
-    }
-
-    async function init() {
-        providers = await api('/providers');
-        clients = await api('/clients');
-        $('filterProvider').innerHTML = '<option value="">全部</option>' + providerSelect();
-        // 从合作方详情「前往维护」进入时带 ?provider=合作方编码：直接按该合作方筛选
-        const provider = new URLSearchParams(location.search).get('provider');
-        if (providers.some(p => p.code === provider)) $('filterProvider').value = provider;
-        $('simProvider').innerHTML = providerSelect('PROV-HO');
-        $('simClient').innerHTML = clients.map(c => `<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');
-        $('simClient').onchange = syncClient;
-        syncClient();
-        await loadRules();
-    }
-
-    function syncClient() {
-        let c = clients.find(x => x.clientId === $('simClient').value);
-        $('simStatus').value = c?.classificationStatus || '';
-        $('simFlows').value = c?.flowCategories || 'STANDARD';
-    }
-
-    async function loadRules() {
-        allRules = await api('/appetites');
-        const p = $('filterProvider').value, f = $('filterFlow').value, c = $('filterCurrency').value,
-            a = $('filterAction').value, s = $('filterStatus').value;
-        const data = allRules.filter(x => (!p || x.providerCode === p) && (!f || x.flowCategory === f) && (!c || x.currency === c) && (!a || x.action === a) && (!s || String(x.enabled) === s));
-        $('ruleCount').textContent = `准入规则列表（共 ${data.length} 条）`;
-        $('rulesRows').innerHTML = data.map(x => `<tr><td>${x.id}</td><td>${esc(x.providerCode)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.currency)}</td><td>${esc(x.bankCountry)}</td><td><span class="badge ${x.action}">${esc(x.action)}</span></td><td>${x.monthlyCapUsd == null ? '—' : Number(x.monthlyCapUsd).toLocaleString('en-US')}</td><td>${esc(x.effectiveFrom?.slice(0, 10))}</td><td>${x.enabled ? '<span class="dot"></span>生效中' : '已停用'}</td><td><a onclick="openAppetite(${x.id})">编辑</a><a onclick="toggleRule(${x.id})">${x.enabled ? '停用' : '启用'}</a></td></tr>`).join('') || '<tr><td colspan="10">暂无符合条件的规则</td></tr>';
-    }
-
-    async function toggleRule(id) {
-        if (!confirm('确定修改这条规则的启用状态？')) return;
-        try {
-            await api(`/appetites/${id}/toggle`, {method: 'POST'});
-            await loadRules();
-        } catch (e) {
-            alert(e.message);
-        }
-    }
-
-    function fld(label, id, value = '', type = 'text', required = true, extra = '') {
-        return `<div class="field"><label>${label}${required ? ' *' : ''}</label><input id="f_${id}" name="${id}" type="${type}" ${required ? 'required' : ''} value="${esc(value)}" ${extra}></div>`;
-    }
-
-    function sel(label, id, values, value) {
-        return `<div class="field"><label>${label} *</label><select id="f_${id}" name="${id}">${opt(values, value)}</select></div>`;
-    }
-
-    function openAppetite(id) {
-        modalType = 'appetite';
-        editId = id || null;
-        const x = allRules.find(z => z.id === id) || {};
-        $('modalTitle').textContent = id ? '编辑准入规则 #' + id : '新增准入规则';
-        $('modalFields').innerHTML = `<div class="layout3">${sel('合作方', 'providerCode', providers.map(p => p.code), x.providerCode || 'PROV-T1')}${sel('流转类别', 'flowCategory', ['STANDARD', 'PSP', 'WEB3'], x.flowCategory || 'STANDARD')}${sel('交易币种', 'currency', ['ALL', 'USD', 'HKD', 'CNH', 'EUR', 'AUD'], x.currency || 'ALL')}${sel('受益行国家', 'bankCountry', ['ALL', 'KG', 'CN', 'HK', 'US', 'SG'], x.bankCountry || 'ALL')}${sel('准入方式', 'action', ['ACCEPT', 'EXCLUDE', 'CASE_BY_CASE'], x.action || 'ACCEPT')}${fld('月度上限 USD', 'monthlyCapUsd', x.monthlyCapUsd ?? '', 'number', false, 'min="0" step="0.01"')}${fld('生效时间（HKT）', 'effectiveFrom', x.effectiveFrom?.slice(0, 16) || '2025-10-01T00:00', 'datetime-local')}${fld('失效时间（HKT）', 'effectiveTo', x.effectiveTo?.slice(0, 16) || '', 'datetime-local', false)}${fld('证据文档号', 'evidenceDocNo', x.evidenceDocNo || 'APP-C1-2026-001')}${fld('下次复核日期', 'nextReviewDate', x.nextReviewDate || '2027-10-01', 'date')}${fld('备注', 'remark', x.remark || '', 'text', false)}</div>`;
-        $('f_action').onchange = () => {
-            $('f_monthlyCapUsd').disabled = $('f_action').value !== 'ACCEPT'
-        };
-        $('f_action').onchange();
-        $('modalError').textContent = '';
-        $('modal').classList.add('show');
-    }
-
-    function openSimple(type) {
-        modalType = type;
-        editId = null;
-        $('modalTitle').textContent = type === 'exclusion' ? '新增客户排除' : '新增个案审批';
-        let cs = sel('客户ID', 'clientId', clients.map(x => x.clientId), clients[0]?.clientId),
-            ps = sel('合作方', 'providerCode', providers.map(x => x.code), providers[0]?.code);
-        if (type === 'exclusion') $('modalFields').innerHTML = `<div class="layout2">${cs}${ps}${fld('排除原因', 'reason', 'Compliance review')}${fld('生效时间 HKT', 'effectiveFrom', localDateTime(), 'datetime-local')}${fld('截止时间 HKT', 'effectiveTo', '', 'datetime-local', false)}</div>`; else $('modalFields').innerHTML = `<div class="layout2">${cs}${ps}${sel('流转类别', 'flowCategory', ['STANDARD', 'PSP', 'WEB3'], 'PSP')}${fld('审批参考号', 'approvalReference', 'APR-2026-001')}${fld('生效时间 HKT', 'effectiveFrom', localDateTime(), 'datetime-local')}${fld('过期时间 HKT', 'expiresAt', '2027-11-01T00:00', 'datetime-local')}</div>`;
-        $('modalError').textContent = '';
-        $('modal').classList.add('show');
-    }
-
-    function localDateTime() {
-        let d = new Date();
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-    }
-
-    function closeModal() {
-        $('modal').classList.remove('show')
-    }
-
-    async function submitModal(e) {
-        e.preventDefault();
-        let data = Object.fromEntries(new FormData($('modalForm')).entries());
-        Object.keys(data).forEach(k => {
-            if (data[k] === '') data[k] = null
-        });
-        let url = modalType === 'appetite' ? '/appetites' : modalType === 'exclusion' ? '/exclusions' : '/approvals';
-        if (modalType === 'appetite') {
-            if (editId) data.id = editId;
-            data.enabled = editId ? (allRules.find(x => x.id === editId)?.enabled ?? true) : true;
-        }
-        try {
-            await api(url, {method: 'POST', body: JSON.stringify(data)});
-            closeModal();
-            await ({appetite: loadRules, exclusion: loadExclusions, approval: loadApprovals}[modalType])();
-        } catch (err) {
-            $('modalError').textContent = err.message;
-        }
-    }
-
-    async function loadExclusions() {
-        let data = await api('/exclusions');
-        $('exclusionRows').innerHTML = data.map(x => `<tr><td>${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.providerCode)}</td><td>${esc(x.reason)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.effectiveTo || '—')}</td></tr>`).join('') || '<tr><td colspan="6">暂无排除记录</td></tr>';
-    }
-
-    async function loadApprovals() {
-        let data = await api('/approvals');
-        $('approvalRows').innerHTML = data.map(x => `<tr><td>${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.providerCode)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.approvalReference)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.expiresAt)}</td></tr>`).join('');
-    }
-
-    async function loadUsage() {
-        let data = await api('/usage');
-        // 香港当月（HKT 固定 UTC+8）：只有当月记录参与 C1 月度上限校验
-        let month = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 7);
-        let sorted = data.slice().sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.providerCode.localeCompare(b.providerCode) || a.flowCategory.localeCompare(b.flowCategory));
-        $('usageRows').innerHTML = sorted.map(x => `<tr><td>${esc(x.providerCode)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)} ${x.monthKey === month ? '<span class="badge pass">当月</span>' : '<span class="muted">不参与校验</span>'}</td><td>${Number(x.amountUsd).toLocaleString('en-US')}</td><td><a href="/mtd.html?provider=${encodeURIComponent(x.providerCode)}&flow=${encodeURIComponent(x.flowCategory)}&month=${encodeURIComponent(x.monthKey)}">调整</a></td></tr>`).join('') || '<tr><td colspan="5">暂无 MTD 记录，可到「工具 → MTD 模拟数据」新增。</td></tr>';
-    }
-
-    async function simulate() {
-        try {
-            let data = await api('/c1/simulate', {
-                method: 'POST',
-                body: JSON.stringify({
-                    clientId: $('simClient').value,
-                    providerCode: $('simProvider').value,
-                    paymentCurrency: $('simCurrency').value,
-                    beneficiaryBankCountry: $('simCountry').value,
-                    amountUsd: $('simAmount').value
-                })
-            });
-            $('simResult').innerHTML = `<div class="result ${data.passed ? '' : 'error'}">${data.passed ? '✓ C1 校验通过' : '✕ C1 校验失败'}</div><p class="caps">原因码：${esc(data.reasonCode)}</p><div class="code">命中规则ID：${esc(data.matchedRuleId || '—')}<br>准入动作：${esc(data.matchedRuleAction || '—')}</div><h2 style="margin:15px 0 4px">校验过程</h2>${data.steps.map(x => `<div class="trace"><span class="badge ${x.status === 'PASS' ? 'pass' : 'fail'}">${esc(x.status)}</span><b style="margin-left:8px">${esc(x.step)}</b><div class="muted" style="margin-top:4px">${esc(x.detail)}</div></div>`).join('')}`;
-        } catch (e) {
-            $('simResult').innerHTML = '<div class="result error">' + esc(e.message) + '</div>';
-        }
-    }
-
-    init().catch(e => alert('初始化失败：' + e.message));
+const $=id=>document.getElementById(id),esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+let providers=[],clients=[],allRules=[],fieldDefs=[];
+async function api(path,opt={}){const response=await fetch('/api'+path,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const body=await response.json();if(!response.ok)throw Error(body.error||response.statusText);return body;}
+function syncClient(){const client=clients.find(x=>x.clientId===$('simClient').value);$('simStatus').value=client?.classificationStatus||'';$('simFlows').value=client?.flowCategories||'STANDARD';}
+async function init(){[providers,clients,fieldDefs]=await Promise.all([api('/providers'),api('/clients'),api('/fields')]);$('simProvider').innerHTML=providers.map(p=>`<option value="${esc(p.code)}" ${p.code==='PROV-HO'?'selected':''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');$('simClient').innerHTML=clients.map(c=>`<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');$('simClient').onchange=syncClient;syncClient();await c1LoadConditionRules();}
+async function simulate(){try{const result=await api('/c1/simulate',{method:'POST',body:JSON.stringify({clientId:$('simClient').value,providerCode:$('simProvider').value,paymentCurrency:$('simCurrency').value,beneficiaryBankCountry:$('simCountry').value,amountUsd:$('simAmount').value})});$('simResult').innerHTML=`<div class="result ${result.passed?'':'error'}">${result.passed?'✓ C1 校验通过':'✕ C1 校验失败'}</div><p class="caps">原因码：${esc(result.reasonCode)}</p><div class="code">命中规则ID：${esc(result.matchedRuleId||'—')}<br>准入动作：${esc(result.matchedRuleAction||'—')}</div><h2 style="margin:15px 0 4px">校验过程</h2>${result.steps.map(x=>`<div class="trace"><span class="badge ${x.status==='PASS'?'pass':'fail'}">${esc(x.status)}</span><b style="margin-left:8px">${esc(x.step)}</b><div class="muted" style="margin-top:4px">${esc(x.detail)}</div></div>`).join('')}`;}catch(error){$('simResult').innerHTML='<div class="result error">'+esc(error.message)+'</div>';}}
+init().catch(error=>{$('c1ConditionError').textContent=error.message;});
 </script>
+<script src="/c1-conditions.js"></script>
 </body>
 </html>

@@ -54,6 +54,12 @@ public class RelayController {
 
     @PostMapping("/appetites")
     public Appetite save(@RequestBody Appetite input) {
+        if (input.conditionJson != null && !input.conditionJson.isBlank()) {
+            if (input.conditionJson.length() > 12000) throw new IllegalArgumentException("C1 条件树过长");
+            try { var tree = json.readValue(input.conditionJson, ExpressionService.Node.class); validateC1Fields(tree); expressions.compile(tree, "C1"); }
+            catch (IllegalArgumentException ex) { throw ex; }
+            catch (Exception ex) { throw new IllegalArgumentException("C1 条件树 JSON 无效", ex); }
+        } else input.conditionJson = null;
         if (!providers.existsById(input.providerCode)) throw new IllegalArgumentException("无效合作方");
         if (!List.of("STANDARD", "PSP", "WEB3").contains(input.flowCategory))
             throw new IllegalArgumentException("无效流转类别");
@@ -67,6 +73,7 @@ public class RelayController {
             throw new IllegalArgumentException("月度上限不可小于0");
         if (!"ACCEPT".equals(input.action)) input.monthlyCapUsd = null;
         Appetite previous = input.id == null ? null : appetites.findById(input.id).orElseThrow(() -> new IllegalArgumentException("配置不存在"));
+        if (previous != null && input.conditionJson == null) input.conditionJson = previous.conditionJson;
         if (previous != null) {
             input.versionNo = previous.versionNo + 1;
         } else {
@@ -81,6 +88,44 @@ public class RelayController {
             throw new IllegalStateException("审计写入失败", e);
         }
         return saved;
+    }
+
+    public record C1ConditionInput(ExpressionService.Node tree) {}
+
+    public record C1ConditionUpdate(boolean enabled, ExpressionService.Node tree) {}
+
+    @PutMapping("/appetites/{id}/condition")
+    @Transactional
+    public Appetite saveC1Condition(@PathVariable Long id, @RequestBody C1ConditionUpdate input) {
+        Appetite row = appetites.findById(id).orElseThrow(() -> new IllegalArgumentException("准入规则不存在"));
+        String before;
+        try { before = json.writeValueAsString(row); }
+        catch (Exception ex) { throw new IllegalStateException("审计序列化失败", ex); }
+        if (input.enabled()) {
+            validateC1Fields(input.tree());
+            expressions.compile(input.tree(), "C1");
+            try { row.conditionJson = json.writeValueAsString(input.tree()); }
+            catch (Exception ex) { throw new IllegalArgumentException("C1 条件树无效", ex); }
+            if (row.conditionJson.length() > 12000) throw new IllegalArgumentException("C1 条件树过长");
+        } else row.conditionJson = null;
+        row.versionNo++;
+        Appetite saved = appetites.save(row);
+        try { audit.save(new RuleAudit("APPETITE", id.toString(), "UPDATE_CONDITION", "demo.operator", before, json.writeValueAsString(saved))); }
+        catch (Exception ex) { throw new IllegalStateException("审计写入失败", ex); }
+        return saved;
+    }
+
+    @PostMapping("/appetites/compile")
+    public Map<String, String> compileC1(@RequestBody C1ConditionInput input) {
+        validateC1Fields(input.tree());
+        return Map.of("expression", expressions.compile(input.tree(), "C1"));
+    }
+
+    private void validateC1Fields(ExpressionService.Node node) {
+        if (node == null) throw new IllegalArgumentException("C1 条件树不能为空");
+        if (node.children() != null && !node.children().isEmpty()) node.children().forEach(this::validateC1Fields);
+        else if (node.field() == null || !Set.of("flowCategory", "paymentCurrency", "beneficiaryBankCountry", "amountUsd").contains(node.field()))
+            throw new IllegalArgumentException("C1 条件仅支持流转类别、交易币种、受益行国家和金额");
     }
 
     private boolean overlap(LocalDateTime a1, LocalDateTime a2, LocalDateTime b1, LocalDateTime b2) {
@@ -103,8 +148,8 @@ public class RelayController {
     }
 
     @GetMapping("/exclusions")
-    public List<ClientExclusion> exclusions() {
-        return exclusions.findAll();
+    public List<ClientExclusion> exclusions(@RequestParam(required = false) String providerCode) {
+        return exclusions.findAll().stream().filter(x -> providerCode == null || x.providerCode.equals(providerCode)).toList();
     }
 
     @PostMapping("/exclusions")
@@ -117,9 +162,21 @@ public class RelayController {
         return saved;
     }
 
+    @PostMapping("/exclusions/{id}/release")
+    @Transactional
+    public ClientExclusion releaseExclusion(@PathVariable Long id) {
+        ClientExclusion row = exclusions.findById(id).orElseThrow(() -> new IllegalArgumentException("排除记录不存在"));
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Hong_Kong"));
+        if (row.effectiveTo != null && !row.effectiveTo.isAfter(now)) throw new IllegalArgumentException("排除记录已结束");
+        row.effectiveTo = now;
+        ClientExclusion saved = exclusions.save(row);
+        audit.save(new RuleAudit("EXCLUSION", id.toString(), "RELEASE", "demo.compliance", null, "effectiveTo=" + now));
+        return saved;
+    }
+
     @GetMapping("/approvals")
-    public List<CaseApproval> approvals() {
-        return approvals.findAll();
+    public List<CaseApproval> approvals(@RequestParam(required = false) String providerCode) {
+        return approvals.findAll().stream().filter(x -> providerCode == null || x.providerCode.equals(providerCode)).toList();
     }
 
     @PostMapping("/approvals")
@@ -128,6 +185,18 @@ public class RelayController {
             throw new IllegalArgumentException("审批字段无效");
         CaseApproval saved = approvals.save(x);
         audit.save(new RuleAudit("APPROVAL", saved.id.toString(), "CREATE", "demo.ops", null, "reference=" + x.approvalReference));
+        return saved;
+    }
+
+    @PostMapping("/approvals/{id}/revoke")
+    @Transactional
+    public CaseApproval revokeApproval(@PathVariable Long id) {
+        CaseApproval row = approvals.findById(id).orElseThrow(() -> new IllegalArgumentException("审批记录不存在"));
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Hong_Kong"));
+        if (!row.expiresAt.isAfter(now)) throw new IllegalArgumentException("审批已失效");
+        row.expiresAt = now;
+        CaseApproval saved = approvals.save(row);
+        audit.save(new RuleAudit("APPROVAL", id.toString(), "REVOKE", "demo.ops", null, "expiresAt=" + now));
         return saved;
     }
 
