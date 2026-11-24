@@ -261,7 +261,9 @@ CREATE TABLE IF NOT EXISTS relay_rule_audit
     before_json LONGTEXT, after_json LONGTEXT
     ) ENGINE=InnoDB;
 
--- C2: GLOBAL 监管路由规则，JSON AST + 要求的能力标签 JSON
+-- C2: GLOBAL 监管路由规则。condition_json 为适用范围的标准条件树：
+--   {"operator":"AND","children":[{"field":"paymentCurrency","operator":"EQ","value":"CNY"},{"field":"beneficiaryBankCountry","operator":"EQ","value":"CN"}]}
+--   受益行国家不限（ALL）时只有币种一个叶子；required_tags_json 为要求的能力标签 JSON 数组
 CREATE TABLE IF NOT EXISTS relay_regulatory_rule
 (
     rule_id

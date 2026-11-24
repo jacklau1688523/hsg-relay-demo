@@ -50,7 +50,7 @@ function showTab(tab) {
 
 function renderCatalog() {
     const enabled = fields.filter(f => f.enabled).length;
-    $('metaStats').innerHTML = `<div class="meta-stat"><strong>${fields.length}</strong><span>字段总数</span></div><div class="meta-stat"><strong>${enabled}</strong><span>启用字段</span></div><div class="meta-stat"><strong>${fields.filter(f => f.enabled && split(f.allowedRules).includes('C2')).length}</strong><span>C2 可选字段</span></div>`;
+    $('metaStats').innerHTML = `<div class="meta-stat"><strong>${fields.length}</strong><span>字段总数</span></div><div class="meta-stat"><strong>${enabled}</strong><span>启用字段</span></div><div class="meta-stat"><strong>${fields.filter(f => f.enabled && split(f.allowedRules).includes('C2')).length}</strong><span>C2 适用字段</span></div>`;
     const query = $('fieldSearch').value.trim().toLowerCase(), rule = $('ruleFilter').value,
         status = $('statusFilter').value;
     const shown = fields.filter(f => (!rule || split(f.allowedRules).includes(rule)) && (!status || (status === 'on') === f.enabled) && (!query || [f.fieldName, f.fieldCode, f.dataType, f.valueOptions].join(' ').toLowerCase().includes(query)));
@@ -63,16 +63,6 @@ function renderChecks(container, options, selected) {
 
 function checked(container) {
     return Array.from($(container).querySelectorAll('input:checked')).map(input => input.value);
-}
-
-function renderRuleChecks(selected) {
-    renderChecks('editRules', rules.map(r => [r, r]), selected);
-    const c2 = $('editRules').querySelector('input[value="C2"]');
-    if (!['STRING', 'ENUM'].includes($('editType').value)) {
-        c2.checked = false;
-        c2.disabled = true;
-        c2.parentElement.title = 'C2 条件编辑器当前仅支持文本和枚举字段';
-    }
 }
 
 function renderOperators(selected = []) {
@@ -91,7 +81,7 @@ function openEditor(code) {
     $('editType').value = f?.dataType || 'STRING';
     $('editOptions').value = f?.valueOptions || '';
     $('editEnabled').checked = f?.enabled ?? true;
-    renderRuleChecks(split(f?.allowedRules || 'C2'));
+    renderChecks('editRules', rules.map(r => [r, r]), split(f?.allowedRules || 'C2'));
     renderOperators(split(f?.allowedOperators || ''));
     $('editError').textContent = '';
     $('editorBackdrop').classList.add('show');
@@ -220,10 +210,7 @@ $('fieldRows').onclick = event => {
     if (toggle) toggleField(toggle.dataset.toggle);
 };
 $('newField').onclick = () => openEditor();
-$('editType').onchange = () => {
-    renderOperators();
-    renderRuleChecks(checked('editRules'));
-};
+$('editType').onchange = () => renderOperators();
 $('fieldForm').onsubmit = saveField;
 $('closeEditor').onclick = closeEditor;
 $('cancelEditor').onclick = closeEditor;

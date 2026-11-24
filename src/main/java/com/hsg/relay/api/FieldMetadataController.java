@@ -91,8 +91,6 @@ public class FieldMetadataController {
             throw new IllegalArgumentException("运算符与数据类型不匹配");
         if (rules.isEmpty() || rules.stream().anyMatch(x -> !x.matches("C([1-9]|10)")))
             throw new IllegalArgumentException("适用规则须选择 C1–C10");
-        if (rules.contains("C2") && !List.of("STRING", "ENUM").contains(type))
-            throw new IllegalArgumentException("C2 条件编辑器当前仅支持文本和枚举字段");
         String values = trim(input.valueOptions());
         if (values.length() > 1000) throw new IllegalArgumentException("可选值长度不可超过1000位");
         if (!values.isEmpty() && List.of("DECIMAL", "INTEGER", "BOOLEAN").contains(type))

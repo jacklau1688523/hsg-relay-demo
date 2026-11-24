@@ -27,7 +27,9 @@ class C2ServiceTest {
         C2Service.Result failed = c2.simulate(request("PROV-HO", "CNY", "CN", List.of()));
         assertFalse(failed.passed());
         assertEquals("REG_RULE_NOT_MET", failed.reasonCode());
-        assertEquals("CNY_ONSHORE", failed.regulatoryChecks().get(0).missingTags().get(0));
+        C2Service.RegulatoryCheck check = failed.regulatoryChecks().get(0);
+        assertEquals("CNY_ONSHORE", check.missingTags().get(0));
+        assertEquals("交易币种 = CNY 且 受益行国家 = CN", check.condition());
         C2Service.Result passed = c2.simulate(request("PROV-T1", "CNY", "CN", List.of()));
         assertTrue(passed.passed());
     }

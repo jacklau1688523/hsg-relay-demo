@@ -48,8 +48,17 @@ class FieldMetadataControllerTest {
     void invalidCodeCannotBecomeAviatorIdentifier() {
         var input = new FieldMetadataController.Input("a-b", "不安全字段", "STRING", "EQ", "C2", "", true);
         assertThrows(IllegalArgumentException.class, () -> controller.create(input));
-        var unsupported = new FieldMetadataController.Input("numericC2", "C2 数字字段", "DECIMAL", "GTE", "C2", "", true);
-        assertThrows(IllegalArgumentException.class, () -> controller.create(unsupported));
+    }
+
+    @Test
+    void booleanAndNumericFieldsCanBeMarkedForC2() {
+        // C2 勾选只决定字段是否进入试算菜单和 C2 模拟的输入项，试算本身按类型比较，所以不再限定字段类型
+        controller.create(new FieldMetadataController.Input("testC2Flag", "C2 布尔字段", "BOOLEAN", "EQ,NE", "C2", "", true));
+        controller.create(new FieldMetadataController.Input("testC2Score", "C2 数字字段", "DECIMAL", "GTE", "C2", "", true));
+        assertTrue(c2Fields.all().stream().anyMatch(f -> f.fieldCode().equals("testC2Flag")));
+        var flag = new ExpressionService.Node("AND", List.of(new ExpressionService.Node(null, null, "testC2Flag", "EQ", "true")), null, null, null);
+        assertTrue(expressions.preview(new ExpressionService.Preview(flag, Map.of("testC2Flag", "true"), "C2")).matched());
+        assertFalse(expressions.preview(new ExpressionService.Preview(flag, Map.of("testC2Flag", "false"), "C2")).matched());
     }
 
     @Test

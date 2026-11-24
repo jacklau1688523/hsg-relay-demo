@@ -1,6 +1,5 @@
 package com.hsg.relay.c2;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +31,12 @@ public class C2Controller {
         return service.regulations();
     }
 
+    /** 监管规则表单的下拉项：币种（字段库「交易币种」可选值）、受益行国家（ALL + ISO 3166-1）、能力标签。 */
+    @GetMapping("/regulatory-rules/options")
+    public C2Service.RegulatoryOptions regulatoryOptions() {
+        return service.regulatoryOptions();
+    }
+
     @PostMapping("/regulatory-rules")
     public C2Service.RegulatoryView save(@RequestBody C2Service.RegulatoryInput rule) {
         return service.saveRegulatory(rule);
@@ -45,11 +50,6 @@ public class C2Controller {
     @DeleteMapping("/regulatory-rules/{id}")
     public void delete(@PathVariable String id, @RequestParam Integer versionNo) {
         service.deleteRegulatory(id, versionNo);
-    }
-
-    @PostMapping("/regulatory-rules/compile")
-    public C2Service.CompileView compile(@RequestBody JsonNode condition) {
-        return service.compile(condition);
     }
 
     @GetMapping("/restrictions")

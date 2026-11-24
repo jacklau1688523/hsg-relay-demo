@@ -63,8 +63,8 @@ async function c2Simulate() {
             html += '<h2 style="margin:15px 0 8px">监管规则执行过程</h2>';
             html += res.regulatoryChecks.map(r => `<div class="trace"><b>${c2Esc(r.ruleId)}</b>
  <span class="badge ${r.triggered ? 'pending' : 'pass'}">${r.triggered ? '触发' : '未触发'}</span>
- <div class="muted">${r.triggered ? '缺失标签：' + (r.missingTags.join(', ') || '无') : '条件未命中'}</div>
- <div class="code" style="margin-top:6px">${c2Esc(r.expression)}</div></div>`).join('');
+ <div class="muted">${r.triggered ? '缺失标签：' + (r.missingTags.join(', ') || '无') : `条件未命中（本次交易币种 / 受益行国家：${c2Esc(req.paymentCurrency)} / ${c2Esc(req.beneficiaryBankCountry)}）`}</div>
+ <div class="code" style="margin-top:6px">${c2Esc(r.condition)}</div>${r.expression ? `<div class="muted" style="margin-top:4px">旧版条件树，按原表达式执行：${c2Esc(r.expression)}</div>` : ''}</div>`).join('');
         }
         c2$('c2SimResult').innerHTML = html;
     } catch (e) {
@@ -79,9 +79,16 @@ function c2FillSelect(id, fieldCode, defaultValue, optional = false) {
     c2$(id).value = defaultValue || '';
 }
 
+/** 监管规则可按任意 ISO 国家配置；受益行国家在字段库可选值之外补齐其余 ISO 代码，这类规则才能在这里模拟。 */
+function c2AddIsoCountries(id, countries) {
+    const select = c2$(id), known = new Set(Array.from(select.options, option => option.value.toUpperCase()));
+    select.insertAdjacentHTML('beforeend', countries.filter(x => x.code !== 'ALL' && !known.has(x.code))
+        .map(x => `<option value="${c2Esc(x.code)}">${c2Esc(x.name ? `${x.code} · ${x.name}` : x.code)}</option>`).join(''));
+}
+
 async function c2Init() {
     try {
-        const [providers, fields] = await Promise.all([fetch('/api/providers').then(r => r.json()), c2Api('/fields')]);
+        const [providers, fields, options] = await Promise.all([fetch('/api/providers').then(r => r.json()), c2Api('/fields'), c2Api('/regulatory-rules/options').catch(() => null)]);
         c2State.providers = providers;
         c2State.fields = fields;
         if (!fields.length) throw new Error('C2 字段库为空');
@@ -90,6 +97,7 @@ async function c2Init() {
         c2FillSelect('c2SimPaymentCurrency', 'paymentCurrency', 'CNY');
         c2FillSelect('c2SimDebitCurrency', 'debitCurrency', 'CNY', true);
         c2FillSelect('c2SimBeneficiaryBankCountry', 'beneficiaryBankCountry', 'CN');
+        c2AddIsoCountries('c2SimBeneficiaryBankCountry', options?.countries || []);
         c2FillSelect('c2SimBeneficiaryAddressCountry', 'beneficiaryAddressCountry', 'CN', true);
         c2FillSelect('c2SimBeneficiaryRegion', 'beneficiaryRegion', '', true);
         c2FillSelect('c2SimOrderingCountry', 'orderingCountry', 'HK', true);

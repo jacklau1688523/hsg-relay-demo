@@ -1,175 +1,134 @@
+/* 全局监管路由规则（/c2-regulatory.html）。须在 hsg-style.css 之后引入。 */
 
-        .rulebar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 12px
-        }
+.rulebar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px
+}
 
-        .c2-flex {
-            display: grid;
-            grid-template-columns:minmax(0, 1fr) 370px;
-            gap: 18px
-        }
+.rule-subhead {
+    font-size: 13px;
+    font-weight: 800;
+    margin: 18px 0 10px
+}
 
-        .condition-group {
-            border: 1.5px solid #cbd9eb;
-            border-radius: 10px;
-            padding: 12px;
-            margin: 10px 0 12px;
-            background: #fbfdff
-        }
+.fieldhint {
+    margin-top: 5px;
+    color: #748298;
+    font-size: 11px
+}
 
-        .condition-group .condition-group {
-            background: #f4f8ff;
-            border-color: #b6c9e4
-        }
+/* 表单底部的规则预览：用一句话复述当前配置 */
+.c2-preview {
+    margin-top: 16px;
+    padding: 11px 13px;
+    border-left: 3px solid #3370bd;
+    border-radius: 0 7px 7px 0;
+    background: #f2f7ff;
+    color: #35629e;
+    font-size: 12px;
+    line-height: 1.8
+}
 
-        .group-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 10px;
-            flex-wrap: wrap
-        }
+.c2-preview b {
+    color: #172844
+}
 
-        .logic-select {
-            width: auto;
-            min-width: 108px;
-            background: #eef4ff;
-            font-weight: 700;
-            color: #1556a2
-        }
+.c2-warn {
+    color: #bf730e;
+    font-weight: 700
+}
 
-        .condition-row {
-            display: grid;
-            grid-template-columns:minmax(150px, 1.5fr) minmax(105px, 0.6fr) minmax(150px, 1.2fr) 34px;
-            gap: 8px;
-            align-items: center
-        }
+/* 旧版条件树提示：该规则仍按原自由条件执行，重新保存后转为「币种 + 受益行国家」 */
+.c2-legacy {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: #fff6e9;
+    color: #9e6c28
+}
 
-        .condition-row select, .condition-row input {
-            min-width: 0
-        }
+.mono {
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-word
+}
 
-        .condition-row select[multiple] {
-            height: 90px
-        }
+.tag-grid {
+    display: flex;
+    gap: 8px 12px;
+    flex-wrap: wrap
+}
 
-        .condition-join {
-            text-align: center;
-            font-weight: 800;
-            color: #3370bd;
-            font-size: 11px;
-            margin: 7px 0
-        }
+.tagcheck {
+    padding: 8px 10px;
+    border: 1px solid #d6e2f1;
+    border-radius: 7px;
+    background: #f9fbff;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer
+}
 
-        .rule-subhead {
-            font-size: 13px;
-            font-weight: 800;
-            margin: 18px 0 10px
-        }
+.tagcheck:hover {
+    border-color: #9dc0ee
+}
 
-        .alert-inline {
-            border-left: 3px solid #e7ad38;
-            background: #fff8eb;
-            padding: 10px 12px;
-            font-size: 12px;
-            color: #916416;
-            margin-bottom: 12px
-        }
+.tagcheck:has(input:checked) {
+    border-color: #4287e9;
+    background: #eaf2ff
+}
 
-        .tag-grid {
-            display: flex;
-            gap: 8px 12px;
-            flex-wrap: wrap
-        }
+.tagcheck input {
+    width: 15px;
+    height: 15px;
+    min-height: auto;
+    padding: 0
+}
 
-        .tagcheck {
-            padding: 8px 10px;
-            border: 1px solid #d6e2f1;
-            border-radius: 7px;
-            background: #f9fbff;
-            font-size: 12px;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px
-        }
+/* 列表里的能力标签 */
+.tagchip {
+    display: inline-block;
+    margin: 1px 4px 1px 0;
+    padding: 2px 6px;
+    border: 1px solid #cfe0f6;
+    border-radius: 4px;
+    background: #f3f8ff;
+    color: #2a5d9f;
+    font: 700 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace
+}
 
-        .tagcheck input {
-            width: 15px;
-            height: 15px;
-            min-height: auto;
-            padding: 0
-        }
+#c2RegRows td {
+    vertical-align: top
+}
 
-        .codeframe {
-            font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-            background: #eef4fc;
-            border-radius: 6px;
-            padding: 13px;
-            white-space: pre-wrap;
-            overflow: auto;
-            max-height: 260px
-        }
+#c2RegRows .tags-cell {
+    min-width: 150px;
+    white-space: normal
+}
 
-        .actionrow {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 14px
-        }
+/* 当前载入表单的那条规则 */
+.row-selected td {
+    background: #edf5ff
+}
 
-        .statusline {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 8px
-        }
+.actionrow {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px
+}
 
-        .c2-context {
-            padding: 10px 12px;
-            border-radius: 7px;
-            background: #f2f7ff;
-            font-size: 12px;
-            color: #476486
-        }
+#c2RegForm {
+    scroll-margin-top: 20px
+}
 
-        .inlinefilter {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-wrap: wrap
-        }
-
-        .inlinefilter select {
-            width: 240px
-        }
-
-        #c2RegForm {
-            scroll-margin-top: 20px
-        }
-
-        @media (max-width: 1250px) {
-            .c2-flex {
-                grid-template-columns:1fr
-            }
-        }
-
-        @media (max-width: 760px) {
-            .condition-row {
-                grid-template-columns:1fr 1fr
-            }
-
-            .condition-row > *:nth-child(3) {
-                grid-column: 1 / -1
-            }
-
-            .inlinefilter select {
-                width: auto
-            }
-        }
+@media (max-width: 760px) {
+    .rulebar {
+        align-items: flex-start
+    }
+}

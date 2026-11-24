@@ -46,11 +46,12 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 
 ## C2 功能（本次新增）
 
-- **监管路由规则页面**：`/c2.html` →「监管路由规则」Tab，列出所有全局规则、版本和启用状态，支持新增、编辑、启用/停用。
-- **字段库驱动条件编辑器**：后端 `relay_rule_field` 持久化 C2 可用字段、操作符和可选枚举，前端按接口自动渲染字段选择、EQ/NE/IN
-  运算符及对应值控件；支持无限思路的递归条件组（实际限制最多6层、60节点）。
-- **AST / AviatorScript**：前端提交嵌套 JSON 条件树，后端校验白名单、枚举和层级后编译 AviatorScript；可预览表达式。普通业务人员不提交任意脚本。
-- **监管能力要求**：每条 GLOBAL 监管规则可选择多个 `requiredTags`（ALL 语义），条件命中但合作方缺失任何一项，返回
+- **监管路由规则页面**：独立页 `/c2-regulatory.html`（各页左侧「C2 合规限制」下方的「监管路由规则」），列出所有全局规则的币种、受益行国家、必需能力标签、版本和启用状态，支持新增、编辑、启用/停用、删除。
+- **适用范围 = 交易币种 + 受益行国家**：规则是全局配置，不再使用自由 AND/OR 条件树。交易币种单选，可选值取自元数据中心「交易币种」（`paymentCurrency`）字段；受益行国家为
+  `ALL`（不限）或任一 ISO 3166-1 两位代码（下拉带中文名称，`GET /api/c2/regulatory-rules/options` 返回全部选项）。表单底部实时预览整条规则。
+- **落库形态不变**：范围仍以标准条件树写入 `condition_json`（`paymentCurrency EQ X` 且 `beneficiaryBankCountry EQ Y`，不限国家时只有前一个叶子），C2
+  模拟和全流程 Check 照常读取；标准规则按币种、国家直接比对，不依赖字段库里这两个字段的状态。旧版页面保存的自由条件树在列表里标记为「旧版条件」，仍按原条件编译执行，在页面重新保存后转为标准形态。
+- **监管能力要求**：每条 GLOBAL 监管规则可勾选多个 `requiredTags`（ALL 语义），范围命中但合作方缺失任何一项，返回
   `REG_RULE_NOT_MET`。原因码不可修改。
 - **合作方限制**：`BENEFICIARY_COUNTRY` / `DIRECTOR_UBO_NATIONALITY` / `BENEFICIARY_REGION` / `ORDERING_COUNTRY` /
   `INTERMEDIARY_COUNTRY` / `CURRENCY` / `PURPOSE`，逐项配置屏蔽名单，自动映射固定返回码。维护入口在合作方编辑页（
@@ -58,8 +59,17 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
   编辑 / 启停（C2 校验实时读取）。
 - **合作方能力标签**：按合作方编辑标签（如 `SWIFT`、`CNY_ONSHORE`）。维护入口在合作方新增 / 编辑页（`/provider-edit.html`）的「C2
   能力标签」勾选区——原 C2 页面的「合作方能力标签」标签页已并入此处，C2 页面仅保留模拟校验中的标签只读展示。
-- **C2 模拟测试**：右侧填写交易国家、币种、中间行、董事/UBO 国籍、用途等字段，返回全部命中限制、主原因码、监管条件是否触发、缺失标签和编译表达式；不会释放交易或占用额度。
+- **C2 模拟测试**：右侧填写交易国家、币种、中间行、董事/UBO 国籍、用途等字段，返回全部命中限制、主原因码、监管规则是否触发（附规则的适用范围和本次交易的币种
+  / 受益行国家）和缺失标签；旧版规则另附编译表达式。受益行国家下拉在字段库可选值之外补齐全部 ISO 代码，任意国家的监管规则都能在这里模拟；不会释放交易或占用额度。
 - **版本与审计**：每次修改规则递增 `version_no` 并写入 `relay_rule_audit`；演示项目为覆盖式编辑+审计，生产需改为不可变发布版本。
+
+2026-11-24：监管路由规则由 AND/OR 条件树改为「交易币种 + 受益行国家 + 必需能力标签」的全局配置。全套202项测试通过（新增13项）：`RegulatoryScopeTest` 4项覆盖标准条件树与币种
+/ 国家的互转、自由条件树不被误读为范围、不限国家与大小写匹配、ALL + ISO 国家选项；`C2RegulatoryRuleTest` 5项覆盖保存与落库形态、字段库停用后照常求值、不限国家、旧版条件树继续执行并在重新保存后转换、
+非法币种 / 国家拒绝；`C2RegulatoryControllerTest` 3项覆盖 HTTP 契约与 400 响应；`FieldMetadataControllerTest` 新增1项覆盖 BOOLEAN / 数字字段勾选 C2
+后可试算。在独立端口与临时数据库上以无头 Chrome 完成 59 项检查：列表载入与行高亮、编辑回显、新增（空名称、重复编码拦截）、实时预览、保存后落库为标准条件树并被 C2
+模拟命中、非 ISO 国家与非字段库币种返回 400、启停、改为不限国家、删除、直接入库的旧版条件树规则标为「旧版条件」并按原条件执行且重新保存后转换、C2
+模拟页受益行国家下拉含全部 ISO 代码、元数据中心 BOOLEAN 字段勾选 C2 后保存并试算、全流程 Check 的 C2 规则表；桌面与 390 宽度布局正常，无前端 JavaScript
+异常。验证未读写 8080 / 8081 实例的数据库。
 
 ### C2 预置数据验证场景
 
@@ -143,15 +153,16 @@ curl -X PUT http://localhost:8080/api/usage \
 
 - `GET /api/c2/fields`：返回 C2 字段库（DB 驱动）
 - `GET /api/c2/capability-tags`：能力标签字典
-- `GET /api/c2/regulatory-rules`：监管规则列表
-- `POST /api/c2/regulatory-rules`：新增或更新监管规则（按 ruleId）
+- `GET /api/c2/regulatory-rules`：监管规则列表（含 `currency`、`bankCountry`、`legacy`、`conditionText`）
+- `GET /api/c2/regulatory-rules/options`：表单下拉项——`currencies`（字段库「交易币种」可选值）、`countries`（ALL + ISO 3166-1，带中文名）、`tags`
+- `POST /api/c2/regulatory-rules`：新增或更新监管规则（按 ruleId），提交 `currency` + `bankCountry`
+- `DELETE /api/c2/regulatory-rules/{id}?versionNo=`：删除监管规则
 - `POST /api/c2/regulatory-rules/{id}/toggle`：启用/停用
-- `POST /api/c2/regulatory-rules/compile`：提交 AST 编译校验
 - `GET /api/c2/restrictions`、`POST /api/c2/restrictions`、`POST /api/c2/restrictions/{id}/toggle`：合作方限制管理
 - `GET /api/c2/providers/{code}/capabilities`、`PUT /api/c2/providers/{code}/capabilities`：合作方标签
 - `POST /api/c2/simulate`：C2 模拟
 
-**监管规则创建请求：**
+**监管规则创建请求**（范围只提交币种和受益行国家，后端存为标准条件树）：
 
 ```json
 {
@@ -159,21 +170,8 @@ curl -X PUT http://localhost:8080/api/usage \
   "ruleName": "CNY 境内清算能力要求",
   "ruleCode": "C2",
   "scope": "GLOBAL",
-  "condition": {
-    "operator": "AND",
-    "children": [
-      {
-        "field": "paymentCurrency",
-        "operator": "EQ",
-        "value": "CNY"
-      },
-      {
-        "field": "beneficiaryBankCountry",
-        "operator": "EQ",
-        "value": "CN"
-      }
-    ]
-  },
+  "currency": "CNY",
+  "bankCountry": "CN",
   "requirement": {
     "type": "PROVIDER_CAPABILITY",
     "requiredTags": [
@@ -222,7 +220,8 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 
 ## 测试用例
 
-`src/test/java/com/hsg/relay/c2/C2ServiceTest.java` 包含 CNY/CN 能力校验、Wise 国家与国籍屏蔽、嵌套 AND/OR、非法字段拒绝等测试。执行：
+`src/test/java/com/hsg/relay/c2/C2ServiceTest.java` 包含 CNY/CN 能力校验、Wise 国家与国籍屏蔽、嵌套 AND/OR、非法字段拒绝等测试；`C2RegulatoryRuleTest`、`C2RegulatoryControllerTest`、`RegulatoryScopeTest`
+覆盖监管规则按「币种 + 受益行国家」的保存、校验、求值、旧版条件树兼容及 HTTP 契约。执行：
 
 ```bash
 mvn clean test
@@ -233,7 +232,7 @@ mvn clean test
 访问 `/routing.html`，侧边栏菜单为「▶ C1–C10 Check」（原名「C1–C10 全流程路由」，已更名，页面同时重构为与各配置页一致的侧边栏布局）。C1/C2
 等页的工具栏也有入口。提供候选生成、全部过滤器、四项评分、主路由与两条备选、REFER 原因优先级、下一个外汇窗口和持久化决策查询。C1/C2
 的规则各自存在独立数据库表并由对应页面维护，Check 时实时读取；页面内提供「C1 / C2 规则查看（只读）」面板：C1
-准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（含条件树摘要、失败动作），并附各自维护页入口；「参考配置」JSON
+准入规则表（含生效比例、客户排除/个案审批计数）与 C2 监管规则表（币种、受益行国家、必需能力标签；旧版规则显示原条件摘要），并附各自维护页入口；「参考配置」JSON
 仅覆盖 C3–C10 共享的 `relay_routing_document` CONFIG（评分权重等尚无独立页面的项；C4 余额已可由 `/c4.html` 页面维护）。
 
 - C3：匹配币种、国家、地区、BIC8、扣费方式；优先指定地区、国家及银行列表。
@@ -627,10 +626,10 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方详情页（`/provider-detail.html`）的「变更记录」页签查看。
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
-控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入 C2
-条件编辑器；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉，停用字段从下拉消失但历史规则表达式按原样存档）。
+控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入试算菜单的 C2 筛选，C2
+模拟页各输入项的下拉可选值也从这里读取；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉，停用字段从下拉消失但历史规则表达式按原样存档）。
 
-右侧为 AND / OR 可视化表达式试算（与 C2 监管规则触发条件共用同一编译链路）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
+右侧为 AND / OR 可视化表达式试算（字段定义与各规则页面共用）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
 C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按钮覆盖：USD 且 KG（AND 命中）、金额 ≥ 100万、PSP 或 WEB3（OR）。
 
@@ -657,8 +656,10 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 接口（均为既有接口，无后端改动）：
 
 - `GET /api/fields`：返回字段库全量（含停用）。
-- `GET /api/c2/fields`：C2 条件编辑器使用，仅 `allowedRules` 含 C2 且启用的字段。
-- `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉与 C2 条件编辑器都按这里的 `allowedRules` 取字段。
+- `GET /api/c2/fields`：C2 模拟页使用，仅 `allowedRules` 含 C2 且启用的字段（模拟页的输入项固定，只读取其中对应字段的可选值）。
+- `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉、C2
+  模拟页和试算菜单都按这里的 `allowedRules` 取字段。「适用规则」的 C2 可对任意数据类型勾选：勾选后字段出现在试算菜单的「C2」筛选下并按字段类型比较取值，不会给 C2
+  模拟页增加输入项（模拟页的输入项固定；监管路由规则也不再使用字段库条件树）。
 - `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回
   `{matched,expression}`。
 

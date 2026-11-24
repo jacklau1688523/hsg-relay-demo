@@ -2,8 +2,10 @@ package com.hsg.relay.c2;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.Provider;
 import com.hsg.relay.domain.RuleAudit;
+import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.ProviderRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
 import org.springframework.stereotype.Service;
@@ -20,18 +22,20 @@ public class C2Service {
     private final ProviderCapabilityRepository capabilityRepo;
     private final CapabilityTagRepository tagRepo;
     private final ProviderRepository providerRepo;
+    private final FieldDefinitionRepository fieldRepo;
     private final RuleAuditRepository auditRepo;
     private final C2ExpressionCompiler compiler;
     private final ObjectMapper mapper;
 
     public C2Service(RegulatoryRuleRepository regulatoryRepo, ProviderRestrictionRepository restrictionRepo,
                      ProviderCapabilityRepository capabilityRepo, CapabilityTagRepository tagRepo, ProviderRepository providerRepo,
-                     RuleAuditRepository auditRepo, C2ExpressionCompiler compiler, ObjectMapper mapper) {
+                     FieldDefinitionRepository fieldRepo, RuleAuditRepository auditRepo, C2ExpressionCompiler compiler, ObjectMapper mapper) {
         this.regulatoryRepo = regulatoryRepo;
         this.restrictionRepo = restrictionRepo;
         this.capabilityRepo = capabilityRepo;
         this.tagRepo = tagRepo;
         this.providerRepo = providerRepo;
+        this.fieldRepo = fieldRepo;
         this.auditRepo = auditRepo;
         this.compiler = compiler;
         this.mapper = mapper;
@@ -43,16 +47,23 @@ public class C2Service {
     public record FailureAction(String reasonCode) {
     }
 
-    public record RegulatoryInput(String ruleId, String ruleName, String ruleCode, String scope, JsonNode condition,
+    public record RegulatoryInput(String ruleId, String ruleName, String ruleCode, String scope, String currency, String bankCountry,
                                   Requirement requirement, FailureAction onFailure, Boolean enabled, Integer versionNo,
                                   LocalDateTime effectiveFrom,
                                   LocalDateTime effectiveTo, String remark) {
     }
 
-    public record RegulatoryView(String ruleId, String ruleName, String ruleCode, String scope, JsonNode condition,
-                                 Requirement requirement, FailureAction onFailure, boolean enabled, int versionNo,
-                                 LocalDateTime effectiveFrom,
+    /**
+     * legacy=true 表示这条规则仍带着旧版页面保存的自由条件树：照原条件执行，但无法用「币种 + 受益行国家」表达，
+     * 在页面重新保存后转为标准形态。
+     */
+    public record RegulatoryView(String ruleId, String ruleName, String ruleCode, String scope, String currency, String bankCountry,
+                                 boolean legacy, String conditionText, JsonNode condition, Requirement requirement,
+                                 FailureAction onFailure, boolean enabled, int versionNo, LocalDateTime effectiveFrom,
                                  LocalDateTime effectiveTo, String remark) {
+    }
+
+    public record RegulatoryOptions(List<String> currencies, List<RegulatoryScope.Country> countries, List<CapabilityTag> tags) {
     }
 
     public record RestrictionInput(Long id, String providerCode, String restrictionType, String blockedValues,
@@ -61,9 +72,6 @@ public class C2Service {
     }
 
     public record CapabilitiesInput(List<String> tags) {
-    }
-
-    public record CompileView(String expression) {
     }
 
     public record Simulation(String providerCode, String paymentCurrency, String debitCurrency,
@@ -76,7 +84,8 @@ public class C2Service {
                           String detail) {
     }
 
-    public record RegulatoryCheck(String ruleId, boolean triggered, List<String> missingTags, String expression) {
+    /** condition 为规则的适用范围（或旧版条件树摘要）；expression 仅旧版规则才有，是其编译后的 AviatorScript。 */
+    public record RegulatoryCheck(String ruleId, boolean triggered, List<String> missingTags, String condition, String expression) {
     }
 
     public record Result(boolean passed, String reasonCode, List<RuleHit> hits, List<RegulatoryCheck> regulatoryChecks,
@@ -127,13 +136,27 @@ public class C2Service {
             throw new IllegalArgumentException("监管规则原因码固定为 REG_RULE_NOT_MET");
         if (in.requirement() == null || !"PROVIDER_CAPABILITY".equals(in.requirement().type()))
             throw new IllegalArgumentException("监管规则要求类型必须为 PROVIDER_CAPABILITY");
+        List<String> currencies = currencies();
+        String currency = normalize(in.currency());
+        if (currency.isEmpty() || !currencies.contains(currency))
+            throw new IllegalArgumentException("交易币种必填，且须为字段库「交易币种」的可选值：" + String.join(" / ", currencies));
+        String country = normalize(in.bankCountry());
+        if (country.isEmpty() || !(RegulatoryScope.ANY_COUNTRY.equals(country) || RegulatoryScope.isCountry(country)))
+            throw new IllegalArgumentException("受益行国家必填，须为 ISO 3166-1 两位国家代码或 ALL");
         validateTags(in.requirement().requiredTags());
         validateDates(in.effectiveFrom(), in.effectiveTo());
-        compiler.compile(in.condition());
     }
 
-    public CompileView compile(JsonNode condition) {
-        return new CompileView(compiler.compile(condition));
+    /** 币种下拉与保存校验共用：元数据中心「交易币种」字段（paymentCurrency）的可选值。 */
+    private List<String> currencies() {
+        FieldDefinition field = fieldRepo.findById(RegulatoryScope.CURRENCY_FIELD).orElse(null);
+        if (field == null || field.valueOptions == null) return List.of();
+        return Arrays.stream(field.valueOptions.split(",")).map(String::trim).filter(x -> !x.isEmpty())
+                .map(x -> x.toUpperCase(Locale.ROOT)).toList();
+    }
+
+    public RegulatoryOptions regulatoryOptions() {
+        return new RegulatoryOptions(currencies(), RegulatoryScope.options(), capabilityTags());
     }
 
     public List<RegulatoryView> regulations() {
@@ -143,8 +166,13 @@ public class C2Service {
     private RegulatoryView view(RegulatoryRule rule) {
         try {
             List<String> tags = Arrays.asList(mapper.readValue(rule.requiredTagsJson, String[].class));
-            return new RegulatoryView(rule.ruleId, rule.ruleName, rule.ruleCode, rule.scope, parse(rule.conditionJson),
-                    new Requirement("PROVIDER_CAPABILITY", tags), new FailureAction(rule.reasonCode), rule.enabled,
+            JsonNode condition = parse(rule.conditionJson);
+            RegulatoryScope.Scope scope = RegulatoryScope.of(condition);
+            return new RegulatoryView(rule.ruleId, rule.ruleName, rule.ruleCode, rule.scope,
+                    scope == null ? null : scope.currency(), scope == null ? null : scope.bankCountry(), scope == null,
+                    scope == null ? RegulatoryScope.legacyText(condition)
+                            : RegulatoryScope.text(scope.currency(), scope.bankCountry()),
+                    condition, new Requirement("PROVIDER_CAPABILITY", tags), new FailureAction(rule.reasonCode), rule.enabled,
                     rule.versionNo, rule.effectiveFrom, rule.effectiveTo, rule.remark);
         } catch (Exception e) {
             throw new IllegalStateException("监管规则数据无法解析: " + rule.ruleId, e);
@@ -165,7 +193,7 @@ public class C2Service {
         rule.ruleName = in.ruleName().trim();
         rule.ruleCode = "C2";
         rule.scope = "GLOBAL";
-        rule.conditionJson = encode(in.condition());
+        rule.conditionJson = encode(RegulatoryScope.tree(in.currency(), in.bankCountry(), mapper));
         rule.requiredTagsJson = encode(in.requirement().requiredTags());
         rule.reasonCode = "REG_RULE_NOT_MET";
         rule.effectiveFrom = in.effectiveFrom();
@@ -352,11 +380,16 @@ public class C2Service {
         for (RegulatoryRule rule : regulatoryRepo.findAll()) {
             if (!active(rule.enabled, rule.effectiveFrom, rule.effectiveTo, now)) continue;
             RegulatoryView view = view(rule);
-            // Fail closed: invalid published rule configuration is not swallowed as a PASS.
-            String expression = compiler.compile(view.condition());
-            boolean triggered = compiler.evaluate(view.condition(), variables);
+            String expression = null;
+            boolean triggered;
+            if (view.legacy()) {
+                // 旧版自由条件树沿用原编译链路。Fail closed: invalid published rule configuration is not swallowed as a PASS.
+                expression = compiler.compile(view.condition());
+                triggered = compiler.evaluate(view.condition(), variables);
+            } else
+                triggered = RegulatoryScope.matches(view.currency(), view.bankCountry(), req.paymentCurrency(), req.beneficiaryBankCountry());
             List<String> missing = triggered ? view.requirement().requiredTags().stream().filter(tag -> !capabilities.contains(tag)).toList() : List.of();
-            checks.add(new RegulatoryCheck(rule.ruleId, triggered, missing, expression));
+            checks.add(new RegulatoryCheck(rule.ruleId, triggered, missing, view.conditionText(), expression));
             if (!missing.isEmpty()) hits.add(new RuleHit(8, rule.ruleId, "REGULATORY", "REG_RULE_NOT_MET",
                     "providerCapabilities", "监管规则命中，缺少能力标签：" + String.join(",", missing)));
         }
