@@ -31,8 +31,12 @@ public class C1Service {
         this.json = json;
     }
 
+    // variables：附加条件字段的模拟取值（字段编码 → 值）。除下列固定交易要素外，字段库里启用的 C1 字段都从这里取值。
     public record Simulation(String clientId, String providerCode, String paymentCurrency,
-                             String beneficiaryBankCountry, BigDecimal amountUsd) {
+                             String beneficiaryBankCountry, BigDecimal amountUsd, Map<String, Object> variables) {
+        public Simulation(String clientId, String providerCode, String paymentCurrency, String beneficiaryBankCountry, BigDecimal amountUsd) {
+            this(clientId, providerCode, paymentCurrency, beneficiaryBankCountry, amountUsd, null);
+        }
     }
 
     public record Trace(String step, String status, String detail) {
@@ -70,7 +74,10 @@ public class C1Service {
         Long lastId = null;
         String lastAction = null;
         for (String flow : flows) {
-            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, flow)).max(Comparator.comparingInt(a -> specificity(a, req)));
+            // 附加条件缺值或已失效的规则按不命中处理，并在校验过程里逐条说明
+            List<String> skipped = new ArrayList<>();
+            Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, flow, skipped)).max(Comparator.comparingInt(a -> specificity(a, req)));
+            skipped.forEach(detail -> steps.add(new Trace("3. 规则匹配 " + flow, "SKIP", detail)));
             if (match.isEmpty()) return fail("APPETITE_NOT_SET", null, null, steps, flow + " 无有效准入配置（默认拒绝）");
             Appetite a = match.get();
             lastId = a.id;
@@ -110,13 +117,30 @@ public class C1Service {
         return (a.currency.equalsIgnoreCase(r.paymentCurrency()) ? 2 : 0) + (a.bankCountry.equalsIgnoreCase(r.beneficiaryBankCountry()) ? 1 : 0);
     }
 
-    private boolean conditionMatches(Appetite rule, Simulation req, String flow) {
+    private boolean conditionMatches(Appetite rule, Simulation req, String flow, List<String> skipped) {
         if (rule.conditionJson == null || rule.conditionJson.isBlank()) return true;
         try {
             var tree = json.readValue(rule.conditionJson, ExpressionService.Node.class);
-            return expressions.preview(new ExpressionService.Preview(tree, Map.of(
-                    "flowCategory", flow, "paymentCurrency", req.paymentCurrency(),
-                    "beneficiaryBankCountry", req.beneficiaryBankCountry(), "amountUsd", req.amountUsd()), "C1")).matched();
+            // 规则保存后字段在元数据中心被停用、不再适用 C1 或可选值被删：条件已无法按当前字段库执行，按不命中处理并说明
+            try { expressions.compile(tree, "C1"); }
+            catch (IllegalArgumentException ex) {
+                skipped.add("规则 #" + rule.id + " 的附加条件已失效（" + ex.getMessage() + "），按不命中处理，请在 C1 业务准入页核对后重新保存");
+                return false;
+            }
+            Map<String, Object> variables = new HashMap<>();
+            if (req.variables() != null) variables.putAll(req.variables());
+            // 四个交易要素以模拟表单为准，不接受 variables 覆盖
+            variables.put("flowCategory", flow);
+            variables.put("paymentCurrency", req.paymentCurrency());
+            variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
+            variables.put("amountUsd", req.amountUsd());
+            List<String> missing = expressions.referencedFields(tree).stream()
+                    .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
+            if (!missing.isEmpty()) {
+                skipped.add("规则 #" + rule.id + " 的附加条件引用了字段 " + String.join("、", missing) + "，本次没有提供取值，按不命中处理");
+                return false;
+            }
+            return expressions.preview(new ExpressionService.Preview(tree, variables, "C1")).matched();
         } catch (Exception ex) {
             throw new IllegalStateException("C1 规则 #" + rule.id + " 条件执行失败: " + ex.getMessage(), ex);
         }

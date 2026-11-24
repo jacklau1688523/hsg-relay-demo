@@ -33,6 +33,19 @@ public class ExpressionService {
         return compile(tree, 0, ruleCode);
     }
 
+    /** 条件树里叶子条件引用的全部字段编码，按出现顺序去重。 */
+    public Set<String> referencedFields(Node tree) {
+        Set<String> result = new LinkedHashSet<>();
+        collect(tree, result);
+        return result;
+    }
+
+    private void collect(Node node, Set<String> result) {
+        if (node == null) return;
+        if (node.children() != null && !node.children().isEmpty()) node.children().forEach(child -> collect(child, result));
+        else if (node.field() != null) result.add(node.field());
+    }
+
     public PreviewResult preview(Preview req) {
         if (req.tree() == null || req.variables() == null) throw new IllegalArgumentException("tree / variables 必填");
         if (req.ruleCode() != null && !req.ruleCode().matches("C([1-9]|10)"))
@@ -41,12 +54,21 @@ public class ExpressionService {
         Expression exp = engine.compile(expression, false);
         Map<String, Object> vars = new HashMap<>();
         for (FieldDefinition field : fields.findAll()) {
-            if (req.variables().containsKey(field.fieldCode)) {
-                Object value = req.variables().get(field.fieldCode);
-                if (List.of("DECIMAL", "INTEGER").contains(field.dataType) && value != null)
-                    value = new BigDecimal(value.toString());
-                vars.put(field.fieldCode, value);
+            if (!req.variables().containsKey(field.fieldCode)) continue;
+            // 页面控件提交的取值都是字符串（"7"、"true"）：数字和布尔字段须先按字段类型转换，
+            // 否则 Aviator 比较会报错，或 "true" == true 静默不命中；空白按未提供处理
+            Object value = req.variables().get(field.fieldCode);
+            String text = value == null ? "" : value.toString().trim();
+            if (text.isEmpty()) value = null;
+            else if (List.of("DECIMAL", "INTEGER").contains(field.dataType)) {
+                try { value = new BigDecimal(text); }
+                catch (NumberFormatException ex) { throw new IllegalArgumentException("字段 " + field.fieldCode + " 的取值不是有效数字：" + text); }
+            } else if ("BOOLEAN".equals(field.dataType)) {
+                if (!"true".equalsIgnoreCase(text) && !"false".equalsIgnoreCase(text))
+                    throw new IllegalArgumentException("字段 " + field.fieldCode + " 的取值只能是 true 或 false：" + text);
+                value = "true".equalsIgnoreCase(text);
             }
+            vars.put(field.fieldCode, value);
         }
         Object value = exp.execute(vars);
         return new PreviewResult(expression, Boolean.TRUE.equals(value));
@@ -63,11 +85,14 @@ public class ExpressionService {
         }
         FieldDefinition f = fields.findById(n.field() == null ? "" : n.field()).orElseThrow(() -> new IllegalArgumentException("非法字段: " + n.field()));
         if (!f.enabled || !Arrays.asList(f.allowedOperators.split(",")).contains(n.operator()) || (ruleCode != null && !Arrays.asList(f.allowedRules.split(",")).contains(ruleCode)))
-            throw new IllegalArgumentException("字段不适用于当前规则或不支持该操作符");
+            throw new IllegalArgumentException("字段 " + f.fieldCode + " 不适用于当前规则或不支持该操作符");
         if (n.value() == null) throw new IllegalArgumentException("条件值不可为空");
         String literal;
-        if (List.of("DECIMAL", "INTEGER").contains(f.dataType))
-            literal = new BigDecimal(n.value().toString()).toPlainString();
+        if (List.of("DECIMAL", "INTEGER").contains(f.dataType)) {
+            // 条件值为空或不是数字时给出带字段名的校验错误（空字符串的 NumberFormatException 没有 message，会变成 500）
+            try { literal = new BigDecimal(n.value().toString().trim()).toPlainString(); }
+            catch (NumberFormatException ex) { throw new IllegalArgumentException("字段 " + f.fieldCode + " 的条件值不是有效数字：" + n.value()); }
+        }
         else if ("BOOLEAN".equals(f.dataType)) {
             if (!List.of("true", "false").contains(n.value().toString()))
                 throw new IllegalArgumentException("布尔值只能为 true 或 false");

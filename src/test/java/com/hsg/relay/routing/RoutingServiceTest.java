@@ -2,7 +2,9 @@ package com.hsg.relay.routing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hsg.relay.api.FieldMetadataController;
 import com.hsg.relay.repo.*;
+import com.hsg.relay.service.C1Service;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +25,8 @@ class RoutingServiceTest {
     ProviderRepository providers;
     @Autowired
     AppetiteRepository appetites;
+    @Autowired
+    FieldMetadataController metadata;
     ObjectNode req;
 
     @BeforeEach
@@ -169,6 +173,27 @@ class RoutingServiceTest {
             assertThat(d.required()).isEqualByComparingTo("10000");
         });
         assertThat(c.fxVenue).isEqualTo("TREASURY");
+    }
+
+    @Test
+    void c1ConditionOnUnavailableFieldSkipsRuleInsteadOfFailingCheck() {
+        // Check 表单不提供 C1 附加条件字段的取值：引用了这类字段的规则按不命中处理，整笔 Check 照常完成
+        metadata.create(new FieldMetadataController.Input("checkRiskFlag", "高风险标记", "ENUM", "EQ,NE", "C1", "YES,NO", true));
+        var rule = appetites.findAll().stream().filter(x -> x.providerCode.equals("PROV-T1") && x.flowCategory.equals("STANDARD")).findFirst().orElseThrow();
+        rule.conditionJson = "{\"logic\":\"AND\",\"children\":[{\"field\":\"checkRiskFlag\",\"operator\":\"EQ\",\"value\":\"NO\"}]}";
+        appetites.save(rule);
+        var c1 = candidate(run(), "PROV-T1").checks.stream().filter(x -> x.code().equals("C1")).findFirst().orElseThrow();
+        assertThat(c1.passed()).isFalse();
+        assertThat(c1.reasons()).containsExactly("APPETITE_NOT_SET");
+        assertThat(c1Trace("PROV-T1")).anySatisfy(text -> assertThat(text).contains("checkRiskFlag").contains("没有提供取值"));
+        // 字段之后在元数据中心被停用：规则同样按不命中处理并提示重新保存，Check 不报错
+        metadata.toggle("checkRiskFlag");
+        assertThat(c1Trace("PROV-T1")).anySatisfy(text -> assertThat(text).contains("checkRiskFlag").contains("已失效"));
+    }
+
+    private List<String> c1Trace(String provider) {
+        var c1 = candidate(run(), provider).checks.stream().filter(x -> x.code().equals("C1")).findFirst().orElseThrow();
+        return ((C1Service.Result) c1.detail()).steps().stream().map(C1Service.Trace::detail).toList();
     }
 
     private void wiseAud() {

@@ -40,6 +40,8 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - HKT 自然月 MTD 查询，C1 模拟校验，逐步骤 PASS / FAIL 和原因码
 - MTD 模拟数据页面（工具 → MTD 模拟数据）：按「合作方＋流转类别＋月份」通过 `PUT /api/usage` 覆盖月累计金额，用于演示月度上限 `APPETITE_CAP_REACHED`；无定时任务，C1 只读取香港当月记录
 - 字段库与 AND/OR 条件组 → 后端生成安全受控表达式 → AviatorScript 执行试算
+- **C1 触发条件按元数据中心字段库动态构建**：首页「① 触发条件：按字段库构建」的字段下拉读取 `GET /api/field-metadata`，列出元数据中心里已启用且适用规则含 C1 的全部字段，不再限定写死的四个字段；运算符下拉取字段的允许运算符，值下拉取可选值。在元数据中心新增、停用字段或调整适用规则后，点「↻ 刷新规则 / 字段库」即可生效，页面每次加载也会重新读取
+- C1 模拟校验支持附加条件字段：除固定的交易要素外，模拟面板按字段库为其余 C1 字段自动生成取值控件；条件缺值或失效的规则按不命中处理并在校验过程中给出 `SKIP` 说明（见下文「附加条件的取值与不命中处理」）
 - 演示模拟不会扣减 MTD
 
 ## C2 功能（本次新增）
@@ -82,6 +84,17 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - C1 内部遇第一失败即返回；完整 RELAY 系统应继续检查 C2/C3/C4/C6/C10，以记录候选全部失败原因。
 - 字段库表达式试算**不直接代替** C1 固定业务判断，避免 OR 绕过精确度和默认拒绝。
 
+**附加条件的取值与不命中处理：**
+
+- 附加条件是准入规则的触发条件：同一合作方 + 流转类别下，只有币种 / 国家范围匹配**且附加条件命中**的规则才参与精确度比较；全部不命中返回 `APPETITE_NOT_SET`（默认拒绝）。
+- `flowCategory`、`paymentCurrency`、`beneficiaryBankCountry`、`amountUsd` 四个交易要素固定取自模拟表单（客户档案的流转类别、交易币种、受益行国家、本笔金额 USD），不能用 `variables` 覆盖；其余 C1 字段的取值来自模拟请求的 `variables`（字段编码 → 值）。
+- C1 模拟面板为字段库里其余已启用的 C1 字段自动生成取值控件：有可选值 → 下拉（首项「（不提供）」，默认选中第一个可选值）；数字 → 数字输入框；布尔 → true / false 下拉；其它 → 文本框。选「（不提供）」或留空的字段不提交。
+- 出现下列任一情况时，该规则按**不命中**处理，并在校验过程中增加一条 `SKIP` 步骤（「3. 规则匹配 <流转类别>」）说明原因，校验本身不报错：
+  - 条件引用的字段本次**没有取值**（模拟面板选了「（不提供）」或留空，或调用方没有传 `variables`）；
+  - 条件**已失效**：规则保存后，所引用的字段在元数据中心被停用、不再适用 C1，或条件值已不在该字段的可选值中（需在 C1 业务准入页核对后重新保存）。
+- 已保存的条件引用了当前不可用的字段时，条件编辑器会把该条件换成第一个可用字段并在表达式区提示；条件值已不在可选值中时，下拉原样列出该值并标注「已不在可选值中」，不会悄悄改成其它值。两种情况都需核对后重新保存。
+- C1–C10 Check（`/routing.html`）的表单只采集四个交易要素、不采集附加条件字段，因此引用了其它字段的准入规则在 Check 中按不命中处理（同样有 `SKIP` 说明），不会导致整笔 Check 报错。
+
 ## API
 
 - `GET /api/providers`
@@ -92,7 +105,9 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - `POST /api/exclusions`, `POST /api/approvals`
 - `PUT /api/usage`：演示用，模拟统计任务回填 MTD。提交 `{providerCode,flowCategory,monthKey,amountUsd}`，按三者组合覆盖写入（不存在则新增），金额必填、保留两位小数并写审计
 - `DELETE /api/usage/{id}`：删除一条 MTD 记录
-- `POST /api/c1/simulate`
+- `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`
+- `POST /api/appetites/compile`：提交 `{tree}`，只校验并返回 `{expression}`，不保存
+- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理
 - `POST /api/expression/preview`
 
 示例模拟请求：
@@ -104,6 +119,14 @@ curl -X POST http://localhost:8080/api/c1/simulate \
 ```
 
 将返回 `PASS`（示例数据预置了有效 PSP 个案审批）。改成 `PROV-T1` 返回 `APPETITE_EXCLUDED`。
+
+准入规则配置了引用其它 C1 字段的附加条件时（例如元数据中心里的 `clientClassificationStatus`，其适用规则须勾选 C1），通过 `variables` 提供取值；不提供则该规则按不命中处理，并在校验过程中给出 `SKIP` 说明：
+
+```bash
+curl -X POST http://localhost:8080/api/c1/simulate \
+  -H 'Content-Type: application/json' \
+  -d '{"clientId":"C10001","providerCode":"PROV-HO","paymentCurrency":"USD","beneficiaryBankCountry":"KG","amountUsd":150000,"variables":{"clientClassificationStatus":"COMPLETE"}}'
+```
 
 演示环境的 MTD 没有定时任务，可用 `PUT /api/usage` 直接写入来模拟（`monthKey` 须为香港当月才参与 C1 校验，下例以 2026-11 为例）：
 
@@ -605,7 +628,7 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
 控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入 C2
-条件编辑器，停用字段从下拉消失但历史规则表达式按原样存档）。
+条件编辑器；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉，停用字段从下拉消失但历史规则表达式按原样存档）。
 
 右侧为 AND / OR 可视化表达式试算（与 C2 监管规则触发条件共用同一编译链路）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
@@ -635,6 +658,7 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 
 - `GET /api/fields`：返回字段库全量（含停用）。
 - `GET /api/c2/fields`：C2 条件编辑器使用，仅 `allowedRules` 含 C2 且启用的字段。
+- `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉与 C2 条件编辑器都按这里的 `allowedRules` 取字段。
 - `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回
   `{matched,expression}`。
 

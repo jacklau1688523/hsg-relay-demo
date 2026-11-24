@@ -56,7 +56,7 @@ public class RelayController {
     public Appetite save(@RequestBody Appetite input) {
         if (input.conditionJson != null && !input.conditionJson.isBlank()) {
             if (input.conditionJson.length() > 12000) throw new IllegalArgumentException("C1 条件树过长");
-            try { var tree = json.readValue(input.conditionJson, ExpressionService.Node.class); validateC1Fields(tree); expressions.compile(tree, "C1"); }
+            try { var tree = json.readValue(input.conditionJson, ExpressionService.Node.class); expressions.compile(tree, "C1"); }
             catch (IllegalArgumentException ex) { throw ex; }
             catch (Exception ex) { throw new IllegalArgumentException("C1 条件树 JSON 无效", ex); }
         } else input.conditionJson = null;
@@ -102,7 +102,6 @@ public class RelayController {
         try { before = json.writeValueAsString(row); }
         catch (Exception ex) { throw new IllegalStateException("审计序列化失败", ex); }
         if (input.enabled()) {
-            validateC1Fields(input.tree());
             expressions.compile(input.tree(), "C1");
             try { row.conditionJson = json.writeValueAsString(input.tree()); }
             catch (Exception ex) { throw new IllegalArgumentException("C1 条件树无效", ex); }
@@ -117,15 +116,7 @@ public class RelayController {
 
     @PostMapping("/appetites/compile")
     public Map<String, String> compileC1(@RequestBody C1ConditionInput input) {
-        validateC1Fields(input.tree());
         return Map.of("expression", expressions.compile(input.tree(), "C1"));
-    }
-
-    private void validateC1Fields(ExpressionService.Node node) {
-        if (node == null) throw new IllegalArgumentException("C1 条件树不能为空");
-        if (node.children() != null && !node.children().isEmpty()) node.children().forEach(this::validateC1Fields);
-        else if (node.field() == null || !Set.of("flowCategory", "paymentCurrency", "beneficiaryBankCountry", "amountUsd").contains(node.field()))
-            throw new IllegalArgumentException("C1 条件仅支持流转类别、交易币种、受益行国家和金额");
     }
 
     private boolean overlap(LocalDateTime a1, LocalDateTime a2, LocalDateTime b1, LocalDateTime b2) {

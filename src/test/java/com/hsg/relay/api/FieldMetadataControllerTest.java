@@ -51,4 +51,26 @@ class FieldMetadataControllerTest {
         var unsupported = new FieldMetadataController.Input("numericC2", "C2 数字字段", "DECIMAL", "GTE", "C2", "", true);
         assertThrows(IllegalArgumentException.class, () -> controller.create(unsupported));
     }
+
+    @Test
+    void previewComparesValuesByFieldType() {
+        // 页面控件提交的取值都是字符串："true" 须按布尔字段转换后再比较，否则与 true 比较会静默不命中
+        controller.create(new FieldMetadataController.Input("testHighRisk", "高风险标记", "BOOLEAN", "EQ,NE", "C1,C8", "", true));
+        var flag = new ExpressionService.Node("AND", List.of(new ExpressionService.Node(null, null, "testHighRisk", "EQ", "true")), null, null, null);
+        assertTrue(expressions.preview(new ExpressionService.Preview(flag, Map.of("testHighRisk", true), "C1")).matched());
+        assertTrue(expressions.preview(new ExpressionService.Preview(flag, Map.of("testHighRisk", "true"), "C1")).matched());
+        assertFalse(expressions.preview(new ExpressionService.Preview(flag, Map.of("testHighRisk", "false"), "C1")).matched());
+        assertFalse(expressions.preview(new ExpressionService.Preview(flag, Map.of("testHighRisk", " "), "C1")).matched());
+        // 取值与字段类型不符：报错并指出字段，而不是静默不命中
+        var badFlag = assertThrows(IllegalArgumentException.class, () -> expressions.preview(new ExpressionService.Preview(flag, Map.of("testHighRisk", "YES"), "C1")));
+        assertEquals("字段 testHighRisk 的取值只能是 true 或 false：YES", badFlag.getMessage());
+
+        controller.create(new FieldMetadataController.Input("testRiskScore", "风险评分", "DECIMAL", "GTE", "C1,C8", "", true));
+        var score = new ExpressionService.Node("AND", List.of(new ExpressionService.Node(null, null, "testRiskScore", "GTE", "5")), null, null, null);
+        assertTrue(expressions.preview(new ExpressionService.Preview(score, Map.of("testRiskScore", " 7.5 "), "C1")).matched());
+        assertFalse(expressions.preview(new ExpressionService.Preview(score, Map.of("testRiskScore", "4"), "C1")).matched());
+        assertFalse(expressions.preview(new ExpressionService.Preview(score, Map.of("testRiskScore", ""), "C1")).matched());
+        var badScore = assertThrows(IllegalArgumentException.class, () -> expressions.preview(new ExpressionService.Preview(score, Map.of("testRiskScore", "abc"), "C1")));
+        assertEquals("字段 testRiskScore 的取值不是有效数字：abc", badScore.getMessage());
+    }
 }
