@@ -88,15 +88,69 @@ function renderAppetites(rows) {
       + `<div class="notice">币种、国家为 ALL 时匹配全部；同范围且生效期重叠的规则不能同时启用。附加条件在 C1 页面配置。无命中的流转类别默认拒绝。</div><div id="appetitesPageError" class="err" role="alert"></div>`;
 }
 
-function renderUsage(rows) {
-    const month = hkDateTime().slice(0,7);
-    const sorted = rows.slice().sort((a,b)=>b.monthKey.localeCompare(a.monthKey)||a.flowCategory.localeCompare(b.flowCategory));
-    $('usageView').innerHTML = `<div class="rulebar"><div><h2>${esc(code)} · MTD 使用情况</h2><div class="muted">C1 只读取香港当月的合作方、流转类别累计金额；模拟校验不占用 MTD。</div></div><a class="btn secondary tiny" href="/mtd.html?provider=${encodeURIComponent(code)}">调整 / 模拟 MTD ↗</a></div>`
-      + `<div class="tablewrap"><table><thead><tr><th>流转类别</th><th>月份（HKT）</th><th>累计金额 USD</th><th>操作</th></tr></thead><tbody>${sorted.map(x=>`<tr><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)} ${x.monthKey===month?'<span class="badge pass">当月</span>':'<span class="muted">不参与当前校验</span>'}</td><td>${esc(Number(x.amountUsd).toLocaleString('en-US'))}</td><td><a href="/mtd.html?provider=${encodeURIComponent(code)}&flow=${encodeURIComponent(x.flowCategory)}&month=${encodeURIComponent(x.monthKey)}">调整</a></td></tr>`).join('')||'<tr><td colspan="4">暂无 MTD 记录，可前往 MTD 模拟数据页新增。</td></tr>'}</tbody></table></div>`;
+// MTD 使用情况：列表与调整表单都在本页，按「流转类别＋月份」覆盖写入（PUT /api/usage），不再跳转 MTD 模拟数据页
+const USAGE_FLOWS = ['STANDARD', 'PSP', 'WEB3'], MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+let usageRows = [], usageRules = [], usageForm = null, usageGood = '';
+const usageMonth = () => hkDateTime().slice(0, 7);
+const usageMoney = v => v == null || v === '' ? '—' : Number(v).toLocaleString('en-US', {maximumFractionDigits: 2});
+const usageExisting = f => usageRows.find(x => x.flowCategory === f.flowCategory && x.monthKey === f.monthKey) || null;
+const usageTitle = f => `${usageExisting(f) ? '调整' : '新增'} MTD · ${code} / ${f.flowCategory} / ${f.monthKey}`;
+// 表单初始值与「重置」：带出该流转类别＋月份已保存的金额，没有记录则为空
+const usageReset = f => ({flowCategory: f.flowCategory, monthKey: f.monthKey, amountUsd: String(usageExisting(f)?.amountUsd ?? '')});
+
+// 与 C1Service.active 口径一致：已启用、已到生效时间、未过失效时间
+function usageRuled(flow) {
+    const now = hkDateTime(0, 19);
+    return usageRules.filter(r => r.flowCategory === flow && r.enabled && !!r.effectiveFrom && String(r.effectiveFrom).slice(0, 19) <= now && (!r.effectiveTo || now < String(r.effectiveTo).slice(0, 19)));
+}
+// 月度上限：当前合作方＋流转类别下生效 ACCEPT 规则的月度上限（升序）。实际命中哪条规则还取决于币种 / 受益行国家 / 附加条件
+function usageCaps(flow) {
+    return [...new Set(usageRuled(flow).filter(r => r.action === 'ACCEPT' && r.monthlyCapUsd != null).map(r => Number(r.monthlyCapUsd)).filter(n => !isNaN(n)))].sort((a, b) => a - b);
 }
 
-function hkDateTime(offsetDays = 0) {
-    return new Date(Date.now() + offsetDays * 86400000).toLocaleString('sv-SE', {timeZone: 'Asia/Hong_Kong', hour12: false}).replace(' ', 'T').slice(0, 16);
+// 表单下方的提示：记录是否已存在、月度上限、按当前输入保存后的当月剩余额度、非当月提醒
+function usageHint(f) {
+    const row = usageExisting(f), caps = usageCaps(f.flowCategory), amount = Number(f.amountUsd);
+    const preview = caps.length && f.monthKey === usageMonth() && f.amountUsd !== '' && amount >= 0 ? caps[0] - amount : null;
+    return [
+        row ? `记录已存在（id ${row.id}，当前 ${usageMoney(row.amountUsd)} USD），保存将覆盖为新的月累计金额。` : '该流转类别＋月份尚无记录，保存将新增一行。',
+        caps.length ? `生效 ACCEPT 规则的月度上限：${caps.map(usageMoney).join(' / ')} USD。` : '该流转类别没有设置月度上限的生效 ACCEPT 规则，MTD 不影响 C1 结果。',
+        preview == null ? '' : `按当前输入保存后，当月剩余额度为 ${usageMoney(preview)} USD${preview < 0 ? '（下一笔即超限）' : ''}。`,
+        f.monthKey === usageMonth() ? '' : '注意：非当月记录不参与 C1 校验。'
+    ].join('');
+}
+
+function renderUsage({rows, rules}) {
+    usageRows = rows; usageRules = rules;
+    const month = usageMonth();
+    if (!usageForm) usageForm = usageReset({flowCategory: 'STANDARD', monthKey: month});
+    const f = usageForm, existing = !!usageExisting(f);
+    const flows = [...new Set([...USAGE_FLOWS, ...rows.map(x => x.flowCategory)])];
+    const list = rows.slice().sort((a, b) => b.monthKey.localeCompare(a.monthKey) || a.flowCategory.localeCompare(b.flowCategory)).map(x => {
+        const caps = usageCaps(x.flowCategory), current = x.monthKey === month, remaining = current && caps.length ? caps[0] - Number(x.amountUsd) : null;
+        return `<tr><td>${esc(x.flowCategory)}</td><td>${esc(x.monthKey)} ${current ? '<span class="badge pass">当月 · C1 读取</span>' : '<span class="muted">不参与校验</span>'}</td>`
+          + `<td>${esc(usageMoney(x.amountUsd))}</td><td>${caps.length > 1 ? esc(`${usageMoney(caps[0])} ~ ${usageMoney(caps[caps.length - 1])}`) : caps.length ? esc(usageMoney(caps[0])) : `<span class="muted">${usageRuled(x.flowCategory).length ? '未设上限' : '未配置准入规则'}</span>`}</td>`
+          + `<td>${remaining == null ? '—' : `${esc(usageMoney(remaining))}${remaining < 0 ? ' <span class="badge fail">已超限</span>' : ''}`}</td>`
+          + `<td><button type="button" class="btn secondary tiny" data-usage-edit="${x.id}">调整</button></td></tr>`;
+    }).join('');
+    $('usageView').innerHTML = `<div class="rulebar"><div><h2>${esc(code)} · MTD 使用情况 · ${rows.length} 条</h2><div class="muted">C1 只读取香港当月（${month}）的合作方、流转类别累计金额；模拟校验不占用 MTD。</div></div></div>`
+      + `<form id="usageForm" class="panel" style="background:#f8fbff" novalidate><div class="rulebar"><h2 id="usageFormTitle" style="margin:0">${esc(usageTitle(f))}</h2><span class="badge pending">仅影响 C1 模拟校验</span></div><div class="layout3">`
+      + `<div class="field"><label>流转类别 *</label><select name="flowCategory">${flows.map(v => `<option value="${esc(v)}"${v === f.flowCategory ? ' selected' : ''}>${v === 'STANDARD' ? 'STANDARD · 标准流转' : esc(v)}</option>`).join('')}</select></div>`
+      + `<div class="field"><label>月份（HKT）*</label><input name="monthKey" type="month" value="${esc(f.monthKey)}" required></div>`
+      + `<div class="field"><label>月累计金额 USD *（覆盖写入）</label><input name="amountUsd" type="number" min="0" step="0.01" value="${esc(f.amountUsd)}" placeholder="请输入月累计金额" required></div></div>`
+      + `<div class="muted" id="usageHint" style="margin-top:10px">${esc(usageHint(f))}</div>`
+      + `<div class="actions" style="margin-top:12px"><button type="submit" class="btn">保存 MTD</button><button type="button" class="btn secondary" name="delete"${existing ? '' : ' disabled'}>删除此行</button>`
+      + `<button type="button" class="btn secondary" name="reset">重置</button><button type="button" class="btn secondary" name="sample" value="near">示例：接近月度上限</button><button type="button" class="btn secondary" name="sample" value="zero">示例：清零</button></div>`
+      + `<div class="err" id="usageError" role="alert"></div><div class="good" id="usageGood" role="status">${esc(usageGood)}</div></form>`
+      + `<div class="tablewrap"><table><thead><tr><th>流转类别</th><th>月份（HKT）</th><th>月累计金额 USD</th><th>月度上限 USD</th><th>当月剩余额度</th><th>操作</th></tr></thead><tbody>${list || '<tr><td colspan="6">该合作方暂无 MTD 记录，可在上方表单新增。</td></tr>'}</tbody></table></div>`
+      + `<div class="notice">同一流转类别＋月份仅一行，保存即覆盖。月度上限取自「准入规则配置」中生效的 ACCEPT 规则（实际命中哪条还取决于币种、受益行国家与附加条件）；当月剩余额度＝最低上限 − MTD，仅当月记录显示。保存后可到 <a href="/">C1 业务准入</a> 的「规则模拟校验」查看效果。</div>`;
+    // 不支持 type=month 的浏览器退化为文本框，提交前按同一格式校验
+    const monthInput = $('usageForm').elements.monthKey;
+    if (monthInput.type !== 'month') { monthInput.type = 'text'; monthInput.placeholder = 'YYYY-MM'; }
+}
+
+function hkDateTime(offsetDays = 0, length = 16) {
+    return new Date(Date.now() + offsetDays * 86400000).toLocaleString('sv-SE', {timeZone: 'Asia/Hong_Kong', hour12: false}).replace(' ', 'T').slice(0, length);
 }
 
 function clientOptions(clients) {
@@ -158,10 +212,11 @@ function renderAudit(data) {
         : '<div class="notice">暂无合作方基础信息或能力标签变更记录。</div>';
 }
 
-// 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；关联配置、变更记录取合作方管理的聚合接口
+// 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；关联配置、变更记录取合作方管理的聚合接口；
+// MTD 取全部记录按合作方筛选，并取本合作方的准入规则用于显示月度上限与当月剩余额度
 const LOAD = {
     appetites: () => api(`/appetites?providerCode=${encodeURIComponent(code)}`),
-    usage: async () => (await api('/usage')).filter(x => x.providerCode === code),
+    usage: async () => { const [rows, rules] = await Promise.all([api('/usage'), api(`/appetites?providerCode=${encodeURIComponent(code)}`)]); return {rows: rows.filter(x => x.providerCode === code), rules}; },
     exclusions: async () => { const [rows, clients] = await Promise.all([api(`/exclusions?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     approvals: async () => { const [rows, clients] = await Promise.all([api(`/approvals?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     related: () => api(`/provider-management/${encodeURIComponent(code)}/related`),
@@ -289,6 +344,84 @@ $('approvalsView').addEventListener('click', async e => {
     if (!id || !confirm('确定撤销这条个案审批？历史记录会保留。')) return;
     try { await api(`/approvals/${id}/revoke`, {method:'POST'}); await activate('approvals'); }
     catch (error) { $('approvalError').textContent = error.message; }
+});
+// MTD 表单：读取当前输入；任一字段变化后刷新标题、提示与「删除此行」的可用状态
+function usageRead(form) {
+    return {flowCategory: form.elements.flowCategory.value, monthKey: form.elements.monthKey.value.trim(), amountUsd: form.elements.amountUsd.value.trim()};
+}
+function syncUsageForm(form) {
+    usageForm = usageRead(form);
+    $('usageFormTitle').textContent = usageTitle(usageForm);
+    $('usageHint').textContent = usageHint(usageForm);
+    form.elements.namedItem('delete').disabled = !usageExisting(usageForm);
+}
+const onUsageInput = e => { const form = e.target.closest('#usageForm'); if (form) syncUsageForm(form); };
+$('usageView').addEventListener('input', onUsageInput);
+$('usageView').addEventListener('change', onUsageInput);
+$('usageView').addEventListener('submit', async e => {
+    if (e.target.id !== 'usageForm') return;
+    e.preventDefault();
+    const form = e.target, f = usageRead(form), error = $('usageError'), save = form.querySelector('[type="submit"]');
+    error.textContent = ''; usageGood = ''; $('usageGood').textContent = '';
+    if (!MONTH_PATTERN.test(f.monthKey)) { error.textContent = f.monthKey ? '月份格式应为 YYYY-MM' : '请选择月份'; return; }
+    // 留空须单独拦：Number('') 是 0，否则会把已有记录覆盖成 0
+    if (f.amountUsd === '' || !(Number(f.amountUsd) >= 0)) { error.textContent = '月累计金额必须为不小于 0 的数字'; return; }
+    save.disabled = true;
+    try {
+        const existed = !!usageExisting(f);
+        const saved = await api('/usage', {method: 'PUT', body: JSON.stringify({providerCode: code, flowCategory: f.flowCategory, monthKey: f.monthKey, amountUsd: Number(f.amountUsd)})});
+        usageForm = {flowCategory: saved.flowCategory, monthKey: saved.monthKey, amountUsd: String(saved.amountUsd)};
+        usageGood = `已${existed ? '覆盖' : '新增'} ${saved.flowCategory} / ${saved.monthKey} 的 MTD = ${usageMoney(saved.amountUsd)} USD（id ${saved.id}）。`;
+        await activate('usage', true);
+    } catch (err) { error.textContent = err.message; }
+    finally { save.disabled = false; }
+});
+$('usageView').addEventListener('click', async e => {
+    const form = e.target.closest('#usageForm'), error = $('usageError');
+    const remove = e.target.closest('[name="delete"]');
+    if (form && remove) {
+        const f = usageRead(form), row = usageExisting(f);
+        if (!row || !confirm(`确定删除 ${code} / ${row.flowCategory} / ${row.monthKey} 的 MTD 记录？删除后该组合按 0 参与校验。`)) return;
+        error.textContent = ''; usageGood = ''; $('usageGood').textContent = '';
+        remove.disabled = true;
+        try {
+            await api(`/usage/${row.id}`, {method: 'DELETE'});
+            // 金额直接置空：此时列表仍是删除前的数据，usageReset 会把刚删掉的金额再带出来
+            usageForm = {...f, amountUsd: ''};
+            usageGood = `已删除 ${row.flowCategory} / ${row.monthKey} 的 MTD 记录（id ${row.id}）。`;
+            await activate('usage', true);
+        } catch (err) { error.textContent = err.message; remove.disabled = false; }
+        return;
+    }
+    if (form && e.target.closest('[name="reset"]')) {
+        usageForm = usageReset(usageRead(form));
+        usageGood = '';
+        renderUsage({rows: usageRows, rules: usageRules});
+        return;
+    }
+    const sample = e.target.closest('[name="sample"]');
+    if (form && sample) {
+        error.textContent = ''; usageGood = ''; $('usageGood').textContent = '';
+        if (sample.value === 'zero') form.elements.amountUsd.value = 0;
+        else {
+            const caps = usageCaps(form.elements.flowCategory.value);
+            if (!caps.length) { error.textContent = `${code} / ${form.elements.flowCategory.value} 没有设置月度上限的生效 ACCEPT 规则，无法演示超限。`; return; }
+            // 只有当月记录参与 C1 校验：上限 − 100,000，再到 C1 模拟一笔 150,000 即 APPETITE_CAP_REACHED
+            form.elements.monthKey.value = usageMonth();
+            form.elements.amountUsd.value = Math.max(0, caps[0] - 100000);
+        }
+        syncUsageForm(form);
+        return;
+    }
+    // 列表「调整」：把该行带入本页表单
+    const edit = e.target.closest('[data-usage-edit]');
+    if (!edit) return;
+    const row = usageRows.find(x => x.id === Number(edit.dataset.usageEdit));
+    if (!row) return;
+    usageForm = {flowCategory: row.flowCategory, monthKey: row.monthKey, amountUsd: String(row.amountUsd)};
+    usageGood = '';
+    renderUsage({rows: usageRows, rules: usageRules});
+    $('usageForm').scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 $('refresh').onclick = () => show();
 const initial = params.get('tab');

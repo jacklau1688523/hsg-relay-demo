@@ -1,6 +1,7 @@
 'use strict';
 let c1ConditionTree = null;
-let c1TargetRuleId = new URLSearchParams(location.search).get('rule');
+let c1ActiveRule = null;
+const c1ConfiguredRuleId = new URLSearchParams(location.search).get('rule');
 // 模拟面板固定采集的交易要素；字段库里其余 C1 字段的取值由模拟面板按字段定义动态生成
 const c1SimFixedFields = new Set(['flowCategory', 'paymentCurrency', 'beneficiaryBankCountry', 'amountUsd']);
 const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 >',GTE:'大于等于 ≥',LT:'小于 <',LTE:'小于等于 ≤'};
@@ -54,12 +55,15 @@ function c1RenderTree(){
 async function c1CompileCondition(){try{const out=await api('/appetites/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});$('c1Compiled').textContent=out.expression;$('c1ConditionError').textContent='';}catch(error){$('c1Compiled').textContent='条件校验失败';$('c1ConditionError').textContent=error.message;}}
 async function c1LoadConditionRules(){
  try{
-  const selected=c1TargetRuleId||$('c1RuleSelect').value;
-  // 规则与字段库每次都从服务端重新读取：在元数据中心增删字段后点「刷新」即可生效
+  // 左侧配置对象只由合作方详情的规则入口（rule 参数）决定；右侧模拟输入不更换配置对象
   [allRules,fieldDefs]=await Promise.all([api('/appetites'),api('/field-metadata')]);
-  $('c1RuleSelect').innerHTML=allRules.map(r=>`<option value="${r.id}">#${r.id} · ${esc(r.providerCode)} · ${esc(r.flowCategory)} · ${esc(r.currency)}/${esc(r.bankCountry)} · ${esc(r.action)}</option>`).join('');
-  if(allRules.some(r=>String(r.id)===String(selected)))$('c1RuleSelect').value=String(selected);
-  c1TargetRuleId=null;c1SelectRule();c1RenderSimFields();
+  const wanted=c1ActiveRule?.id||c1ConfiguredRuleId;
+  c1ActiveRule=allRules.find(r=>String(r.id)===String(wanted))||allRules.slice().sort((a,b)=>a.id-b.id)[0]||null;
+  c1InitCondition(c1ActiveRule?.conditionJson||null);
+  $('c1SaveButton').disabled=!c1ActiveRule;
+  $('c1SaveButton').textContent=c1ActiveRule?`保存条件至规则 #${c1ActiveRule.id}`:'保存条件配置';
+  $('c1SaveButton').title=c1ActiveRule?'': '请先在合作方详情新增准入规则';
+  c1RenderSimFields();
  }catch(error){$('c1ConditionError').textContent=error.message;}
 }
 // 模拟面板：除固定交易要素外，字段库里启用的 C1 字段按字段定义生成取值控件（枚举下拉 / 数字 / 文本）
@@ -74,19 +78,13 @@ function c1RenderSimFields(){
 }
 // 下拉选「不提供」或文本留空的字段不提交：规则引用了没有取值的字段时，后端按不命中处理并在校验过程中说明
 function c1SimVariables(){const out={};c1SimFields().forEach(f=>{const v=$('simVariables').querySelector(`[data-field="${f.fieldCode}"]`)?.value.trim();if(v)out[f.fieldCode]=v;});return out;}
-function c1EditCondition(id){c1TargetRuleId=id;c1LoadConditionRules();}
-function c1SelectRule(){
- const rule=allRules.find(r=>String(r.id)===$('c1RuleSelect').value);
- if(!rule){$('c1RuleScope').textContent='请先新增准入规则，再配置触发条件。';$('c1ConditionArea').classList.add('hidden');return;}
- $('c1RuleScope').textContent=`当前规则 #${rule.id}：${rule.providerCode} / ${rule.flowCategory} / ${rule.currency} / ${rule.bankCountry} / ${rule.action}。附加条件不命中时，此规则不参与匹配。`;
- $('c1ConditionArea').classList.remove('hidden');c1InitCondition(rule.conditionJson);
-}
 async function c1SaveCondition(){
- const id=$('c1RuleSelect').value;if(!id)return;
+ const id=c1ActiveRule?.id;if(!id)return;
  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
  try{
   const saved=await api('/appetites/'+encodeURIComponent(id)+'/condition',{method:'PUT',body:JSON.stringify({enabled:$('c1UseCondition').checked,tree:c1ConditionTree})});
-  const index=allRules.findIndex(r=>String(r.id)===id);if(index>=0)allRules[index]=saved;
+  const index=allRules.findIndex(r=>String(r.id)===String(id));if(index>=0)allRules[index]=saved;
+  c1ActiveRule=saved;
   $('c1ConditionGood').textContent=`条件配置已保存 · 规则 #${id} · 版本 ${saved.versionNo}`;
  }catch(error){$('c1ConditionError').textContent=error.message;}
 }
