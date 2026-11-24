@@ -63,7 +63,7 @@ async function activate(tab) {
     if (tab === 'base') return;
     const container = $('restrictionsView');
     if (!state.code) {
-        container.innerHTML = '<div class="notice">保存合作方后可配置合作方限制。关联配置和变更记录在合作方详情页查看。</div>';
+        container.innerHTML = '<div class="notice">保存合作方后可配置合作方限制。变更记录在合作方详情页查看。</div>';
         return;
     }
     await loadRestrictions(state.code, ++state.request);

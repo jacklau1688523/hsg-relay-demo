@@ -1,18 +1,14 @@
 'use strict';
-// 合作方详情：/provider-detail.html?code=合作方编码[&tab=appetites|usage|exclusions|approvals|related|restrictions|audit]
+// 合作方详情：/provider-detail.html?code=合作方编码[&tab=appetites|usage|exclusions|approvals|restrictions|audit]
 // 基础资料只读；准入规则、MTD、客户排除和个案审批在本页按合作方管理。
 const state = {view: null, tags: [], tab: 'base', request: 0};
 const params = new URLSearchParams(location.search);
 const code = params.get('code');
-const TABS = ['base', 'appetites', 'usage', 'exclusions', 'approvals', 'related', 'restrictions', 'audit'];
+const TABS = ['base', 'appetites', 'usage', 'exclusions', 'approvals', 'restrictions', 'audit'];
 
 // 打开独立编辑页；带 tab 时直接切到对应页签
 function editHref(tab) {
     return `/provider-edit.html?code=${encodeURIComponent(state.view.provider.code)}${tab ? `&tab=${tab}` : ''}`;
-}
-
-function table(headers, rows) {
-    return `<div class="tablewrap"><table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(row => `<tr>${row.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}">暂无配置</td></tr>`}</tbody></table></div>`;
 }
 
 function pretty(text) {
@@ -21,10 +17,6 @@ function pretty(text) {
     } catch {
         return text || '无';
     }
-}
-
-function section(title, href, body) {
-    return `<div class="subheading">${title} ${href ? `<a href="${href}">去维护 ↗</a>` : ''}</div>${body}`;
 }
 
 function fact(label, value) {
@@ -171,24 +163,6 @@ function renderApprovals({rows, clients}) {
         + `<div class="tablewrap"><table><thead><tr><th>ID</th><th>客户</th><th>流转类别</th><th>审批编号</th><th>生效时间</th><th>失效时间</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows.map(x => {const active=x.effectiveFrom<=now&&x.expiresAt>now;return `<tr><td>#${x.id}</td><td>${esc(x.clientId)}</td><td>${esc(x.flowCategory)}</td><td>${esc(x.approvalReference)}</td><td>${esc(x.effectiveFrom)}</td><td>${esc(x.expiresAt)}</td><td>${active?'<span class="badge pass">有效</span>':'已失效 / 未生效'}</td><td>${active?`<button type="button" class="btn secondary tiny" data-revoke="${x.id}">撤销</button>`:'—'}</td></tr>`;}).join('')||'<tr><td colspan="8">当前合作方暂无个案审批记录</td></tr>'}</tbody></table></div><div class="err" id="approvalError" role="alert"></div><div class="good" id="approvalGood" role="status"></div>`;
 }
 
-function renderRelated(d) {
-    $('relatedView').innerHTML = `<div class="notice">以下为当前已保存配置。修改配置后可刷新本页重新检查上线条件；最终候选仍须通过完整 C1–C10 校验。</div>`
-        + section(`C1 业务准入 · ${d.appetites.length} 条`, `/provider-detail.html?code=${encodeURIComponent(code)}&tab=appetites`, table(
-            ['流转类别', '币种', '国家', '准入方式', '状态', '生效时间', '截止时间'],
-            d.appetites.map(a => [a.flowCategory, a.currency, a.bankCountry, a.action, a.enabled ? '启用' : '停用', a.effectiveFrom, a.effectiveTo])))
-        + section(`C3 业务覆盖 · ${d.reaches.length} 条`, '/c3.html', table(
-            ['币种', '国家', '地区', '银行范围', '扣费方式', '状态'],
-            d.reaches.map(r => [r.currency, r.country, r.region, r.bics.length ? r.bics.join(', ') : 'ALL', r.charges.join('/'), r.enabled === false ? '停用' : '启用'])))
-        + section(`C7 手续费 · ${d.fees.length} 条`, '/routing.html#configPanel', table(
-            ['交易币种', '扣费方式', '费用币种', '固定费', '比例费率', '最低 / 最高', '电报费', '中间行费'],
-            d.fees.map(f => [f.currency, f.charge, f.feeCurrency, f.fixed, `${f.rate * 100}%`, `${f.minimum} / ${f.maximum ?? '无上限'}`, f.cable, f.intermediary])))
-        + `<div class="subheading">C2 合作方限制 · ${d.restrictions.length} 条</div>`
-        + `<div class="notice">合作方限制明细见本页「合作方限制」页签；新增 / 编辑 / 启停在编辑页的「合作方限制」页签操作。</div>`
-        + section('C10 可配置外汇渠道', '/routing.html#configPanel', table(
-            ['渠道', '扣账 / 交易', '星期', '香港窗口', '点差 bps'],
-            d.fxWindows.map(w => [w.provider, `${w.debit} / ${w.payment}`, w.days.join(','), `${w.start}–${w.end}`, `${w.spreadBps} + ${w.extraBps}`])));
-}
-
 function renderRestrictions(rows) {
     const list = rows.length ? rows.map(r => {
         const [label, reason] = restrictTypes[r.restrictionType] || [];
@@ -212,18 +186,17 @@ function renderAudit(data) {
         : '<div class="notice">暂无合作方基础信息或能力标签变更记录。</div>';
 }
 
-// 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；关联配置、变更记录取合作方管理的聚合接口；
+// 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；变更记录取合作方管理的聚合接口；
 // MTD 取全部记录按合作方筛选，并取本合作方的准入规则用于显示月度上限与当月剩余额度
 const LOAD = {
     appetites: () => api(`/appetites?providerCode=${encodeURIComponent(code)}`),
     usage: async () => { const [rows, rules] = await Promise.all([api('/usage'), api(`/appetites?providerCode=${encodeURIComponent(code)}`)]); return {rows: rows.filter(x => x.providerCode === code), rules}; },
     exclusions: async () => { const [rows, clients] = await Promise.all([api(`/exclusions?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
     approvals: async () => { const [rows, clients] = await Promise.all([api(`/approvals?providerCode=${encodeURIComponent(code)}`), api('/clients')]); return {rows, clients}; },
-    related: () => api(`/provider-management/${encodeURIComponent(code)}/related`),
     restrictions: async () => (await api('/c2/restrictions')).filter(r => r.providerCode === code),
     audit: () => api(`/provider-management/${encodeURIComponent(code)}/audit`)
 };
-const RENDER = {appetites: renderAppetites, usage: renderUsage, exclusions: renderExclusions, approvals: renderApprovals, related: renderRelated, restrictions: renderRestrictions, audit: renderAudit};
+const RENDER = {appetites: renderAppetites, usage: renderUsage, exclusions: renderExclusions, approvals: renderApprovals, restrictions: renderRestrictions, audit: renderAudit};
 
 // silent：重读期间保留已显示的内容，不先换成「正在加载…」
 async function activate(tab, silent = false) {
