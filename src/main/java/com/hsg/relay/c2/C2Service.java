@@ -51,10 +51,18 @@ public class C2Service {
     public record FailureAction(String reasonCode) {
     }
 
+    /**
+     * 监管规则表单的保存请求。trigger：与规则一并提交的附加触发条件 {enabled, tree}；省略时不改动已保存的附加条件。
+     * 新增 / 编辑页（/c2-regulatory-edit.html）把范围、能力标签和附加触发条件放在同一个表单里，一次提交。
+     */
     public record RegulatoryInput(String ruleId, String ruleName, String ruleCode, String scope, String currency, String bankCountry,
                                   Requirement requirement, FailureAction onFailure, Boolean enabled, Integer versionNo,
                                   LocalDateTime effectiveFrom,
-                                  LocalDateTime effectiveTo, String remark) {
+                                  LocalDateTime effectiveTo, String remark, TriggerInput trigger) {
+    }
+
+    /** 保存监管规则时一并提交的附加触发条件：enabled 缺省或为 true 时保存 tree，enabled=false 清除。 */
+    public record TriggerInput(Boolean enabled, ExpressionService.Node tree) {
     }
 
     /**
@@ -186,6 +194,11 @@ public class C2Service {
         return regulatoryRepo.findAll().stream().sorted(Comparator.comparing(x -> x.ruleId)).map(this::view).toList();
     }
 
+    /** 单条监管规则（新增 / 编辑页按编码载入）；不存在时按参数错误处理。 */
+    public RegulatoryView regulation(String id) {
+        return regulatoryRepo.findById(id).map(this::view).orElseThrow(() -> new IllegalArgumentException("规则不存在"));
+    }
+
     private RegulatoryView view(RegulatoryRule rule) {
         try {
             List<String> tags = Arrays.asList(mapper.readValue(rule.requiredTagsJson, String[].class));
@@ -212,6 +225,8 @@ public class C2Service {
         String before = rule == null ? null : encode(view(rule));
         if (rule != null && in.versionNo() != null && rule.versionNo != in.versionNo())
             throw new IllegalArgumentException("规则版本已变化，请刷新后重试");
+        // 表单一并提交了附加触发条件时先按字段库校验：不通过则范围、标签等整条规则都不保存
+        String conditionJson = in.trigger() == null ? null : triggerJson(in.trigger().enabled(), in.trigger().tree());
         boolean creating = rule == null;
         if (creating) rule = new RegulatoryRule();
         else rule.versionNo++;
@@ -226,6 +241,7 @@ public class C2Service {
         rule.effectiveTo = in.effectiveTo();
         rule.enabled = in.enabled() == null ? true : in.enabled();
         rule.remark = in.remark();
+        if (in.trigger() != null) rule.triggerConditionJson = conditionJson;
         RegulatoryView saved = view(regulatoryRepo.save(rule));
         audit("REGULATORY", rule.ruleId, creating ? "CREATE" : "UPDATE", before, saved);
         return saved;
@@ -236,8 +252,18 @@ public class C2Service {
         return expressions.compile(tree, "C2");
     }
 
+    /** 附加触发条件的落库 JSON：enabled=false 清除（返回 null）；否则先按字段库校验 tree，不通过时抛出参数错误。 */
+    private String triggerJson(Boolean enabled, ExpressionService.Node tree) {
+        if (Boolean.FALSE.equals(enabled)) return null;
+        if (tree == null) throw new IllegalArgumentException("条件树不能为空");
+        compileTrigger(tree);
+        String json = encode(tree);
+        if (json.length() > 12000) throw new IllegalArgumentException("附加触发条件过长");
+        return json;
+    }
+
     /**
-     * 保存监管规则的附加触发条件：范围（币种 + 受益行国家）和能力标签不变。
+     * 单独保存监管规则的附加触发条件（接口 PUT /regulatory-rules/{id}/condition）：范围（币种 + 受益行国家）和能力标签不变。
      * 保存前按元数据中心校验；不通过返回 400，规则不变。
      */
     @Transactional
@@ -247,13 +273,7 @@ public class C2Service {
         if (in.versionNo() != null && rule.versionNo != in.versionNo())
             throw new IllegalArgumentException("规则版本已变化，请刷新后重试");
         String before = encode(view(rule));
-        if (Boolean.FALSE.equals(in.enabled())) rule.triggerConditionJson = null;
-        else {
-            compileTrigger(in.tree());
-            String conditionJson = encode(in.tree());
-            if (conditionJson.length() > 12000) throw new IllegalArgumentException("附加触发条件过长");
-            rule.triggerConditionJson = conditionJson;
-        }
+        rule.triggerConditionJson = triggerJson(in.enabled(), in.tree());
         rule.versionNo++;
         RegulatoryView saved = view(regulatoryRepo.save(rule));
         audit("REGULATORY", rule.ruleId, "UPDATE_CONDITION", before, saved);

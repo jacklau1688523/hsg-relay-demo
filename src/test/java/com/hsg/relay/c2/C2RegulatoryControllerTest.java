@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 // 监管规则接口的 HTTP 契约：按「币种 + 受益行国家」提交，校验失败返回 400 + error；
-// 附加触发条件单独通过 compile / condition 两个接口校验和保存，返回 400 时规则不变
+// 附加触发条件既可以随规则一次提交（新增 / 编辑页），也可以单独通过 compile / condition 两个接口校验和保存，返回 400 时规则不变
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -220,5 +220,68 @@ class C2RegulatoryControllerTest {
         RegulatoryRule stored = rules.findById("REG-API").orElseThrow();
         assertNull(stored.triggerConditionJson);
         assertEquals(1, stored.versionNo);
+    }
+
+    /** 在规则请求里并入附加触发条件（新增 / 编辑页 /c2-regulatory-edit.html 的提交方式）：trigger = {enabled, tree}。 */
+    private static String withTrigger(String body, String trigger) {
+        String merged = body.replaceFirst("\\{\"ruleId\"", "{\"trigger\":" + trigger + ",\"ruleId\"");
+        assertNotEquals(body, merged);
+        return merged;
+    }
+
+    @Test
+    void editPageSavesTheTriggerWithTheRuleAndLoadsOneRule() throws Exception {
+        String tree = "{\"logic\":\"AND\",\"children\":[{\"field\":\"purpose\",\"operator\":\"EQ\",\"value\":\"INVESTMENT\"}]}";
+        // 新增：范围、标签和附加触发条件一次提交，一次保存、一个版本
+        mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON)
+                        .content(withTrigger(RULE, "{\"enabled\":true,\"tree\":" + tree + "}")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionNo").value(1))
+                .andExpect(jsonPath("$.currency").value("USD"))
+                .andExpect(jsonPath("$.triggerText").value("(purpose = INVESTMENT)"));
+
+        // 编辑页按编码载入；不存在的编码返回 400
+        mvc.perform(get("/api/c2/regulatory-rules/REG-API"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ruleId").value("REG-API"))
+                .andExpect(jsonPath("$.versionNo").value(1))
+                .andExpect(jsonPath("$.triggerCondition.logic").value("AND"));
+        mvc.perform(get("/api/c2/regulatory-rules/REG-NONE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("规则不存在"));
+
+        // 附加触发条件不通过：连同一起提交的名称、范围都不保存
+        String renamed = RULE.replace("接口测试监管规则", "改名后的监管规则").replace("\"JP\"", "\"ALL\"");
+        mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON)
+                        .content(withTrigger(renamed, "{\"enabled\":true,\"tree\":" + tree.replace("INVESTMENT", "NOPE") + "}")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("purpose 不支持该值：NOPE"));
+        RegulatoryRule stored = rules.findById("REG-API").orElseThrow();
+        assertEquals("接口测试监管规则", stored.ruleName);
+        assertEquals(1, stored.versionNo);
+
+        // 版本过期：带上 trigger 也一样被拒绝
+        String stale = RULE.replace("\"enabled\":true,\"effectiveFrom\"", "\"versionNo\":5,\"enabled\":true,\"effectiveFrom\"");
+        assertNotEquals(RULE, stale);
+        mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON).content(withTrigger(stale, "{\"enabled\":false}")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("规则版本已变化，请刷新后重试"));
+
+        // 不带 trigger 的保存：已保存的附加触发条件保持不变
+        mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON).content(RULE))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionNo").value(2))
+                .andExpect(jsonPath("$.triggerText").value("(purpose = INVESTMENT)"));
+
+        // enabled=false 清除：清除后交易只要落在范围内规则即触发
+        mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON).content(withTrigger(RULE, "{\"enabled\":false}")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.versionNo").value(3))
+                .andExpect(jsonPath("$.triggerCondition").doesNotExist())
+                .andExpect(jsonPath("$.triggerText").doesNotExist());
+        mvc.perform(post("/api/c2/simulate").contentType(MediaType.APPLICATION_JSON)
+                        .content(SIMULATE_IN_SCOPE.replace("\"orderingCountry\"", "\"purpose\":\"GOODS\",\"orderingCountry\"")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.regulatoryChecks[0].triggered").value(true));
     }
 }

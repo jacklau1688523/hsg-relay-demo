@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>HSG RELAY | 新增监管规则</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <link rel="stylesheet" href="/c2-regulatory.css">
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="nav indent sel" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 元数据中心</div>
+        <div class="nav" onclick="location.href='/mtd.html'">◷ &nbsp; MTD 模拟数据</div>
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="toplinks"><a href="/c2-regulatory.html">← 监管路由规则</a></div>
+            <div class="heading page-intro">
+                <div><h1 id="formTitle">新增监管规则</h1>
+                    <div class="muted" id="version">编码保存后不可修改</div>
+                </div>
+                <div class="actions">
+                    <a class="btn secondary" href="/c2-regulatory.html">← 返回监管路由规则</a>
+                    <a class="btn secondary" id="simulate" href="/c2.html" style="display:none">C2 模拟验证 ↗</a>
+                </div>
+            </div>
+            <div class="err pageerror" id="pageError" role="alert"></div>
+            <p class="muted" id="loading" hidden>正在加载…</p>
+            <div id="editor" class="hidden">
+                <div class="rule-grid">
+                    <section>
+                        <div class="panel">
+                            <form id="ruleForm" autocomplete="off">
+                                <div class="layout3">
+                                    <div class="field"><label for="ruleId">规则编码 *（唯一，3–48 位大写字母 / 数字 / _
+                                        / -）</label><input id="ruleId" required maxlength="48" placeholder="REG-002"
+                                                             pattern="[A-Z0-9_\-]{3,48}"
+                                                             title="3–48 位大写字母、数字、下划线或短横线"></div>
+                                    <div class="field"><label for="ruleName">规则名称 *（最长140字符）</label><input
+                                            id="ruleName" required maxlength="140" placeholder="CNY 境内清算能力要求">
+                                    </div>
+                                    <div class="field"><label for="enabled">规则状态 *</label><select id="enabled">
+                                        <option value="true">启用 · 对所有合作方生效</option>
+                                        <option value="false">停用 · 不执行</option>
+                                    </select></div>
+                                    <div class="field"><label for="effectiveFrom">生效时间（HKT） *</label><input
+                                            id="effectiveFrom" type="datetime-local" required></div>
+                                    <div class="field"><label for="effectiveTo">失效时间（HKT）</label><input
+                                            id="effectiveTo" type="datetime-local"></div>
+                                    <div class="field"><label for="remark">备注（最长400字符）</label><input id="remark"
+                                                                                                        maxlength="400"
+                                                                                                        placeholder="例如：监管参考号、配置说明">
+                                    </div>
+                                </div>
+
+                                <div class="rule-subhead">① 适用范围：交易币种 + 受益行国家</div>
+                                <div class="layout2">
+                                    <div class="field"><label for="currency">交易币种 *</label><select id="currency" required
+                                                                                                        aria-label="交易币种"></select>
+                                        <div class="fieldhint">可选值来自元数据中心「交易币种」字段</div>
+                                    </div>
+                                    <div class="field"><label for="bankCountry">受益行国家 *</label><select
+                                            id="bankCountry" required aria-label="受益行国家"></select>
+                                        <div class="fieldhint">ISO 3166-1 两位国家代码；选「ALL · 全部国家」表示不限国家
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="notice warn" id="legacyHint" style="display:none"></div>
+
+                                <div class="rule-subhead">② 命中后：候选合作方必须具备的能力标签（须全部具备）</div>
+                                <div class="tag-grid" id="tags"></div>
+
+                                <div class="rule-subhead">③ 附加触发条件（可选）：适用范围内的交易还须满足此条件，规则才触发
+                                </div>
+                                <label class="tagcheck"><input type="checkbox" id="triggerEnabled"
+                                                               onchange="triggerToggled()"> 启用附加触发条件</label>
+                                <div class="fieldhint">不启用时，交易只要落在适用范围内规则即触发。条件按字段库构建（元数据中心里已启用且适用规则含
+                                    C2 的字段），支持嵌套 AND / OR；保存时随规则一起按字段库校验，不通过则整条规则不保存。
+                                </div>
+                                <div id="triggerEditor" class="hidden">
+                                    <div id="triggerTree"></div>
+                                    <div class="actions" style="margin-top:12px">
+                                        <button type="button" class="btn secondary tiny" id="compile">校验并生成表达式
+                                        </button>
+                                        <button type="button" class="btn secondary tiny" id="reloadLibrary"
+                                                title="重新读取元数据中心的 C2 字段和下拉项（新增、停用字段或调整可选值后使用）；编辑中的条件会保留">↻
+                                            刷新字段库
+                                        </button>
+                                    </div>
+                                    <div id="triggerCompiled" class="code" style="margin-top:10px">点击「校验并生成表达式」查看条件对应的表达式</div>
+                                    <div id="triggerStatus" class="notice"></div>
+                                    <div id="triggerError" class="err"></div>
+                                    <div id="triggerGood" class="good"></div>
+                                </div>
+
+                                <div class="err" id="formError" role="alert"></div>
+                                <div class="good" id="formGood" role="status"></div>
+                                <div class="actions" style="margin-top:18px">
+                                    <button class="btn" type="submit" id="save">保存监管规则</button>
+                                    <a class="btn secondary" id="cancel" href="/c2-regulatory.html">取消</a>
+                                    <button class="btn secondary" type="button" id="copy">复制规则 JSON</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                    <aside class="rightPanel">
+                        <div class="panel">
+                            <div class="ptitle">规则预览</div>
+                            <div class="c2-preview" id="preview" aria-live="polite"></div>
+                        </div>
+                        <div class="panel">
+                            <div class="ptitle">执行说明</div>
+                            <p class="muted" style="line-height:1.7">
+                                交易落在适用范围内、且满足附加触发条件时规则触发；候选合作方缺少任一必需能力标签即被剔除，返回
+                                REG_RULE_NOT_MET。规则对所有合作方生效。</p>
+                            <p class="muted" style="line-height:1.7">
+                                附加触发条件引用的字段在元数据中心被停用后，条件视为失效：失效期间交易只要落在适用范围内规则即触发（不会放宽）。请在列表的「附加条件已失效」处核对后重新保存。</p>
+                            <div class="actions" style="margin-top:14px"><a href="/c2.html">C2 合规限制 ↗</a><a
+                                    href="/fields.html">元数据中心 ↗</a><a href="/routing.html">C1–C10 Check ↗</a></div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+            <div class="footer">HSG RELAY · 监管路由规则编辑 · 非生产环境</div>
+        </div>
+    </main>
+</div>
+<script src="/c2-regulatory-common.js"></script>
+<script src="/c2-regulatory-edit.js"></script>
+</body>
+</html>

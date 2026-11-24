@@ -37,6 +37,16 @@ public class C2Controller {
         return service.regulatoryOptions();
     }
 
+    /** 单条监管规则（新增 / 编辑页按编码载入）；不存在时返回 400 + error。 */
+    @GetMapping("/regulatory-rules/{id}")
+    public C2Service.RegulatoryView rule(@PathVariable String id) {
+        return service.regulation(id);
+    }
+
+    /**
+     * 新增或更新监管规则（按 ruleId）。请求带 trigger（{enabled, tree}）时一并保存附加触发条件，enabled=false 清除；
+     * 不带 trigger 时不改动已保存的附加触发条件。
+     */
     @PostMapping("/regulatory-rules")
     public C2Service.RegulatoryView save(@RequestBody C2Service.RegulatoryInput rule) {
         return service.saveRegulatory(rule);
@@ -53,7 +63,7 @@ public class C2Controller {
         return Map.of("expression", service.compileTrigger(body == null ? null : body.tree()));
     }
 
-    /** 保存监管规则的附加触发条件：`{enabled, tree, versionNo?}`；`enabled=false` 清除条件。范围和能力标签不变。 */
+    /** 单独保存 / 清除监管规则的附加触发条件：`{enabled, tree, versionNo?}`；`enabled=false` 清除条件。范围和能力标签不变。 */
     @PutMapping("/regulatory-rules/{id}/condition")
     public C2Service.RegulatoryView saveTrigger(@PathVariable String id, @RequestBody C2Service.TriggerConditionInput body) {
         return service.saveTriggerCondition(id, body);

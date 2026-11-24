@@ -37,83 +37,63 @@
             <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
         </div>
         <div class="content">
+            <div class="toplinks"><a href="/c2.html">C2 合规限制模拟</a></div>
             <div class="heading"><h1>全局监管路由规则</h1>
-                <div class="muted">规则对所有合作方生效，按「交易币种 + 受益行国家」圈定交易；另可在 C2 模拟页左侧按字段库配置附加触发条件（范围内还须满足该条件规则才触发）。命中的交易，候选合作方必须具备要求的全部能力标签，否则剔除并返回
-                    REG_RULE_NOT_MET。新增、修改、停用或删除都会影响全部合作方的 C2 结果。
+                <div class="muted">规则对所有合作方生效，按「交易币种 + 受益行国家」圈定交易，可另配附加触发条件（范围内的交易还须满足该条件，规则才触发）。命中的交易，候选合作方必须具备要求的全部能力标签，否则剔除并返回
+                    REG_RULE_NOT_MET。新增、修改、启停或删除都会影响全部合作方的 C2 结果，保存后可在「C2 合规限制」页模拟验证。
                 </div>
             </div>
-            <div id="c2Regulatory">
-                <div class="panel">
-                    <div class="rulebar">
-                        <div class="ptitle" style="margin:0">全局监管规则列表 <small class="muted" id="c2RegCount"></small>
-                        </div>
-                        <button class="btn" onclick="c2NewRegulatory()">＋ 新增监管规则</button>
-                    </div>
-                    <div class="tablewrap">
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>规则编码</th>
-                                <th>名称</th>
-                                <th>币种</th>
-                                <th>受益行国家</th>
-                                <th>必需能力标签</th>
-                                <th>版本</th>
-                                <th>状态</th>
-                                <th>操作</th>
-                            </tr>
-                            </thead>
-                            <tbody id="c2RegRows"></tbody>
-                        </table>
+            <div class="summarycards" id="metrics"></div>
+            <div class="panel">
+                <div class="rulebar"><h2 style="margin:0">监管规则列表</h2>
+                    <div class="actions">
+                        <a class="btn" href="/c2-regulatory-edit.html" id="new">＋ 新增监管规则</a>
+                        <button type="button" class="btn secondary" id="refresh">↻ 刷新</button>
                     </div>
                 </div>
-                <div class="panel" id="c2RegForm">
-                    <div class="rulebar"><h2 id="c2FormTitle">编辑监管规则</h2><span class="badge pending">全局规则 · 对所有合作方生效</span>
+                <div class="filterbar">
+                    <div class="field"><label for="search">编码 / 名称</label><input id="search" placeholder="搜索监管规则">
                     </div>
-                    <div class="layout2">
-                        <div class="field"><label>规则编码 *</label><input id="c2RuleId" placeholder="REG-002"></div>
-                        <div class="field"><label>规则名称 *</label><input id="c2RuleName"
-                                                                            placeholder="CNY 境内清算能力要求"></div>
+                    <div class="field"><label for="filterCurrency">交易币种</label><select id="filterCurrency"></select>
                     </div>
-                    <div class="layout3">
-                        <div class="field"><label>生效时间（HKT） *</label><input type="datetime-local"
-                                                                                 id="c2From"></div>
-                        <div class="field"><label>失效时间（HKT）</label><input type="datetime-local" id="c2To">
-                        </div>
-                        <div class="field"><label>规则启用</label><select id="c2Enabled">
-                            <option value="true">启用</option>
-                            <option value="false">停用</option>
-                        </select></div>
-                    </div>
-                    <div class="rule-subhead">① 适用范围：满足以下条件的交易受本规则约束</div>
-                    <div class="layout2">
-                        <div class="field"><label>交易币种 *</label><select id="c2Currency" onchange="c2RenderPreview()"
-                                                                              aria-label="交易币种"></select>
-                            <div class="fieldhint">可选值来自元数据中心「交易币种」字段</div>
-                        </div>
-                        <div class="field"><label>受益行国家 *</label><select id="c2BankCountry"
-                                                                              onchange="c2RenderPreview()"
-                                                                              aria-label="受益行国家"></select>
-                            <div class="fieldhint">ISO 3166-1 两位国家代码；选 ALL 表示不限国家</div>
-                        </div>
-                    </div>
-                    <div class="rule-subhead">② 命中后：候选合作方必须具备的能力标签（须全部具备）</div>
-                    <div class="tag-grid" id="c2RequiredTags"></div>
-                    <div class="rule-subhead">③ 备注</div>
-                    <div class="field"><input id="c2Remark" placeholder="例如：监管参考号、配置说明"></div>
-                    <div class="c2-preview" id="c2RegPreview" aria-live="polite"></div>
-                    <div class="err" id="c2RegError"></div>
-                    <div class="good" id="c2RegGood"></div>
-                    <div class="actionrow">
-                        <button class="btn secondary" onclick="c2CopyJson()">复制规则 JSON</button>
-                        <button class="btn" onclick="c2SaveRegulatory()">保存监管规则</button>
-                    </div>
+                    <div class="field"><label for="filterStatus">状态</label><select id="filterStatus">
+                        <option value="">全部状态</option>
+                        <option value="true">启用</option>
+                        <option value="false">停用</option>
+                    </select></div>
+                    <div class="field"><label for="filterTrigger">附加触发条件</label><select id="filterTrigger">
+                        <option value="">全部规则</option>
+                        <option value="with">有附加条件</option>
+                        <option value="without">无附加条件</option>
+                        <option value="stale">附加条件已失效</option>
+                    </select></div>
+                    <button class="btn" id="query">查询</button>
                 </div>
+                <div class="tablewrap" style="margin-top:16px">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>规则编码 / 名称</th>
+                            <th>适用范围（币种 + 受益行国家）</th>
+                            <th>附加触发条件</th>
+                            <th>必需能力标签</th>
+                            <th>有效期（HKT）</th>
+                            <th>状态</th>
+                            <th>版本</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="rows"></tbody>
+                    </table>
+                </div>
+                <div class="err" id="pageError" role="alert"></div>
+                <div class="good" id="pageNote" role="status"></div>
             </div>
             <div class="footer">HSG RELAY · 全局监管路由规则 · 非生产环境</div>
         </div>
     </main>
 </div>
+<script src="/c2-regulatory-common.js"></script>
 <script src="/c2-regulatory.js"></script>
 </body>
 </html>

@@ -1,12 +1,132 @@
-/* 全局监管路由规则（/c2-regulatory.html）。须在 hsg-style.css 之后引入。 */
+/* 监管路由规则：列表（/c2-regulatory.html）与新增 / 编辑（/c2-regulatory-edit.html）两个页面共用。
+   须在 hsg-style.css 之后引入。 */
+
+/* ---- 两个页面共用的排版 ---- */
+.page-intro {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap
+}
+
+.pageerror {
+    font-size: 13px;
+    padding: 12px 0 4px
+}
+
+/* 窄屏下侧边栏隐藏，改在标题上方给出返回 / 相邻页面的入口 */
+.toplinks {
+    display: none
+}
+
+/* 链接做成按钮样式时，去掉全局 a 的右外边距 */
+a.btn {
+    display: inline-block;
+    margin: 0
+}
 
 .rulebar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 12px
+    margin-bottom: 15px
+}
+
+.mono {
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-word
+}
+
+/* ---- 列表页：汇总卡片、筛选、表格 ---- */
+.summarycards {
+    display: grid;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px
+}
+
+.metric {
+    background: white;
+    border: 1px solid #e5eaf2;
+    border-radius: 10px;
+    padding: 16px
+}
+
+.metric b {
+    font-size: 24px;
+    display: block;
+    margin: 6px 0
+}
+
+.metric span {
+    font-size: 12px;
+    color: #748298
+}
+
+.filterbar {
+    display: grid;
+    grid-template-columns:1.6fr 1fr 1fr 1.2fr auto;
+    gap: 12px;
+    align-items: end
+}
+
+.tablewrap {
+    max-height: 560px
+}
+
+/* 名称、附加触发条件、能力标签这几列内容较长，在列内换行 */
+#rows td {
+    vertical-align: top
+}
+
+#rows .wrap {
+    min-width: 220px;
+    white-space: normal
+}
+
+#rows .tags-cell {
+    min-width: 150px;
+    white-space: normal
+}
+
+/* 操作列：「编辑」是链接、「停用」「删除」是按钮，统一按小按钮显示；间距沿用全局链接的 9px */
+.nowrap {
+    white-space: nowrap
+}
+
+.nowrap .btn {
+    display: inline-flex;
+    align-items: center
+}
+
+.nowrap .btn:not(:last-child) {
+    margin-right: 9px
+}
+
+/* 能力标签 */
+.tagchip {
+    display: inline-block;
+    margin: 1px 4px 1px 0;
+    padding: 2px 6px;
+    border: 1px solid #cfe0f6;
+    border-radius: 4px;
+    background: #f3f8ff;
+    color: #2a5d9f;
+    font: 700 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace
+}
+
+/* ---- 新增 / 编辑页：左表单、右侧预览与说明 ---- */
+.rule-grid {
+    display: grid;
+    grid-template-columns:minmax(0, 1fr) 330px;
+    gap: 18px
+}
+
+.rule-grid > section, .rule-grid > aside {
+    min-width: 0
 }
 
 .rule-subhead {
@@ -18,42 +138,8 @@
 .fieldhint {
     margin-top: 5px;
     color: #748298;
-    font-size: 11px
-}
-
-/* 表单底部的规则预览：用一句话复述当前配置 */
-.c2-preview {
-    margin-top: 16px;
-    padding: 11px 13px;
-    border-left: 3px solid #3370bd;
-    border-radius: 0 7px 7px 0;
-    background: #f2f7ff;
-    color: #35629e;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.8
-}
-
-.c2-preview b {
-    color: #172844
-}
-
-.c2-warn {
-    color: #bf730e;
-    font-weight: 700
-}
-
-/* 旧版条件树提示：该规则仍按原自由条件执行，重新保存后转为「币种 + 受益行国家」 */
-.c2-legacy {
-    margin-bottom: 8px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    background: #fff6e9;
-    color: #9e6c28
-}
-
-.mono {
-    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    word-break: break-word
 }
 
 .tag-grid {
@@ -62,6 +148,7 @@
     flex-wrap: wrap
 }
 
+/* 能力标签的勾选项，也用作「启用附加触发条件」的开关 */
 .tagcheck {
     padding: 8px 10px;
     border: 1px solid #d6e2f1;
@@ -87,63 +174,118 @@
     width: 15px;
     height: 15px;
     min-height: auto;
+    margin: 0;
     padding: 0
 }
 
-/* 列表里的能力标签 */
-.tagchip {
-    display: inline-block;
-    margin: 1px 4px 1px 0;
-    padding: 2px 6px;
-    border: 1px solid #cfe0f6;
-    border-radius: 4px;
-    background: #f3f8ff;
-    color: #2a5d9f;
-    font: 700 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace
+/* 右侧的规则预览：用几句话复述当前配置 */
+.c2-preview {
+    padding: 11px 13px;
+    border-left: 3px solid #3370bd;
+    border-radius: 0 7px 7px 0;
+    background: #f2f7ff;
+    color: #35629e;
+    font-size: 12px;
+    line-height: 1.8
 }
 
-#c2RegRows td {
-    vertical-align: top
+.c2-preview > div + div {
+    margin-top: 6px
 }
 
-#c2RegRows .tags-cell {
-    min-width: 150px;
-    white-space: normal
+.c2-preview b {
+    color: #172844
 }
 
-/* 列表名称下方的附加触发条件标识（条件本身在 C2 模拟页配置）；条件较长时在名称列内换行，标识和链接不拆行 */
-.c2-trigger {
-    margin-top: 4px;
-    font-size: 11px;
-    white-space: normal
+.c2-warn {
+    color: #bf730e;
+    font-weight: 700
 }
 
-.c2-trigger .badge, .c2-trigger a, .c2-trigger-line a {
-    white-space: nowrap
+/* ---- 附加触发条件：按字段库构建的条件树（嵌套条件组） ---- */
+.c2-group {
+    border: 1px solid #cad9ec;
+    border-radius: 9px;
+    padding: 14px;
+    margin: 12px 0;
+    background: #f8fbff
 }
 
-.c2-trigger-line {
-    margin-bottom: 8px
+.c2-group .c2-group {
+    margin-left: 16px;
+    background: #fff
 }
 
-/* 当前载入表单的那条规则 */
-.row-selected td {
-    background: #edf5ff
-}
-
-.actionrow {
+.c2-head, .c2-line {
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 14px
+    align-items: center;
+    margin: 8px 0;
+    flex-wrap: wrap
 }
 
-#c2RegForm {
-    scroll-margin-top: 20px
+.c2-head strong {
+    flex: 1
 }
 
-@media (max-width: 760px) {
-    .rulebar {
-        align-items: flex-start
+.c2-head select {
+    width: 190px
+}
+
+.c2-line select:first-child {
+    flex: 2;
+    min-width: 150px
+}
+
+.c2-line select:nth-child(2) {
+    flex: 1;
+    min-width: 100px
+}
+
+.c2-line input, .c2-line select:nth-child(3) {
+    flex: 1.5;
+    min-width: 120px
+}
+
+/* 同一组里各条条件之间的 AND / OR */
+.c2-join {
+    font-size: 12px;
+    font-weight: 700;
+    color: #2763ad;
+    margin-left: 16px
+}
+
+#triggerStatus {
+    white-space: pre-wrap
+}
+
+@media (max-width: 1250px) {
+    .rule-grid {
+        grid-template-columns:minmax(0, 1fr)
+    }
+}
+
+@media (max-width: 850px) {
+    .toplinks {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px
+    }
+
+    .summarycards {
+        grid-template-columns:repeat(2, minmax(0, 1fr))
+    }
+
+    .filterbar {
+        grid-template-columns:1fr 1fr
+    }
+
+    /* 窄屏下列表的标题会折行：各行长度均衡，按钮被挤到下一行时靠右 */
+    .rulebar h2 {
+        text-wrap: balance
+    }
+
+    .rulebar > :last-child {
+        margin-left: auto
     }
 }

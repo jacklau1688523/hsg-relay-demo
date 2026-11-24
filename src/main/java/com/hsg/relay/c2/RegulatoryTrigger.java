@@ -57,7 +57,7 @@ final class RegulatoryTrigger {
         if (tree == null) return new Outcome(true, null, null);
         String problem = problem(tree, expressions);
         if (problem != null)
-            return new Outcome(true, null, "附加触发条件已失效（" + problem + "），按触发处理；请在 C2 模拟页核对后重新保存");
+            return new Outcome(true, null, "附加触发条件已失效（" + problem + "），按触发处理；请在「监管路由规则」页核对后重新保存");
         List<String> missing = expressions.referencedFields(tree).stream()
                 .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
         if (!missing.isEmpty())

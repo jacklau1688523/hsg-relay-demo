@@ -32,7 +32,13 @@ class C2RegulatoryRuleTest {
     private static C2Service.RegulatoryInput input(String id, String currency, String country) {
         return new C2Service.RegulatoryInput(id, "测试监管规则 " + id, "C2", "GLOBAL", currency, country,
                 new C2Service.Requirement("PROVIDER_CAPABILITY", List.of("SWIFT")),
-                new C2Service.FailureAction("REG_RULE_NOT_MET"), true, null, LocalDateTime.of(2026, 1, 1, 0, 0), null, null);
+                new C2Service.FailureAction("REG_RULE_NOT_MET"), true, null, LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null);
+    }
+
+    /** 同一条规则请求，带上一并提交的附加触发条件（新增 / 编辑页的保存方式）。 */
+    private static C2Service.RegulatoryInput withTrigger(C2Service.RegulatoryInput in, C2Service.TriggerInput trigger) {
+        return new C2Service.RegulatoryInput(in.ruleId(), in.ruleName(), in.ruleCode(), in.scope(), in.currency(), in.bankCountry(),
+                in.requirement(), in.onFailure(), in.enabled(), in.versionNo(), in.effectiveFrom(), in.effectiveTo(), in.remark(), trigger);
     }
 
     private static C2Service.Simulation payment(String provider, String currency, String country, String purpose) {
@@ -242,7 +248,7 @@ class C2RegulatoryRuleTest {
         C2Service.RegulatoryCheck disabled = check(c2.simulate(payment("PROV-W", "USD", "US", null, noMatch)), "REG-T7");
         assertTrue(disabled.triggered());
         assertNull(disabled.triggerExpression());
-        assertEquals("附加触发条件已失效（字段 c2TestScore 不适用于当前规则或不支持该操作符），按触发处理；请在 C2 模拟页核对后重新保存",
+        assertEquals("附加触发条件已失效（字段 c2TestScore 不适用于当前规则或不支持该操作符），按触发处理；请在「监管路由规则」页核对后重新保存",
                 disabled.note());
         assertEquals("字段 c2TestScore 不适用于当前规则或不支持该操作符", rule("REG-T7").triggerProblem());
         // 失效的条件不求值，所以没有取值时同样按触发处理
@@ -364,6 +370,62 @@ class C2RegulatoryRuleTest {
         // 每次变更都留审计
         assertEquals(List.of("CREATE", "UPDATE_CONDITION", "UPDATE", "DISABLE", "ENABLE", "UPDATE_CONDITION"),
                 audits.findAll().stream().filter(a -> "REG-TB".equals(a.objectId)).sorted(Comparator.comparing(a -> a.id))
+                        .map(a -> a.operation).toList());
+    }
+
+    @Test
+    void ruleAndTriggerConditionAreSavedInOneRequest() {
+        createVariableFields();
+        C2Service.TriggerInput purpose = new C2Service.TriggerInput(true, group("AND", leaf("purpose", "EQ", "INVESTMENT")));
+        // 新增 / 编辑页一次提交范围、标签和附加触发条件：一次保存、一个版本、一条审计
+        C2Service.RegulatoryView created = c2.saveRegulatory(withTrigger(input("REG-TC", "USD", "ALL"), purpose));
+        assertEquals(1, created.versionNo());
+        assertEquals("(purpose = INVESTMENT)", created.triggerText());
+        assertTrue(check(c2.simulate(payment("PROV-W", "USD", "US", "INVESTMENT")), "REG-TC").triggered());
+        assertFalse(check(c2.simulate(payment("PROV-W", "USD", "US", "GOODS")), "REG-TC").triggered());
+
+        // 不带 trigger 的保存（接口调用、只改范围 / 标签）：已保存的附加触发条件保持不变
+        C2Service.RegulatoryView resaved = c2.saveRegulatory(input("REG-TC", "EUR", "DE"));
+        assertEquals("(purpose = INVESTMENT)", resaved.triggerText());
+        assertEquals(2, resaved.versionNo());
+
+        // 带 trigger：随规则一起替换；enabled 缺省按保存处理
+        C2Service.RegulatoryView replaced = c2.saveRegulatory(withTrigger(input("REG-TC", "EUR", "ALL"),
+                new C2Service.TriggerInput(null, group("AND", leaf("c2TestFlag", "EQ", "true")))));
+        assertEquals("(c2TestFlag = true)", replaced.triggerText());
+        assertEquals("ALL", replaced.bankCountry());
+        assertEquals(3, replaced.versionNo());
+
+        // 附加触发条件不合法：范围、标签、版本和原有附加条件都不保存
+        var invalid = assertThrows(IllegalArgumentException.class, () -> c2.saveRegulatory(withTrigger(input("REG-TC", "HKD", "SG"),
+                new C2Service.TriggerInput(true, group("AND", leaf("c2TestFlag", "EQ", "YES"))))));
+        assertEquals("布尔值只能为 true 或 false", invalid.getMessage());
+        var noTree = assertThrows(IllegalArgumentException.class,
+                () -> c2.saveRegulatory(withTrigger(input("REG-TC", "HKD", "SG"), new C2Service.TriggerInput(true, null))));
+        assertEquals("条件树不能为空", noTree.getMessage());
+        C2Service.RegulatoryView untouched = rule("REG-TC");
+        assertEquals("EUR", untouched.currency());
+        assertEquals("ALL", untouched.bankCountry());
+        assertEquals("(c2TestFlag = true)", untouched.triggerText());
+        assertEquals(3, untouched.versionNo());
+
+        // 版本过期：带上 trigger 也一样被拒绝
+        C2Service.RegulatoryInput staleInput = new C2Service.RegulatoryInput("REG-TC", "测试监管规则 REG-TC", "C2", "GLOBAL", "HKD", "SG",
+                new C2Service.Requirement("PROVIDER_CAPABILITY", List.of("SWIFT")),
+                new C2Service.FailureAction("REG_RULE_NOT_MET"), true, 1, LocalDateTime.of(2026, 1, 1, 0, 0), null, null, null);
+        var stale = assertThrows(IllegalArgumentException.class, () -> c2.saveRegulatory(withTrigger(staleInput, purpose)));
+        assertEquals("规则版本已变化，请刷新后重试", stale.getMessage());
+
+        // enabled=false 清除：清除后交易只要落在范围内即触发
+        C2Service.RegulatoryView cleared = c2.saveRegulatory(withTrigger(input("REG-TC", "EUR", "ALL"),
+                new C2Service.TriggerInput(false, null)));
+        assertNull(cleared.triggerCondition());
+        assertEquals(4, cleared.versionNo());
+        assertTrue(check(c2.simulate(payment("PROV-W", "EUR", "DE", null)), "REG-TC").triggered());
+
+        // 每次保存一条审计（附加触发条件随规则一起保存，不单独记 UPDATE_CONDITION）
+        assertEquals(List.of("CREATE", "UPDATE", "UPDATE", "UPDATE"),
+                audits.findAll().stream().filter(a -> "REG-TC".equals(a.objectId)).sorted(Comparator.comparing(a -> a.id))
                         .map(a -> a.operation).toList());
     }
 }

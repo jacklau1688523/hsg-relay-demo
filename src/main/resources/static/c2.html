@@ -6,74 +6,11 @@
     <title>HSG RELAY | C2 制裁及监管限制</title>
     <link rel="stylesheet" href="/hsg-style.css">
     <style>
-        .c2-flex {
-            display: grid;
-            grid-template-columns:minmax(0, 1fr) 370px;
-            gap: 18px;
-            align-items: start
-        }
-
-        /* ① 触发条件：按字段库构建 */
-        .c2-group {
-            border: 1px solid #cad9ec;
-            border-radius: 9px;
-            padding: 14px;
-            margin: 12px 0;
-            background: #f8fbff
-        }
-
-        .c2-group .c2-group {
-            margin-left: 16px;
-            background: #fff
-        }
-
-        .c2-head, .c2-line {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin: 8px 0;
-            flex-wrap: wrap
-        }
-
-        .c2-head strong {
-            flex: 1
-        }
-
-        .c2-head select {
-            width: 190px
-        }
-
-        .c2-line select:first-child {
-            flex: 2;
-            min-width: 150px
-        }
-
-        .c2-line select:nth-child(2) {
-            flex: 1;
-            min-width: 100px
-        }
-
-        .c2-line input, .c2-line select:nth-child(3) {
-            flex: 1.5;
-            min-width: 120px
-        }
-
-        .c2-join {
-            font-size: 12px;
-            font-weight: 700;
-            color: #2763ad;
-            margin-left: 16px
-        }
-
-        .fieldhint {
-            margin-top: 6px;
-            color: #748298;
-            font-size: 11px;
-            line-height: 1.8
-        }
-
-        .fieldhint a {
-            white-space: nowrap
+        /* 左侧模拟结果、右侧模拟表单（.grid）；窄屏下合成一列时表单排到最前 */
+        @media (max-width: 1250px) {
+            .grid > .rightPanel {
+                order: -1
+            }
         }
 
         /* 模拟结果里附加触发条件缺值 / 失效时的处理说明 */
@@ -94,12 +31,6 @@
 
         #c2SimVariables:empty {
             display: none
-        }
-
-        @media (max-width: 1250px) {
-            .c2-flex {
-                grid-template-columns:1fr
-            }
         }
     </style>
 </head>
@@ -134,42 +65,22 @@
         </div>
         <div class="content">
             <div class="heading"><h1>C2 制裁及监管限制模拟</h1>
-                <div class="muted">合作方限制在合作方详情页维护；全局监管路由规则的「币种 + 受益行国家」和能力标签在「监管路由规则」页配置，附加触发条件在左侧按字段库构建。这里模拟
-                    C2 判定：交易落在规则范围内且满足附加触发条件时规则触发，候选合作方缺少要求能力标签即返回 REG_RULE_NOT_MET。
+                <div class="muted">合作方限制在合作方详情页维护；全局监管路由规则（适用范围、必需能力标签和附加触发条件）在「监管路由规则」页维护，这里只做模拟。交易落在规则适用范围内且满足附加触发条件时规则触发，候选合作方缺少要求的能力标签即返回
+                    REG_RULE_NOT_MET。
                 </div>
             </div>
-            <div class="c2-flex">
+            <div class="grid">
                 <section class="panel">
-                    <div class="rowbetween">
-                        <div><h2>① 触发条件：按字段库构建</h2>
-                            <div class="muted">为选中的监管路由规则配置附加触发条件，支持嵌套 AND / OR。字段、运算符和可选值读元数据中心（已启用且适用规则含
-                                C2 的字段）。
-                            </div>
-                        </div>
-                        <button type="button" class="btn secondary" onclick="c2RefreshLibrary()" style="white-space:nowrap"
-                                title="重新读取监管路由规则和元数据中心的 C2 字段（新增、停用字段或调整可选值后使用）；编辑中的条件会保留">↻
-                            刷新规则 / 字段库
-                        </button>
-                    </div>
-                    <div class="field section"><label>监管路由规则</label><select id="c2TriggerRule" onchange="c2SelectTriggerRule()"
-                                                                                    aria-label="监管路由规则"></select>
-                        <div class="fieldhint" id="c2TriggerScope"></div>
-                    </div>
-                    <div id="c2TriggerTree"></div>
-                    <button type="button" class="btn secondary tiny" onclick="c2CompileTrigger()">校验并生成表达式</button>
-                    <div id="c2TriggerCompiled" class="code" style="margin-top:10px">点击校验查看表达式</div>
-                    <div id="c2TriggerError" class="err"></div>
-                    <div id="c2TriggerGood" class="good"></div>
-                    <div class="actions" style="justify-content:flex-end;margin-top:22px">
-                        <button id="c2TriggerClear" type="button" class="btn secondary" onclick="c2ClearTrigger()">清除附加条件</button>
-                        <button id="c2TriggerSave" type="button" class="btn" onclick="c2SaveTrigger()">保存条件至规则</button>
+                    <div class="ptitle">模拟结果 ⓘ</div>
+                    <div id="c2SimResult" class="notice">选择合作方并填写交易字段，点击「执行 C2
+                        校验」。此处返回失败原因码、命中记录及监管标签检查过程。
                     </div>
                 </section>
                 <aside class="rightPanel">
                     <div class="panel">
                         <div class="ptitle">C2 规则模拟校验 ⓘ</div>
                         <div class="field section"><label>候选合作方 *</label><select id="c2SimProvider"
-                                                                                       onchange="c2SyncSimCapabilities()"></select>
+                                                                                        onchange="c2SyncSimCapabilities()"></select>
                         </div>
                         <div class="layout2">
                             <div class="field"><label>交易币种 *</label><select id="c2SimPaymentCurrency"></select>
@@ -195,11 +106,6 @@
                         <div class="notice">该合作方的能力标签：<b id="c2SimTags">—</b></div>
                         <button class="btn" style="width:100%;margin-top:14px" onclick="c2Simulate()">▶ 执行 C2 校验
                         </button>
-                    </div>
-                    <div class="panel">
-                        <div id="c2SimResult" class="notice">选择合作方并填写交易字段，点击「执行 C2
-                            校验」。此处返回失败原因码、命中记录及监管标签检查过程。
-                        </div>
                     </div>
                 </aside>
             </div>
