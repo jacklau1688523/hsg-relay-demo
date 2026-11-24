@@ -753,6 +753,9 @@
         providers = await api('/providers');
         clients = await api('/clients');
         $('filterProvider').innerHTML = '<option value="">全部</option>' + providerSelect();
+        // 从合作方详情「前往维护」进入时带 ?provider=合作方编码：直接按该合作方筛选
+        const provider = new URLSearchParams(location.search).get('provider');
+        if (providers.some(p => p.code === provider)) $('filterProvider').value = provider;
         $('simProvider').innerHTML = providerSelect('PROV-HO');
         $('simClient').innerHTML = clients.map(c => `<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');
         $('simClient').onchange = syncClient;

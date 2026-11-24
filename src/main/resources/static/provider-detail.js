@@ -1,10 +1,10 @@
 'use strict';
-// 合作方详情：/provider-detail.html?code=合作方编码[&tab=related|restrictions|audit]
-// 只读展示，数据来自 /api/provider-management/{code}；写操作在独立的编辑页 /provider-edit.html 完成。
+// 合作方详情：/provider-detail.html?code=合作方编码[&tab=appetites|related|restrictions|audit]
+// 只读展示，数据来自 /api/provider-management/{code}；写操作在独立的编辑页 /provider-edit.html 和 C1 业务准入页完成。
 const state = {view: null, tags: [], tab: 'base', request: 0};
 const params = new URLSearchParams(location.search);
 const code = params.get('code');
-const TABS = ['base', 'related', 'restrictions', 'audit'];
+const TABS = ['base', 'appetites', 'related', 'restrictions', 'audit'];
 
 // 打开独立编辑页；带 tab 时直接切到对应页签
 function editHref(tab) {
@@ -76,6 +76,23 @@ function renderBase(v) {
         + `<div class="notice">监管条件命中时，合作方必须具备规则要求的全部标签。优先级仅在总分、成本和起息日相同时参与排序；状态、资金开关、通道及优先级在下次路由试算生效。</div>`;
 }
 
+// 准入规则配置：列与 C1 页「准入规则配置」列表相同，只显示本合作方的规则。只读，维护入口是右上角的「前往维护」
+function renderAppetites(rows) {
+    const when = text => String(text ?? '').replace('T', ' ').slice(0, 16) || '—';
+    const on = rows.filter(a => a.enabled).length;
+    const list = rows.length ? rows.map(a => `<tr class="appetite"><td>#${esc(a.id)}</td><td>${esc(a.flowCategory)}</td><td>${esc(a.currency)}</td><td>${esc(a.bankCountry)}</td>`
+        + `<td><span class="badge ${esc(a.action)}">${esc(a.action)}</span></td><td>${a.monthlyCapUsd == null ? '—' : esc(Number(a.monthlyCapUsd).toLocaleString('en-US'))}</td>`
+        + `<td>${esc(when(a.effectiveFrom))}</td><td>${a.enabled ? '<span class="badge pass">启用</span>' : '<span class="badge pending">停用</span>'}</td></tr>`
+        + `<tr class="appetite-more"><td colspan="8">${esc(`失效时间 ${when(a.effectiveTo)} · 证据文档号 ${a.evidenceDocNo ?? '—'} · 下次复核 ${a.nextReviewDate ?? '—'} · 版本 ${a.versionNo ?? '—'} · 备注 ${a.remark || '—'}`)}</td></tr>`).join('')
+        : '<tr><td colspan="8">该合作方暂无准入规则。</td></tr>';
+    $('appetitesView').innerHTML = `<div class="rulebar"><div class="ptitle" style="margin:0">${esc(code)} · 准入规则配置 · ${rows.length} 条${rows.length ? `（启用 ${on} · 停用 ${rows.length - on}）` : ''}</div>`
+        + `<a class="btn secondary tiny" href="/?provider=${encodeURIComponent(code)}">前往维护 ↗</a></div>`
+        + `<div class="tablewrap"><table><thead><tr><th>规则ID</th><th>流转类别</th><th>币种</th><th>受益行国家</th><th>准入方式</th><th>月度上限 USD</th><th>生效时间</th><th>状态</th></tr></thead>`
+        + `<tbody>${list}</tbody></table></div>`
+        + `<div class="notice">准入规则按「流转类别 + 币种 + 受益行国家」配置，币种、国家为 ALL 时匹配全部。C1 校验对客户的每个流转类别取当前生效、匹配最具体的一条规则，没有命中的流转类别默认拒绝；EXCLUDE 直接拒绝，CASE_BY_CASE 须有有效的个案审批，设置了月度上限的 ACCEPT 规则按香港当月的 MTD 累计校验。相同范围且生效期重叠的规则不能同时启用。</div>`
+        + `<div class="notice">「启用 / 停用」是规则开关；是否当前生效还取决于生效时间和失效时间（HKT）。上线准备检查中的「业务准入」要求至少一条当前生效的准入行。</div>`;
+}
+
 function renderRelated(d) {
     $('relatedView').innerHTML = `<div class="notice">以下为当前已保存配置。修改配置后可刷新本页重新检查上线条件；最终候选仍须通过完整 C1–C10 校验。</div>`
         + section(`C1 业务准入 · ${d.appetites.length} 条`, '/', table(
@@ -117,18 +134,27 @@ function renderAudit(data) {
         : '<div class="notice">暂无合作方基础信息或能力标签变更记录。</div>';
 }
 
-async function activate(tab) {
+// 各页签的数据来源：准入规则、合作方限制取列表后按合作方筛选；关联配置、变更记录取合作方管理的聚合接口
+const LOAD = {
+    appetites: () => api(`/appetites?providerCode=${encodeURIComponent(code)}`),
+    related: () => api(`/provider-management/${encodeURIComponent(code)}/related`),
+    restrictions: async () => (await api('/c2/restrictions')).filter(r => r.providerCode === code),
+    audit: () => api(`/provider-management/${encodeURIComponent(code)}/audit`)
+};
+const RENDER = {appetites: renderAppetites, related: renderRelated, restrictions: renderRestrictions, audit: renderAudit};
+
+// silent：重读期间保留已显示的内容，不先换成「正在加载…」
+async function activate(tab, silent = false) {
     state.tab = tab;
     document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('sel', b.dataset.tab === tab));
     for (const id of TABS) $(id + 'View').classList.toggle('hidden', id !== tab);
     if (tab === 'base') return;
     const container = $(tab + 'View'), token = ++state.request;
-    container.innerHTML = '<p class="muted">正在加载…</p>';
+    if (!silent) container.innerHTML = '<p class="muted">正在加载…</p>';
     try {
-        const data = tab === 'restrictions' ? (await api('/c2/restrictions')).filter(r => r.providerCode === code)
-            : await api(`/provider-management/${encodeURIComponent(code)}/${tab === 'related' ? 'related' : 'audit'}`);
+        const data = await LOAD[tab]();
         if (token !== state.request) return;
-        ({related: renderRelated, restrictions: renderRestrictions, audit: renderAudit})[tab](data);
+        RENDER[tab](data);
     } catch (e) {
         if (token === state.request) container.innerHTML = `<p class="err">${esc(e.message)}</p>`;
     }
@@ -148,15 +174,16 @@ async function load() {
     $('simulate').href = `/routing.html?includeProvider=${encodeURIComponent(code)}`;
 }
 
-async function show() {
+// quiet：不显示「正在加载…」，用于浏览器「后退」恢复页面时的静默重读
+async function show(quiet = false) {
     $('pageError').textContent = '';
-    $('loading').hidden = false;
+    if (!quiet) $('loading').hidden = false;
     try {
         await load();
         $('loading').hidden = true;
         $('detail').classList.remove('hidden');
         for (const id of ['edit', 'simulate']) $(id).style.display = '';
-        await activate(state.tab);
+        await activate(state.tab, quiet);
     } catch (e) {
         $('loading').hidden = true;
         $('detail').classList.add('hidden');
@@ -170,4 +197,9 @@ $('refresh').onclick = () => show();
 const initial = params.get('tab');
 state.tab = TABS.includes(initial) ? initial : 'base';
 reloadIfChangedSinceLoad();
+// 浏览器「后退」回到本页（如到 C1 业务准入页维护后返回）时，页面来自往返缓存、脚本不会重新执行，看到的还是离开时的数据：
+// 静默重读一次，让概要、上线准备检查和当前页签都回到最新。编辑页保存后的整页刷新仍由上面的 reloadIfChangedSinceLoad 负责。
+window.addEventListener('pageshow', e => {
+    if (e.persisted) show(true);
+});
 show();
