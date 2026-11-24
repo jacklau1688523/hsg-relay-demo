@@ -69,7 +69,7 @@ function reviewText(date, owner) {
 
 // ---- 浏览器「后退」时的数据新鲜度 ----
 // 列表 / 详情页从往返缓存（bfcache）恢复时脚本不会重新执行，页面还是离开时的旧数据。
-// 编辑页每次写入成功后记下时间（markChanged）；列表 / 详情页恢复时若发现期间有过写入就整页刷新。
+// 编辑页每次写入成功后（以及列表页删除成功后）记下时间（markChanged）；列表 / 详情页恢复时若发现期间有过写入就整页刷新。
 // 正常打开的页面数据本就是新的，不受影响，列表页的筛选条件也能保留。
 const CHANGED_AT_KEY = 'providerChangedAt';
 
@@ -81,8 +81,9 @@ function markChanged() {
     }
 }
 
+// 返回 markReloaded()：页面原地重新读取数据后调用，之后的「后退」恢复不再因这次读取之前的写入而整页刷新
 function reloadIfChangedSinceLoad() {
-    const loadedAt = Date.now();
+    let loadedAt = Date.now();
     window.addEventListener('pageshow', e => {
         let changedAt = 0;
         try {
@@ -92,4 +93,7 @@ function reloadIfChangedSinceLoad() {
         }
         if (e.persisted && changedAt > loadedAt) location.reload();
     });
+    return () => {
+        loadedAt = Date.now();
+    };
 }

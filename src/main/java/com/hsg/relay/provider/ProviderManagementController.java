@@ -36,6 +36,17 @@ public class ProviderManagementController {
         return service.update(code, in);
     }
 
+    @GetMapping("/{code}/impact")
+    public ProviderManagementService.Impact impact(@PathVariable String code) {
+        return service.impact(code);
+    }
+
+    @DeleteMapping("/{code}")
+    public Map<String, Object> delete(@PathVariable String code, @RequestParam(required = false) Long version) {
+        service.delete(code, version);
+        return Map.of("code", code, "deleted", true);
+    }
+
     @GetMapping("/{code}/related")
     public ProviderManagementService.Related related(@PathVariable String code) {
         return service.related(code);

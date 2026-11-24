@@ -47,13 +47,13 @@
             white-space: nowrap
         }
 
-        /* 操作列：「详情」「编辑」是两个链接，按小按钮显示，间距沿用全局链接的 9px */
-        .nowrap a.btn {
+        /* 操作列：「详情」「编辑」是链接、「删除」是按钮，统一按小按钮显示；间距沿用全局链接的 9px */
+        .nowrap .btn {
             display: inline-flex;
             align-items: center
         }
 
-        .nowrap a.btn:not(:last-child) {
+        .nowrap .btn:not(:last-child) {
             margin-right: 9px
         }
 
@@ -144,6 +144,7 @@
                     </table>
                 </div>
                 <div class="err" id="pageError" role="alert"></div>
+                <div class="good" id="pageNote" role="status"></div>
             </div>
             <div class="footer">HSG RELAY · 合作方管理 · 非生产环境</div>
         </div>

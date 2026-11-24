@@ -10,6 +10,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.*;
 import java.util.*;
+import java.util.function.Function;
+
+import static com.hsg.relay.routing.RoutingConfig.*;
 
 @Service
 public class ProviderManagementService {
@@ -19,17 +22,24 @@ public class ProviderManagementService {
     private final C2Service c2;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
+    private final ProviderRestrictionRepository restrictions;
+    private final ProviderCapabilityRepository capabilities;
+    private final ProviderUsageRepository usages;
     private static final ZoneId HK = ZoneId.of("Asia/Hong_Kong");
     private static final Set<String> TYPES = Set.of("TIER1_BANK", "OTHER_BANK", "HEAD_OFFICE", "FINTECH", "NETWORK");
     private static final Set<String> CHANNELS = Set.of("SWIFT", "API", "FILE", "MANUAL", "BOOK");
 
-    public ProviderManagementService(ProviderRepository p, AppetiteRepository a, RoutingService r, C2Service c, RuleAuditRepository au, ObjectMapper j) {
+    public ProviderManagementService(ProviderRepository p, AppetiteRepository a, RoutingService r, C2Service c, RuleAuditRepository au, ObjectMapper j,
+                                     ProviderRestrictionRepository rs, ProviderCapabilityRepository cp, ProviderUsageRepository u) {
         providers = p;
         appetites = a;
         routing = r;
         c2 = c;
         audit = au;
         json = j;
+        restrictions = rs;
+        capabilities = cp;
+        usages = u;
     }
 
     public record Check(String key, String label, boolean passed, String detail) {
@@ -48,6 +58,16 @@ public class ProviderManagementService {
 
     public record Related(List<RoutingConfig.Reach> reaches, List<RoutingConfig.Fee> fees, List<Appetite> appetites,
                           List<ProviderRestriction> restrictions, List<RoutingConfig.FxWindow> fxWindows) {
+    }
+
+    // 删除合作方时一并移除的各行数量：能力标签、准入、合作方限制、MTD 记录，以及路由配置里的六类行
+    public record Impact(long capabilities, long appetites, long restrictions, long usages, long reaches, long balances,
+                         long fees, long fxWindows, long preferences, long agreements) {
+    }
+
+    // 删除审计的快照：合作方（含能力标签）加上随它删除的数据库行；路由配置的增删由配置文档自己的审计记录
+    private record Snapshot(View provider, List<Appetite> appetites, List<ProviderRestriction> restrictions,
+                            List<ProviderUsage> usages) {
     }
 
     private Provider find(String code) {
@@ -165,6 +185,62 @@ public class ProviderManagementService {
         View after = view(p);
         audit.save(new RuleAudit("PROVIDER", p.code, previous == null ? "CREATE" : "UPDATE", "demo.operator", before, encode(after)));
         return after;
+    }
+
+    public Impact impact(String code) {
+        find(code);
+        var c = routing.config().config();
+        var rest = without(c, code);
+        return new Impact(capabilities.findByProviderCode(code).size(), appetites.findByProviderCode(code).size(),
+                restrictions.findByProviderCode(code).size(), usages.findByProviderCode(code).size(),
+                c.reaches().size() - rest.reaches().size(), c.balances().size() - rest.balances().size(),
+                c.fees().size() - rest.fees().size(), c.fxWindows().size() - rest.fxWindows().size(),
+                c.preferences().size() - rest.preferences().size(), c.agreements().size() - rest.agreements().size());
+    }
+
+    // 删除合作方及其自有配置。客户排除与个案审批是客户侧记录，保留不动：它们只在对应合作方参与路由时才会被读取。
+    @Transactional
+    public void delete(String code, Long version) {
+        Provider p = find(code);
+        if (version == null || version != p.version)
+            throw new IllegalArgumentException("合作方版本已变化，请刷新后重试");
+        // 快照须在删除前取：view() 会读取能力标签
+        Snapshot snapshot = new Snapshot(view(p), appetites.findByProviderCode(code), restrictions.findByProviderCode(code), usages.findByProviderCode(code));
+        var cfg = routing.config();
+        RoutingConfig rest = without(cfg.config(), code);
+        // 路由配置文档带整体版本号：交给 saveConfig 校验剩余配置、递增版本并记 ROUTING_CONFIG 审计
+        if (!rest.equals(cfg.config())) routing.saveConfig(new RoutingService.ConfigView(cfg.revision(), rest));
+        // 先删子表并立即生效：MySQL 下它们对合作方表有外键
+        appetites.deleteAll(snapshot.appetites());
+        appetites.flush();
+        restrictions.deleteAll(snapshot.restrictions());
+        restrictions.flush();
+        capabilities.deleteAll(capabilities.findByProviderCode(code));
+        capabilities.flush();
+        usages.deleteAll(snapshot.usages());
+        usages.flush();
+        providers.delete(p);
+        providers.flush();
+        audit.save(new RuleAudit("PROVIDER", code, "DELETE", "demo.operator", encode(snapshot), null));
+    }
+
+    // 路由配置里去掉某合作方的全部引用：覆盖、余额、手续费、外汇窗口、偏好规则、履约协议中的行，以及当日 / 当月累计的键
+    private static RoutingConfig without(RoutingConfig c, String code) {
+        return new RoutingConfig(c.hkdRates(), others(c.reaches(), code, Reach::provider), others(c.balances(), code, Balance::provider),
+                others(c.fees(), code, Fee::provider), others(c.fxWindows(), code, FxWindow::provider), others(c.preferences(), code, Preference::provider),
+                others(c.agreements(), code, Agreement::provider), c.weights(), withoutKey(c.todayUsd(), code), withoutKey(c.monthUsd(), code),
+                withoutKey(c.monthCount(), code), c.hongKongHolidays());
+    }
+
+    private static <T> List<T> others(List<T> rows, String code, Function<T, String> provider) {
+        return rows.stream().filter(r -> !code.equals(provider.apply(r))).toList();
+    }
+
+    private static <V> Map<String, V> withoutKey(Map<String, V> rows, String code) {
+        if (!rows.containsKey(code)) return rows;
+        Map<String, V> rest = new LinkedHashMap<>(rows);
+        rest.remove(code);
+        return rest;
     }
 
     public Related related(String code) {
