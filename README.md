@@ -44,8 +44,9 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - HKT 自然月 MTD 查询，C1 模拟校验，逐步骤 PASS / FAIL 和原因码
 - MTD 模拟数据页面（工具 → MTD 模拟数据）：按「合作方＋流转类别＋月份」通过 `PUT /api/usage` 覆盖月累计金额，用于演示月度上限 `APPETITE_CAP_REACHED`；无定时任务，C1 只读取香港当月记录
 - 字段库与 AND/OR 条件组 → 后端生成安全受控表达式 → AviatorScript 执行试算
-- **C1 触发条件按元数据中心字段库动态构建**：首页「① 触发条件：按字段库构建」的字段下拉读取 `GET /api/field-metadata`，列出元数据中心里已启用且适用规则含 C1 的全部字段，不再限定写死的四个字段；运算符下拉取字段的允许运算符，值下拉取可选值。在元数据中心新增、停用字段或调整适用规则后，点「↻ 刷新规则 / 字段库」即可生效，页面每次加载也会重新读取
+- **C1 触发条件按元数据中心字段库动态构建**：首页「① 触发条件：字段库 + 函数库」的字段下拉读取 `GET /api/field-metadata`，列出元数据中心里已启用且适用规则含 C1 的全部字段，不再限定写死的四个字段；运算符下拉取字段的允许运算符，值下拉取可选值。在元数据中心新增、停用字段或调整适用规则后，点「↻ 刷新规则 / 字段库」即可生效，页面每次加载也会重新读取
 - C1 模拟校验支持附加条件字段：除固定的交易要素外，模拟面板按字段库为其余 C1 字段自动生成取值控件；条件缺值或失效的规则按不命中处理并在校验过程中给出 `SKIP` 说明（见下文「附加条件的取值与不命中处理」）
+- **C1 触发条件接入函数库**：条件组里可以添加字段条件、子条件组和函数条件；「ƒ 添加函数」选择器列出可用于 C1 的业务函数（名称、编码、返回类型、参数与数据来源），选好比较方式和期望值后加入条件树。客户排除、准入匹配、个案审批、MTD 四项检查由 C1 执行器在代码里强制落实（系统必检），与条件树里有没有对应节点无关（见下文「C1 条件接入函数库」）
 - 演示模拟不会扣减 MTD
 
 ## C2 功能（本次新增）
@@ -167,6 +168,7 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 - 无匹配默认拒绝，`EXCLUDE` 禁止；CASE_BY_CASE 只检查有效审批；`ACCEPT` 有上限则查实时 MTD。
 - C1 内部遇第一失败即返回；完整 RELAY 系统应继续检查 C2/C3/C4/C6/C10，以记录候选全部失败原因。
 - 字段库表达式试算**不直接代替** C1 固定业务判断，避免 OR 绕过精确度和默认拒绝。
+- 系统必检（客户排除、准入匹配、个案审批、MTD）由执行器在代码里强制落实，条件树里有没有对应的函数节点都执行；函数条件只是把函数返回值作为一个可选条件参与比较，见下文「C1 条件接入函数库」。
 
 **附加条件的取值与不命中处理：**
 
@@ -179,6 +181,103 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 - 已保存的条件引用了当前不可用的字段时，条件编辑器会把该条件换成第一个可用字段并在表达式区提示；条件值已不在可选值中时，下拉原样列出该值并标注「已不在可选值中」，不会悄悄改成其它值。两种情况都需核对后重新保存。
 - C1–C10 Check（`/routing.html`）的表单只采集四个交易要素、不采集附加条件字段，因此引用了其它字段的准入规则在 Check 中按不命中处理（同样有 `SKIP` 说明），不会导致整笔 Check 报错。
 
+### C1 条件接入函数库（字段 / 函数 / 条件组）
+
+C1 准入规则的附加条件树（`relay_appetite.condition_json`）支持三类节点：函数库的业务函数既可以作为条件节点直接比较返回值，也可以绑定为字段的取值来源。C1 自身的判断口径不变（客户分类须 COMPLETE、排除优先于准入、
+流转类别无类别按 STANDARD、四级精确度匹配、`APPETITE_EXCLUDED` / `APPETITE_APPROVAL_MISSING` / `APPETITE_CAP_REACHED`、所有流转类别都须通过）。
+
+**条件树节点：**
+
+- 条件组 `{type:"GROUP",logic:"AND"|"OR",children:[…]}`：最多 6 层、每组 20 项。
+- 字段条件 `{type:"FIELD",field,operator,value}`：与原有叶子相同；绑定了函数的字段取值来自函数（见下文「字段 ↔ 函数绑定」）。
+- 函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`：函数返回值与期望值比较，`arguments` 是参数编码到取值说明的对象。
+- 旧数据兼容：升级前保存的 C1 / C2 / C3 条件 JSON 没有 `type`，有 `children` 的读作条件组，否则读作字段条件，照常执行、照常重新保存，不需要迁移；节点序列化只输出节点自身的属性。
+
+函数条件示例（`clientExcluded` 的返回值为 false 时条件成立）：
+
+```json
+{"type":"FUNCTION","functionCode":"clientExcluded","arguments":{"providerCode":"$candidate.providerCode","clientId":"$transaction.clientId","decisionTime":"$context.decisionTime"},"operator":"EQ","value":false}
+```
+
+**哪些函数可以添加：**
+
+- 函数须可用于 C1：在函数库里已启用、适用规则含 C1、后端实现（Java Handler）已在代码白名单注册、返回类型与实现一致。函数库元数据只登记编码、名称等描述信息，能执行的是实现了 `BusinessFunction` 接口并注册为 Spring Bean
+  的类（元数据的 `handlerCode` 与之绑定）；元数据不会生成代码，没有注册 Handler 的函数不能进入条件。
+- 目前只有 C1 执行器登记了受控取值路径，所以函数条件和函数绑定字段只能用于 C1，用于其它规则返回 400（「目前只有 C1 的条件编辑器支持添加函数，不能用于 C2」）。
+- 演示数据的 13 个函数里，C1 当前可添加的是 `clientExcluded`、`hasValidCaseApproval`、`getProviderMtd` 三个；`findBestAppetiteRule` 由执行器内部落实，没有独立的 Handler，不能作为条件节点。
+
+**使用策略（系统必检 / 可选）：**
+
+- 使用策略由规则执行器在代码里声明（`C1Service` 实现 `RequiredFunctionProvider`），函数库元数据和页面配置都改不了它，也不落库。被声明的是系统必检（`REQUIRED`），其余是可选（`OPTIONAL`）。
+- C1 的系统必检清单：`clientExcluded`（命中有效排除记录即拒绝 `CLIENT_EXCLUDED`，先于准入规则匹配）、`findBestAppetiteRule`（每个流转类别按四级匹配，无有效匹配默认拒绝 `APPETITE_NOT_SET`）、
+  `hasValidCaseApproval`（命中 CASE_BY_CASE 规则时须有有效审批 `APPETITE_APPROVAL_MISSING`）、`getProviderMtd`（命中设有月度上限的 ACCEPT 规则时校验 MTD + 本笔金额 `APPETITE_CAP_REACHED`）。
+- 执行器的系统必检直接调用 Java Handler，不经过函数库元数据，也不看条件树里有没有对应节点：在函数库里停用、删除、改绑定都绕不过。
+- 系统必检函数可以加入条件树（节点带「系统必检」标记，此时只是把它的返回值作为一个可选条件参与比较），也可以从条件树删除，删除前页面提示执行器每次判定仍会执行这项检查。页面右侧的「系统必检清单」只读展示这四项，没有删除按钮。
+- 函数库里系统必检函数不能删除（「C1 正在使用该系统必检函数，请停用而非删除」），可以停用；可选函数被字段绑定或已保存的 C1 条件引用时同样不能删除。可选函数只有在条件树里时才执行。
+
+**参数解析（只允许受控取值路径或字面量）：**
+
+- 参数声明以 Java Handler 为准（参数编码、类型 STRING / INTEGER / DECIMAL / BOOLEAN / DATE、来源 CANDIDATE / TRANSACTION / CONTEXT、是否必填），选择器和保存校验都按它读取，函数库里登记的参数不参与校验。
+- 每个参数的取值说明只有两种：受控路径（`"$candidate.providerCode"`）或字面量（按参数类型校验）。路径是代码级白名单 `RuleExecutionContext.C1_PATHS`，共 9 条：`candidate.providerCode`、`candidate.flowCategory`、
+  `transaction.clientId`、`transaction.paymentCurrency`、`transaction.beneficiaryBankCountry`、`transaction.amountUsd`、`context.decisionTime`、`context.monthKey`、`context.ruleCode`，取值全部来自本次 C1 判定请求，
+  条件配置覆盖不了。不做表达式求值，也不能借参数调用任何 Java 方法、SQL 或命令。
+- 路径的类型和来源须与参数声明一致（例如 `providerCode` 只能绑定 STRING / CANDIDATE 的路径）；以 `$` 开头但没有登记的路径直接报错，不会当成字面量。校验顺序：未知参数 → 缺少必填参数 → 路径 / 字面量的类型与来源。
+- 默认绑定：Handler 可为可选参数声明默认路径（`decisionTime` → `context.decisionTime`、`monthKey` → `context.monthKey`），没有配置时在执行前补上（系统必检同样适用）；选择器另外按「同来源、同类型、且末段与参数同名」的路径预填
+  （`providerCode` → `$candidate.providerCode`、`clientId` → `$transaction.clientId`）。落库的 `arguments` / `argumentBindings` 只保存运营配置的绑定。
+
+**调用、复用与失败处理：**
+
+- 保存 / 编译条件时（`PUT /api/appetites/{id}/condition`、`POST /api/appetites/compile`、准入规则新增 / 编辑）校验函数条件：函数存在、已启用、适用 C1、Handler 已注册、返回类型一致、参数绑定合法、运算符在返回类型允许的范围内
+  （BOOLEAN / STRING：EQ、NE；DATE / INTEGER / DECIMAL：EQ、NE、GT、GTE、LT、LTE）；任何一项不通过返回 400，条件不能保存。
+- 函数条件编译成「函数返回值变量与期望值比较」的受控表达式（`(__fn0 == false)`），页面展示可读形式 `(clientExcluded(providerCode=$candidate.providerCode, clientId=$transaction.clientId, decisionTime=$context.decisionTime) == false)`。
+  C1 判定时先解析入参、执行函数，返回值代入后由同一条 AviatorScript 表达式完成比较；期望值按函数返回类型做与字段条件相同的转换（字符串 `"false"` 也可以）。
+- 请求级复用：一次 C1 判定内，相同 Handler + 相同有效入参只真正查询一次（不跨交易、客户、合作方串用）；复用的调用在 `functionCalls` 里 `cached=true`。只有只读函数复用，失败的结果不缓存。
+- 失败不放行：函数抛异常、没有返回结果、返回类型与声明不符，都按执行失败报错，不会当成 false 或「未命中」。条件树内的函数执行失败时整个模拟请求返回 400（`C1 规则 #n 条件执行失败: …`）。
+- 规则保存后函数在函数库里被停用、不再适用 C1 或 Handler 不再可用：引用它的规则在第 3 步按不命中处理，并在校验过程中给出 `SKIP` 说明（「附加条件已失效」），全部不命中时为 `APPETITE_NOT_SET`，与字段失效的处理一致；
+  系统必检照常执行。条件编辑器把这样的函数条件标为「不可用」并在表达式区提示，不会悄悄换成别的函数，需删除后按需重新添加。
+
+**`clientExcluded` 的完整链路：**
+
+1. 参数：`providerCode`（必填，STRING / CANDIDATE）、`clientId`（必填，STRING / TRANSACTION）、`decisionTime`（可选，DATE / CONTEXT，未配置时取 `context.decisionTime`）。
+2. 取值：`$candidate.providerCode` 是本次判定的合作方，`$transaction.clientId` 是本次判定的客户，`$context.decisionTime` 是判定时间（香港时间）；没有任何写死的合作方或客户。
+3. 查询 `relay_client_exclusion`（合作方详情「客户排除管理」维护的记录）：同一合作方 + 同一客户，且 `effectiveFrom <= 决策时间 < effectiveTo`（`effectiveTo` 为空表示长期有效）；未到生效时间、已过失效时间、已解除的记录
+   都不算有效，命中多条取 ID 最小的一条。
+4. 返回 BOOLEAN：命中为 `true`，`recordId` 为排除记录 ID；未命中为 `false`；数据来源 `CLIENT_EXCLUSION`。
+5. C1 执行顺序：`1. 客户分类` → `2. 客户排除`（系统必检，直接调用 Handler，不看条件树）→ `3. 规则匹配 <流转类别>`（在这里求值条件树）→ `4. 个案审批 / MTD <流转类别>` → `5. C1 汇总`。
+6. 第 2 步命中即返回 `CLIENT_EXCLUDED`，先于规则匹配。所以运营把 `clientExcluded` 从条件树删除后，C1 仍返回 `CLIENT_EXCLUDED`；未命中且条件树里还有 `clientExcluded` 节点时，第 3 步复用第 2 步的查询结果
+   （`functionCalls` 两条，其中一条 `cached=true`），一次判定只查询一次。
+7. 查询失败（数据库异常）时第 2 步 FAIL，返回 `CLIENT_EXCLUSION_CHECK_FAILED`，不会按「未排除」放行；函数库里未配置、停用或删除 `clientExcluded` 都不影响第 2 步。模拟请求 `variables` 里的 `clientProviderExcluded`
+   不生效（取系统必检的结果）。
+
+**试算与调用记录：**
+
+- 「ƒ 添加函数」选择器的每张函数卡片可以直接试算：`POST /api/function-metadata/{code}/simulate`，提交 `{arguments,operator,value,sample}`，`sample` 取右侧模拟面板的要素（`clientId`、`providerCode`、`paymentCurrency`、
+  `beneficiaryBankCountry`、`amountUsd`、`flowCategory`），返回 `{functionCode,functionName,expression,arguments,bindings,value,recordId,dataSource,durationMs,matched,error}`。参数、运算符或期望值不合法返回 400；函数执行失败
+  返回 200，`matched` 为 null、`error` 为原因（不会当成 false）。结果框逐项显示条件结果、表达式、每个参数的实际入参与所用绑定、返回值、命中记录、数据来源、耗时和异常。
+- `POST /api/c1/simulate` 的响应新增 `functionCalls`：每次调用一条 `{functionCode,handlerCode,arguments,value,recordId,dataSource,durationMs,cached,error}`，系统必检、条件节点、函数绑定字段都在其中，页面「C1 规则模拟校验」的
+  「函数调用」逐条展示。
+- `POST /api/expression/preview`（元数据中心的表达式试算）没有规则执行上下文，条件含函数条件或函数绑定字段时返回 400；页面在运行前拦截并提示。
+
+**字段 ↔ 函数绑定：**
+
+- 字段新增「取值来源」：`REQUEST` 请求输入（默认，取值来自模拟请求的 `variables`）或 `FUNCTION` 函数计算（选择函数库里的函数，并为每个参数指定受控路径）。保存为 `relay_rule_field` 的 `value_source`、`function_code`、`argument_bindings`。
+- 校验：绑定函数的字段只能适用于 C1；函数须可用于 C1；返回类型与字段类型一致（枚举字段对应 STRING）；参数绑定合法。
+- 执行：函数计算字段的取值来自函数，请求 `variables` 里的同名字段取值不采用；保存 / 编译条件时同样校验。调用方不需要、也不会在 `variables` 里为它提供取值；字段下拉里带「ƒ 函数名」标注。
+- 启动自动绑定：升级前 `clientProviderExcluded`（客户是否被合作方排除）由执行器直接赋值。应用启动时（`ApplicationReadyEvent`）若该字段存在、取值来源从未配置过、适用规则仅为 C1、类型为 BOOLEAN、且 `clientExcluded` 可用于 C1，
+  就自动绑定（`providerCode` → `$candidate.providerCode`、`clientId` → `$transaction.clientId`），并写审计 `FIELD_METADATA / BIND_FUNCTION`（操作人 `system`）；运营保存过的取值配置不会被覆盖。演示种子没有这个字段，全新库不会触发。
+- 接口兼容：`POST` / `PUT /api/field-metadata` 增加 `valueSource`、`functionCode`、`argumentBindings`（JSON 对象）三个入参；三项都不传表示请求没有表达取值来源，新增字段留空（按请求输入），修改时保留已有配置并按本次提交的类型 / 适用规则复核。
+
+**页面：**
+
+- C1 页「① 触发条件：字段库 + 函数库」：条件组的操作按钮为「添加条件」「添加子条件组」「ƒ 添加函数」；选择器为每个可添加的函数显示一张卡片（名称、编码、系统必检 / 可选、返回类型、数据来源、参数与绑定、比较方式、期望值、试算），
+  沿用蓝白配色；右侧「系统必检清单」只读，没有删除按钮。函数条件在条件树里显示为带虚线框的一行：`ƒ 函数名`、比较方式和期望值。
+- 元数据中心（字段 ↔ 函数绑定、函数库的使用策略）见「元数据中心页面」一章。
+
+2026-11-25（C1 条件接入函数库）：全套 258 项测试通过（本次新增 28 项）：`C1FunctionTest` 13 项、`C1FunctionFailureTest` 2 项、`FunctionMetadataApiTest` 8 项、`ConditionJsonCompatibilityTest` 4 项、`SchemaRestartTest` 1 项（明细见「测试用例」）。
+在独立端口与临时数据库上以无头 Chrome 完成 48 项检查：函数库接口与内置字段的启动自动绑定（旧字段 → 重启 → 已绑定）、C1 页面的三个操作按钮与只读的系统必检清单、选择器卡片内容、选择器里的函数试算、把 `clientExcluded`
+加入条件树并保存、无排除记录时的模拟校验（一次执行 + 一次复用）、加入有效排除记录后的 `CLIENT_EXCLUDED`、从条件树删除 `clientExcluded` 节点后保存仍返回 `CLIENT_EXCLUDED`（验收场景）、元数据中心的字段绑定 / 函数库使用策略 /
+表达式页拦截，以及页面没有脚本异常或控制台错误。未读写 8080 / 8081 实例的数据库。
+
 ## API
 
 - `GET /api/providers`
@@ -189,10 +288,14 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 - `POST /api/exclusions`, `POST /api/approvals`
 - `PUT /api/usage`：演示用，模拟统计任务回填 MTD。提交 `{providerCode,flowCategory,monthKey,amountUsd}`，按三者组合覆盖写入（不存在则新增），金额必填、保留两位小数并写审计
 - `DELETE /api/usage/{id}`：删除一条 MTD 记录
-- `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`
+- `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`，也可以是函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`（保存前按函数库和白名单校验，见「C1 条件接入函数库」）
 - `POST /api/appetites/compile`：提交 `{tree}`，只校验并返回 `{expression}`，不保存
-- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理
-- `POST /api/expression/preview`
+- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理；绑定了函数的字段不取 `variables` 里的值。响应新增 `functionCalls`（本次判定的函数调用记录）；命中有效排除记录返回 `CLIENT_EXCLUDED`，排除记录查询失败返回 `CLIENT_EXCLUSION_CHECK_FAILED`（不按「未排除」放行），条件树内的函数执行失败返回 400
+- `POST /api/expression/preview`：元数据中心的表达式试算，提交 `{tree,variables}`，返回 `{matched,expression}`；条件含函数条件或函数绑定字段时返回 400（没有规则执行上下文，函数只在 C1 判定和函数试算中执行）
+- `GET /api/function-metadata`：函数库全量（按函数编码排序），每项带 `usagePolicy`（`REQUIRED` 系统必检 / `OPTIONAL` 可选，只读自执行器代码，不落库）和 `implemented`（后端实现是否已注册）；`POST` 新增、`PUT /{code}` 修改、`POST /{code}/toggle` 启用 / 停用、`DELETE /{code}` 删除（系统必检函数，以及被字段绑定或已保存 C1 条件引用的函数不能删除，返回 400）；`GET /api/function-metadata/handlers` 返回可绑定的 Java Handler 编码
+- `GET /api/function-metadata/available?ruleCode=C1`：「ƒ 添加函数」选择器的数据 `{ruleCode,paths,required,functions}`：`paths` 受控取值路径，`required` 系统必检清单，`functions` 当前可添加的函数（参数、默认绑定、可用运算符）；`ruleCode` 不是 C1 时返回 400
+- `POST /api/function-metadata/{code}/simulate`：函数试算，提交 `{arguments,operator,value,sample}`，返回入参、绑定、返回值、命中记录 ID、数据来源、耗时、条件结果和异常；参数不合法返回 400
+- `POST /api/function-metadata/clientExcluded/check`：提交 `{providerCode,clientId}`，按香港当前时间查询有效排除记录，返回 `{functionCode,value,dataSource}`；函数库未配置或已停用时返回 400
 
 示例模拟请求：
 
@@ -352,6 +455,11 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 
 `sql/schema-mysql.sql` 提供独立 MySQL DDL，默认不需要手工执行。
 
+`relay_rule_field` 另有三个可空列（2026-11-25 新增，旧数据保持为空）：`value_source`（`REQUEST` 请求输入 / `FUNCTION` 函数计算，为空视为 `REQUEST`）、`function_code`（取值来源为 `FUNCTION` 时绑定的函数编码）、
+`argument_bindings`（参数绑定 JSON 对象：参数编码 → 受控路径或字面量）。已按旧版 `schema-mysql.sql` 建表且未开启 `spring.jpa.hibernate.ddl-auto=update` 的数据库执行一次 `sql/migrate-field-function-binding.sql`
+（只有 `ALTER TABLE ... ADD COLUMN`，不改已有数据，已保存的 C1 / C2 / C3 条件 JSON 不需要改动）；开启了 `ddl-auto=update` 的库启动时自动补列，不要重复执行。函数库表 `relay_business_function` 由 Hibernate 按实体建表，
+`schema-mysql.sql` 里尚未收录。
+
 ## 生产化前需补充
 
 该项目为**参考 Demo，不是完整 C1–C10 支付引擎，更不是可直接投产的银行路由服务**。
@@ -372,7 +480,13 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 `variables` 覆盖、非法条件拒绝、不带 `trigger` 的范围重新保存与启停保留条件、清除与审计、规则与附加条件随同一个请求保存）、`C2RegulatoryControllerTest`（compile / condition / simulate 的 HTTP
 契约，以及新增 / 编辑页的保存与单条载入）、`RegulatoryTriggerTest`（条件树解析与摘要）和
 `SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。模拟响应里的 C2 条件结构（`groups`）另由 `C2ServiceTest` 的 5 项（8 个规则组的顺序、叶子字段和原因码；只传合并国籍名单时两个国籍叶子结果一致；
-董事、UBO 国籍分别判断且响应不含国籍取值；同一规则组的两个叶子各命中一条限制记录；监管能力缺失使第 8 项不满足）和 `C2RegulatoryControllerTest` 的 1 项（`simulate` 的新入参与 `groups` 的 HTTP 契约）覆盖。执行：
+董事、UBO 国籍分别判断且响应不含国籍取值；同一规则组的两个叶子各命中一条限制记录；监管能力缺失使第 8 项不满足）和 `C2RegulatoryControllerTest` 的 1 项（`simulate` 的新入参与 `groups` 的 HTTP 契约）覆盖。
+
+函数库接入 C1 条件由 `C1FunctionTest`（13 项：无有效排除记录时 `clientExcluded` 为 false；从条件树删除节点后有效排除记录仍被拒绝；未到生效时间 / 已过失效时间 / 已解除的记录不算有效；可选函数只有在条件树里才执行；改函数库配置绕不过系统必检；
+函数条件在 AND / OR 子条件组内可用；缺少或类型错误的入参被拒绝；DECIMAL 返回值按数字比较；旧版字段 / 条件组 JSON 照常执行；个案审批与 MTD 检查不受影响并记入调用记录；函数计算字段的取值来自函数；模拟结果报告入参、返回值和命中记录；
+内置字段只自动绑定一次且不覆盖运营的明确选择）、`C1FunctionFailureTest`（2 项：排除记录查询失败不按「未排除」处理；同一函数同一入参一次判定只查询一次）、`FunctionMetadataApiTest`（8 项：选择器数据；仅 C1 可用；试算结果；
+试算参数不合法返回 400；系统必检函数只能停用不能删除；被引用的可选函数不能删除；列表带使用策略和实现状态；字段绑定经接口保存且旧版请求体保留已有绑定）、`ConditionJsonCompatibilityTest`（4 项：旧版不带 `type` 的 JSON 照常读取；
+函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。执行：
 
 ```bash
 mvn clean test
@@ -773,17 +887,25 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 
 ## 元数据中心页面（独立页）
 
-原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`（页面名「元数据中心」，页内分「字段库」「表达式菜单与试算」两个页签）
+原首页（C1 页面）内嵌的「字段库 / 表达式」标签页已抽取为独立页面 `/fields.html`（页面名「元数据中心」，页内分「字段库」「业务函数库」「表达式菜单与试算」三个页签）
 ，首页侧边栏及十个配置页（合作方管理、C2/C3/C4/C5/C6/C7/C8/C9/C10）工具区的「元数据中心」均已接通。侧边栏「规则审计」入口及首页「配置历史」标签页已按演示精简需求移除；配置变更审计仍在后端照常记录（每次保存写
 `relay_rule_audit`），可通过 `GET /api/audit` 或合作方详情页（`/provider-detail.html`）的「变更记录」页签查看。
 
-页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列）：展示字段编码、名称、类型、允许运算符、适用规则、可选枚举与启用状态，并说明维护方式（H2
+页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列，另有「取值来源」一列）：展示字段编码、名称、类型、适用规则、运算符、取值来源、可选枚举与启用状态，并说明维护方式（H2
 控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入试算菜单的 C2 筛选和监管路由规则新增 / 编辑页附加触发条件的字段下拉，C2
-模拟页各输入项的下拉可选值也从这里读取，九个固定交易要素之外的字段还会在模拟面板自动生成取值控件；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉，停用字段从下拉消失但历史规则表达式按原样存档）。
+模拟页各输入项的下拉可选值也从这里读取，九个固定交易要素之外的字段还会在模拟面板自动生成取值控件；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉（取值来源为函数计算的字段带「ƒ 函数名」标注），停用字段从下拉消失但历史规则表达式按原样存档）。
 
 右侧为 AND / OR 可视化表达式试算（字段定义与各规则页面共用）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
 C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按钮覆盖：USD 且 KG（AND 命中）、金额 ≥ 100万、PSP 或 WEB3（OR）。
+
+「业务函数库」页签维护函数库（表 `relay_business_function`）：函数编码、名称、分类、返回类型、适用规则、执行作用域、缓存策略、Java 实现绑定、数据来源、输入参数、说明和启用状态。函数库只登记描述信息，能执行的是代码里实现了
+`BusinessFunction` 并注册为 Bean 的 Handler。列表的「使用策略 / 实现」列显示系统必检 / 可选 / 执行器内部落实（由规则执行器在代码里声明，这里只读）以及后端实现是否已注册；系统必检函数的删除按钮置灰（只能停用），
+实现未注册的函数不能进入条件。
+
+字段编辑器增加「取值来源」：「请求输入」（默认，取值来自调用方在请求中提供的 `variables`）或「函数计算」（选择函数库里的函数，并为每个参数指定受控取值路径）。取值来源为「函数计算」的字段只能适用于 C1：选「函数计算」时只保留 C1，
+其余九个规则不可勾选；函数下拉只列出返回类型与字段类型一致的函数（枚举字段对应 STRING），已保存但当前不可用的函数保留并标注「（当前不可用）」；字段列表里这类字段的名称后有 ƒ。表达式菜单里，条件引用了函数计算字段时字段名
+同样带 ƒ，点「执行」会提示只能在规则执行中取值（如 C1 页的模拟校验）而不发请求。绑定规则、校验和 C1 执行时的取值见「C1 条件接入函数库」。
 
 ## MTD 模拟数据页面（C1 月度上限）
 
@@ -805,16 +927,23 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 
 注意：C9 商业履约使用的 MTD（协议配置中的 `monthUsd` / `monthCount`）是另一份数据，请在 C9 页面或通过 `PUT /api/c9/mtd` 调整，两者互不影响。
 
-接口（均为既有接口，无后端改动）：
+接口（2026-11-20 抽取页面时均为既有接口；2026-11-25 起字段接口增加取值来源与函数绑定，见下文）：
 
 - `GET /api/fields`：返回字段库全量（含停用）。
 - `GET /api/c2/fields`：C2 页面使用，仅 `allowedRules` 含 C2 且启用的字段：监管路由规则新增 / 编辑页附加触发条件的字段下拉、C2 模拟页的下拉可选值，以及九个固定交易要素之外字段的取值控件都从这里读取。
 - `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉、C2
   页面和试算菜单都按这里的 `allowedRules` 取字段。「适用规则」的 C2 可对任意数据类型勾选：勾选后字段出现在试算菜单的「C2」筛选下并按字段类型比较取值，进入监管路由规则新增 / 编辑页
   附加触发条件的字段下拉，并在 C2 模拟面板自动生成取值控件；监管路由规则的适用范围（币种 + 受益行国家）本身不使用字段库条件树。
+- `POST` / `PUT /api/field-metadata` 的取值来源与函数绑定：入参增加 `valueSource`（`REQUEST` 请求输入 / `FUNCTION` 函数计算）、`functionCode`、`argumentBindings`（JSON 对象：参数编码 → 受控路径 `"$candidate.providerCode"` 或字面量）。
+  绑定函数的字段只能适用于 C1，函数须可用于 C1 且返回类型与字段类型一致（枚举字段对应 `STRING`），否则返回 400。三项都不传（升级前的页面或脚本）表示请求没有表达取值来源：新增字段留空（按请求输入），修改时保留已有配置并
+  按本次提交的类型 / 适用规则复核。`GET` 返回 `valueSource`、`functionCode` 和 `argumentBindings`（JSON 字符串）。
 - `POST /api/expression/preview`：提交 `{tree:{logic,children:[{field,operator,value}]},variables}`，返回
-  `{matched,expression}`。
+  `{matched,expression}`；条件含函数条件或函数计算字段时返回 400（没有规则执行上下文，函数只在 C1 判定和函数试算中执行）。
 
 2026-11-20：纯前端抽取，151 项测试不受影响；Chrome 验证独立页加载、字段表渲染（演示种子 12
 字段）、表达式命中/未命中、三个示例、首页各标签切换、九个子页导航接通。同日按演示精简需求移除侧边栏「规则审计」入口与首页「配置历史」标签页（后端审计写入与
 `GET /api/audit` 保留）。
+
+2026-11-25（字段 ↔ 函数绑定）：「字段库」增加「取值来源」列，字段编辑器增加取值来源 / 绑定函数 / 参数绑定；「业务函数库」增加「使用策略 / 实现」列，系统必检函数不能删除；表达式菜单对函数计算字段只展示、不试算。
+后端 `POST` / `PUT /api/field-metadata` 增加取值来源与函数绑定入参（旧版请求体照常可用）。无头 Chrome 验证：字段列表的取值来源列、字段编辑器的绑定（选「函数计算」后 C2–C10 置灰）、函数库的使用策略列与置灰的删除按钮、
+表达式页对函数计算字段的拦截提示；这几项包含在「C1 条件接入函数库」的 48 项检查里。

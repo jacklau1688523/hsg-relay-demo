@@ -18,6 +18,14 @@ public class FieldDefinition {
     public String allowedRules;
     @Column(length = 1000)
     public String valueOptions;
+    // 取值来源：REQUEST 请求输入（默认，为空视为 REQUEST）/ FUNCTION 由绑定的业务函数计算
+    @Column(length = 20)
+    public String valueSource;
+    @Column(length = 64)
+    public String functionCode;
+    // 函数参数绑定 JSON：参数编码 → 受控路径（"$candidate.providerCode"）或字面量
+    @Column(length = 4000)
+    public String argumentBindings;
     @Column(nullable = false)
     public boolean enabled = true;
 

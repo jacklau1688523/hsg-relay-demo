@@ -90,6 +90,11 @@
             vertical-align: top
         }
 
+        /* 状态徽标不折行：列表加了「取值来源」「使用策略 / 实现」列后表格更紧 */
+        .meta-table .badge {
+            white-space: nowrap
+        }
+
         .meta-table .mono {
             font-family: ui-monospace, Menlo, monospace;
             font-size: 11px;
@@ -179,6 +184,9 @@
             width: auto;
             min-height: 0
         }
+
+        .meta-bindings { display:grid; grid-template-columns:1fr; gap:10px; margin-top:12px }
+        .meta-binding label { display:block; margin-bottom:5px; font-weight:650; font-size:12px }
 
         .meta-editor .actions {
             justify-content: flex-end;
@@ -394,6 +402,7 @@
                                 <th>数据类型</th>
                                 <th>适用规则</th>
                                 <th>运算符</th>
+                                <th>取值来源</th>
                                 <th>可选值</th>
                                 <th>状态</th>
                                 <th>操作</th>
@@ -405,6 +414,7 @@
                 </div>
                 <div class="notice meta-help">字段编码保存后不可更改。停用字段会从试算菜单、C1 触发条件和 C2
                     模拟页的下拉可选值中移除；已保存规则仍保留原条件，重新编译时会检查字段状态。配置变更记录在审计日志中。
+                    取值来源为「函数计算」的字段只能适用于 C1：请求里提交的同名取值不采用，条件值来自绑定的函数库业务函数；绑定的函数停用后，引用该字段的条件不能执行。
                 </div>
             </section>
             <section id="functionsTab" class="hidden">
@@ -416,9 +426,11 @@
                         <select id="functionStatusFilter" aria-label="函数状态"><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select>
                         <span class="spacer"></span><button class="btn" id="newFunction">＋ 新增函数</button>
                     </div>
-                    <div class="tablewrap"><table class="meta-table"><thead><tr><th>函数名称 / 编码</th><th>分类</th><th>返回类型</th><th>适用规则</th><th>执行作用域</th><th>Java 实现绑定</th><th>数据来源</th><th>状态</th><th>操作</th></tr></thead><tbody id="functionRows"></tbody></table></div>
+                    <div class="tablewrap"><table class="meta-table"><thead><tr><th>函数名称 / 编码</th><th>分类</th><th>返回类型</th><th>适用规则</th><th>执行作用域</th><th>Java 实现绑定</th><th>数据来源</th><th>使用策略 / 实现</th><th>状态</th><th>操作</th></tr></thead><tbody id="functionRows"></tbody></table></div>
                 </div>
-                <div class="notice meta-help">函数库仅登记已注册的后端 Handler。函数元数据不会生成 Java 代码；C1 的 clientExcluded 使用合作方详情中的客户排除记录。</div>
+                <div class="notice meta-help">函数库仅登记已注册的后端 Handler。函数元数据不会生成 Java 代码；C1 的 clientExcluded 使用合作方详情中的客户排除记录。
+                    使用策略由规则执行器在代码里声明：「系统必检」的函数（如 clientExcluded）每次 C1 判定都会由执行器强制执行，只能停用、不能删除；停用后引用它的条件不能执行，对应规则按未命中处理。「可选」函数由运营在 C1 条件编辑器里决定是否使用。
+                </div>
             </section>
             <section id="expressionTab" class="hidden">
                 <div class="meta-preview">
@@ -436,6 +448,7 @@
                         </div>
                         <div class="notice meta-help">
                             菜单按所选规则只展示已启用字段。字段类型决定可用运算符；枚举可选值来自元数据中心。
+                            取值来源为「函数计算」的字段（名称后有 ƒ）只能在规则执行中取值，不能在这里手工试算。
                         </div>
                         <a class="meta-link" href="/c2-regulatory.html">前往 C2 全局监管路由规则 →</a></div>
                     <aside class="panel"><h2>表达式试算</h2>
@@ -484,6 +497,19 @@
             </div>
             <div class="field"><label>允许运算符 *</label>
                 <div id="editOperators" class="meta-checks"></div>
+            </div>
+            <datalist id="metaPathOptions"></datalist>
+            <div class="field"><label for="editSource">取值来源</label><select id="editSource">
+                <option value="REQUEST">请求输入 REQUEST · 由调用方在请求中提供</option>
+                <option value="FUNCTION">函数计算 FUNCTION · 由函数库的业务函数计算</option>
+            </select>
+                <div class="muted">函数计算的字段只能适用于 C1：请求里提交的同名取值不采用，条件值来自绑定的函数。</div>
+            </div>
+            <div class="field" id="editFunctionBlock">
+                <label for="editFunction">绑定函数 *</label><select id="editFunction"></select>
+                <div id="editFunctionHint" class="muted"></div>
+                <button type="button" class="btn secondary tiny hidden" id="editFunctionRetry">重新加载函数库</button>
+                <div id="editBindings" class="meta-bindings"></div>
             </div>
             <div class="field"><label for="editOptions">可选值（逗号分隔）</label><textarea id="editOptions"
                                                                                           class="meta-json"

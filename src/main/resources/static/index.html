@@ -454,6 +454,35 @@
         .c1-head strong{flex:1}.c1-head select{width:190px}.c1-line select:first-child{flex:2;min-width:150px}.c1-line select:nth-child(2){flex:1;min-width:100px}.c1-line input,.c1-line select:nth-child(3){flex:1.5;min-width:120px}
         .c1-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}
 
+        /* 函数条件与「添加函数」选择器：沿用条件组的蓝白配色 */
+        .c1-fn {border:1px dashed #b9cdea;border-radius:9px;padding:2px 12px 10px;margin:10px 0;background:#fff}
+        .c1-fn.stale {border-color:#f5a8ae;background:#fffafb}
+        .c1-fnname {flex:2;min-width:180px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+        .c1-args {display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 12px;margin:2px 0 10px}
+        .c1-fn .c1-args {margin-left:16px}
+        .c1-arg label {display:block;font-size:12px;font-weight:650;color:#274369;margin-bottom:5px}
+        .c1-arg .muted {font-weight:400}
+        .c1-badge {display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid #9cc0f0;background:#e7f0ff;color:#115bbf;white-space:nowrap}
+        .c1-badge.optional {border-color:#85d5a1;background:#e9faef;color:#139447}
+        .c1-required-mark {color:#c63a4b}
+        .c1-cards {display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-top:14px}
+        .c1-card {border:1px solid #cad9ec;border-radius:9px;padding:14px;background:#f8fbff;display:grid;gap:8px;align-content:start}
+        .c1-card h3 {font-size:14px;margin:0}
+        .c1-card .c1-args,.c1-card .notice {margin:0}
+        .c1-desc {font-size:12px;color:#3e506b;margin:0}
+        .c1-sim {margin-top:4px}
+        .c1-sim:empty {display:none}
+        .c1-simbox {display:grid;gap:7px;font-size:12px;border:1px solid #dfe8f4;border-radius:8px;background:#fff;padding:10px}
+        .c1-simbox.hit {border-color:#85d5a1;background:#f4fdf7}
+        .c1-simbox.bad {border-color:#f5a8ae;background:#fff7f7}
+        .c1-table th,.c1-table td {white-space:normal;vertical-align:top}
+        .c1-required {margin-top:16px;border:1px solid #dfe8f4;border-radius:8px;padding:10px 12px;background:#fff}
+        .c1-required summary {cursor:pointer;font-size:13px;font-weight:700;color:#274369}
+        .c1-required .tablewrap {margin-top:10px}
+        .c1-kvrow {display:grid;grid-template-columns:minmax(76px,32%) minmax(0,1fr);gap:6px;margin-top:4px;align-items:baseline}
+        .c1-kvrow > div {min-width:0;overflow-wrap:anywhere}
+        .c1-call.bad {background:#fff7f7;border-radius:8px;padding:9px 10px}
+
         .footer {
             color: #8b98ac;
             font-size: 12px;
@@ -530,9 +559,10 @@
             <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：分类须为 COMPLETE；未配置流转类别时取 STANDARD。</div><div class="notice">② 客户排除：命中有效的「客户 + 合作方」记录立即拒绝；记录在合作方详情维护。</div><div class="notice">③ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
             <div class="grid c1-workspace">
             <section id="conditionView" class="panel">
-                <div class="rowbetween"><div><h2>① 触发条件：按字段库构建</h2><div class="muted">使用元数据中心已启用的 C1 字段配置附加触发条件，支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新规则 / 字段库</button></div>
+                <div class="rowbetween"><div><h2>① 触发条件：字段库 + 函数库</h2><div class="muted">使用元数据中心已启用的 C1 字段和函数库中可用于 C1 的业务函数配置附加触发条件，支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新规则 / 字段库</button></div>
                 <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
                 <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
+                <details class="c1-required"><summary>系统必检清单：C1 执行器每次判定都会执行，不随条件树增删</summary><div class="muted" style="margin-top:8px">这些检查由后端代码强制落实：停用函数、删除条件节点都绕不过。可以把其中的函数加到条件树参与比较，删除节点只是不再比较它的返回值。</div><div id="c1RequiredList"></div></details>
                 <div class="actions" style="justify-content:flex-end;margin-top:22px"><button id="c1SaveButton" type="button" class="btn" onclick="c1SaveCondition()">保存条件配置</button></div>
             </section>
                     <aside class="rightPanel">
@@ -569,6 +599,15 @@
                         </div>
                     </aside>
             </div>
+            <datalist id="c1PathOptions"></datalist>
+            <div class="modalback" id="c1FunctionPicker" role="dialog" aria-modal="true" aria-labelledby="c1FunctionPickerTitle" onclick="if(event.target===this)c1CloseFunctionPicker()">
+                <div class="modal" style="width:min(1100px,100%)">
+                    <div class="rowbetween"><h2 id="c1FunctionPickerTitle">ƒ 添加函数</h2><button type="button" class="btn secondary tiny" onclick="c1CloseFunctionPicker()">✕ 关闭</button></div>
+                    <div class="muted">选择函数，配置参数绑定、比较方式和期望值，再加入当前条件组。参数可引用受控取值路径（$ 开头，输入框有候选）或填写字面量，保存时由服务端校验。</div>
+                    <div class="notice" id="c1FunctionSample"></div>
+                    <div class="c1-cards" id="c1FunctionCards"></div>
+                </div>
+            </div>
             <div class="footer">HSG RELAY C1 Demo · Java 17 · Spring Boot · JPA · AviatorScript · 非生产环境</div>
         </div>
     </main>
@@ -580,8 +619,9 @@ async function api(path,opt={}){const response=await fetch('/api'+path,{...opt,h
 function syncClient(){const client=clients.find(x=>x.clientId===$('simClient').value);$('simStatus').value=client?.classificationStatus||'';$('simFlows').value=client?.flowCategories||'STANDARD';}
 async function init(){[providers,clients]=await Promise.all([api('/providers'),api('/clients')]);$('simProvider').innerHTML=providers.map(p=>`<option value="${esc(p.code)}" ${p.code==='PROV-HO'?'selected':''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');$('simClient').innerHTML=clients.map(c=>`<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');const query=new URLSearchParams(location.search);if(query.has('client')&&clients.some(c=>c.clientId===query.get('client')))$('simClient').value=query.get('client');$('simClient').onchange=syncClient;document.querySelector('.rightPanel').addEventListener('input',c1ResetSimResult);document.querySelector('.rightPanel').addEventListener('change',c1ResetSimResult);syncClient();await c1LoadConditionRules();}
 function c1ResetSimResult(){$('simResult').textContent='填写交易数据后点击「执行 C1 校验」，这里会展示每个步骤及命中准入规则。';}
-function c1AutomaticVariables(){const client=clients.find(c=>c.clientId===$('simClient').value);return {clientClassificationStatus:client?.classificationStatus||'',clientProviderExcluded:false};}
-async function simulate(){try{const result=await api('/c1/simulate',{method:'POST',body:JSON.stringify({clientId:$('simClient').value,providerCode:$('simProvider').value,paymentCurrency:$('simCurrency').value,beneficiaryBankCountry:$('simCountry').value,amountUsd:$('simAmount').value,variables:c1AutomaticVariables()})});const missing=result.reasonCode==='APPETITE_NOT_SET'?`<div class="notice" style="margin-top:12px">${esc($('simProvider').value)} / ${esc(result.steps.findLast(x=>x.status==='FAIL')?.detail?.split(' ')[0]||'客户流转类别')} / ${esc($('simCurrency').value)} / ${esc($('simCountry').value)}：未命中有效准入规则（也可能是附加条件未命中）。请到 <a href="/provider-detail.html?code=${encodeURIComponent($('simProvider').value)}&tab=appetites">合作方详情</a> 配置。</div>`:'';$('simResult').innerHTML=`<div class="result ${result.passed?'':'error'}">${result.passed?'✓ C1 校验通过':'✕ C1 校验失败'}</div><p class="caps">原因码：${esc(result.reasonCode)}</p><div class="code">命中规则ID：${esc(result.matchedRuleId||'—')}<br>准入动作：${esc(result.matchedRuleAction||'—')}</div>${missing}<h2 style="margin:15px 0 4px">校验过程</h2>${result.steps.map(x=>`<div class="trace"><span class="badge ${x.status==='PASS'?'pass':x.status==='SKIP'?'pending':'fail'}">${esc(x.status)}</span><b style="margin-left:8px">${esc(x.step)}</b><div class="muted" style="margin-top:4px">${esc(x.detail)}</div></div>`).join('')}`;}catch(error){$('simResult').innerHTML='<div class="result error">'+esc(error.message)+'</div>';}}
+// 客户排除结果不在这里提供：C1 执行器每次判定都按「客户 + 合作方 + 判定时间」查询有效的排除记录，页面提交的同名取值不采用
+function c1AutomaticVariables(){const client=clients.find(c=>c.clientId===$('simClient').value);return {clientClassificationStatus:client?.classificationStatus||''};}
+async function simulate(){try{const result=await api('/c1/simulate',{method:'POST',body:JSON.stringify({clientId:$('simClient').value,providerCode:$('simProvider').value,paymentCurrency:$('simCurrency').value,beneficiaryBankCountry:$('simCountry').value,amountUsd:$('simAmount').value,variables:c1AutomaticVariables()})});const missing=result.reasonCode==='APPETITE_NOT_SET'?`<div class="notice" style="margin-top:12px">${esc($('simProvider').value)} / ${esc(result.steps.findLast(x=>x.status==='FAIL')?.detail?.split(' ')[0]||'客户流转类别')} / ${esc($('simCurrency').value)} / ${esc($('simCountry').value)}：未命中有效准入规则（也可能是附加条件未命中）。请到 <a href="/provider-detail.html?code=${encodeURIComponent($('simProvider').value)}&tab=appetites">合作方详情</a> 配置。</div>`:'';$('simResult').innerHTML=`<div class="result ${result.passed?'':'error'}">${result.passed?'✓ C1 校验通过':'✕ C1 校验失败'}</div><p class="caps">原因码：${esc(result.reasonCode)}</p><div class="code">命中规则ID：${esc(result.matchedRuleId||'—')}<br>准入动作：${esc(result.matchedRuleAction||'—')}</div>${missing}<h2 style="margin:15px 0 4px">校验过程</h2>${result.steps.map(x=>`<div class="trace"><span class="badge ${x.status==='PASS'?'pass':x.status==='SKIP'?'pending':'fail'}">${esc(x.status)}</span><b style="margin-left:8px">${esc(x.step)}</b><div class="muted" style="margin-top:4px">${esc(x.detail)}</div></div>`).join('')}${c1FunctionCallsHtml(result.functionCalls)}`;}catch(error){$('simResult').innerHTML='<div class="result error">'+esc(error.message)+'</div>';}}
 init().catch(error=>{$('c1ConditionError').textContent=error.message;});
 </script>
 <script src="/c1-conditions.js"></script>

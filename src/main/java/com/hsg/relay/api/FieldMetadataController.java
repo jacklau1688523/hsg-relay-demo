@@ -1,8 +1,11 @@
 package com.hsg.relay.api;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
+import com.hsg.relay.function.FunctionMetadataService;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
 import com.hsg.relay.repo.AppetiteRepository;
@@ -28,10 +31,12 @@ public class FieldMetadataController {
     private final RegulatoryRuleRepository regulatoryRules;
     private final C2ConditionConfigRepository c2Conditions;
     private final C3ConditionConfigRepository c3Conditions;
+    private final FunctionMetadataService functionMetadata;
 
     public FieldMetadataController(FieldDefinitionRepository fields, RuleAuditRepository audit, ObjectMapper json,
                                    AppetiteRepository appetites, RegulatoryRuleRepository regulatoryRules,
-                                   C2ConditionConfigRepository c2Conditions, C3ConditionConfigRepository c3Conditions) {
+                                   C2ConditionConfigRepository c2Conditions, C3ConditionConfigRepository c3Conditions,
+                                   FunctionMetadataService functionMetadata) {
         this.fields = fields;
         this.audit = audit;
         this.json = json;
@@ -39,10 +44,25 @@ public class FieldMetadataController {
         this.regulatoryRules = regulatoryRules;
         this.c2Conditions = c2Conditions;
         this.c3Conditions = c3Conditions;
+        this.functionMetadata = functionMetadata;
     }
 
+    /**
+     * 字段定义。valueSource：REQUEST 请求输入 / FUNCTION 由业务函数计算；
+     * 绑定函数时 functionCode 为函数编码，argumentBindings 为参数绑定 JSON 对象（参数编码 → 受控路径 "$candidate.providerCode" 或字面量）。
+     * 三项都没有传（升级前的页面 / 脚本）表示请求没有表达取值来源：新增字段留空，修改时保持字段已有的配置。
+     */
     public record Input(String fieldCode, String fieldName, String dataType, String allowedOperators,
-                        String allowedRules, String valueOptions, boolean enabled) {
+                        String allowedRules, String valueOptions, boolean enabled,
+                        String valueSource, String functionCode, JsonNode argumentBindings) {
+        @JsonCreator
+        public Input {
+        }
+
+        /** 旧版七参构造（取值来源为请求输入），已有调用方和测试继续使用。 */
+        public Input(String fieldCode, String fieldName, String dataType, String allowedOperators, String allowedRules, String valueOptions, boolean enabled) {
+            this(fieldCode, fieldName, dataType, allowedOperators, allowedRules, valueOptions, enabled, null, null, null);
+        }
     }
 
     @GetMapping
@@ -53,7 +73,7 @@ public class FieldMetadataController {
     @PostMapping
     @Transactional
     public FieldDefinition create(@RequestBody Input input) {
-        FieldDefinition value = validate(input);
+        FieldDefinition value = validate(input, null);
         if (fields.existsById(value.fieldCode)) throw new IllegalArgumentException("字段编码已存在");
         FieldDefinition saved = fields.save(value);
         writeAudit(saved.fieldCode, "CREATE", null, saved);
@@ -64,7 +84,7 @@ public class FieldMetadataController {
     @Transactional
     public FieldDefinition update(@PathVariable String code, @RequestBody Input input) {
         FieldDefinition old = fields.findById(code).orElseThrow(() -> new IllegalArgumentException("字段不存在"));
-        FieldDefinition value = validate(input);
+        FieldDefinition value = validate(input, old);
         if (!code.equals(value.fieldCode))
             throw new IllegalArgumentException("字段编码不可修改；请新增字段并停用旧字段");
         String before = serialize(old);
@@ -73,6 +93,9 @@ public class FieldMetadataController {
         old.allowedOperators = value.allowedOperators;
         old.allowedRules = value.allowedRules;
         old.valueOptions = value.valueOptions;
+        old.valueSource = value.valueSource;
+        old.functionCode = value.functionCode;
+        old.argumentBindings = value.argumentBindings;
         old.enabled = value.enabled;
         FieldDefinition saved = fields.save(old);
         writeAudit(code, "UPDATE", before, saved);
@@ -123,7 +146,11 @@ public class FieldMetadataController {
         return false;
     }
 
-    private FieldDefinition validate(Input input) {
+    /**
+     * 校验字段定义并换算成实体。existing 为被修改的字段（新增时为 null）：
+     * 请求没有表达取值来源时，用它保持已有的函数绑定，见 {@link FunctionMetadataService#unchanged}。
+     */
+    private FieldDefinition validate(Input input, FieldDefinition existing) {
         if (input == null) throw new IllegalArgumentException("字段信息不能为空");
         String code = trim(input.fieldCode()), name = trim(input.fieldName()), type = trim(input.dataType());
         if (!code.matches("[A-Za-z][A-Za-z0-9_]{0,63}"))
@@ -145,6 +172,15 @@ public class FieldMetadataController {
             throw new IllegalArgumentException("数字和布尔字段不使用枚举可选值");
         FieldDefinition field = new FieldDefinition(code, name, type, String.join(",", operators), String.join(",", rules), values);
         field.enabled = input.enabled();
+        // 取值来源与函数绑定：不绑定函数的字段按请求输入取值；绑定须通过函数库和白名单校验
+        FunctionMetadataService.FieldBinding binding = functionMetadata.binding(code, type, String.join(",", rules),
+                input.valueSource(), input.functionCode(), input.argumentBindings());
+        // 请求没有表达取值来源（升级前的页面 / 脚本）：新增字段留空，修改时保持已有的取值配置
+        if (FunctionMetadataService.UNCHANGED.equals(binding))
+            binding = functionMetadata.unchanged(existing, type, String.join(",", rules));
+        field.valueSource = binding.valueSource();
+        field.functionCode = binding.functionCode();
+        field.argumentBindings = binding.argumentBindings();
         return field;
     }
 

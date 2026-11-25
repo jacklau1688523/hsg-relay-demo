@@ -3,6 +3,7 @@ package com.hsg.relay.api;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.*;
+import com.hsg.relay.function.FunctionMetadataService;
 import com.hsg.relay.repo.*;
 import com.hsg.relay.service.ClientExclusionChecker;
 import jakarta.annotation.PostConstruct;
@@ -16,6 +17,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/api/function-metadata")
 public class BusinessFunctionController {
+    /** 函数库可以登记的 Handler：下面这批已规划的后端实现，加上代码里已注册的 Handler（BusinessFunctionRegistry）。 */
     private static final List<String> HANDLERS = List.of("clientExclusionChecker", "caseApprovalChecker", "appetiteRuleSelector",
             "restrictionMatcher", "providerCapabilityChecker", "reachRowMatcher", "bestReachSelector",
             "providerMtdReader", "availableFundingCalculator", "paymentLimitChecker", "totalCostCalculator",
@@ -24,19 +26,24 @@ public class BusinessFunctionController {
     private final ClientExclusionChecker exclusionChecker;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
+    private final FunctionMetadataService metadata;
 
     public BusinessFunctionController(BusinessFunctionRepository functions, ClientExclusionChecker exclusionChecker,
-                                      RuleAuditRepository audit, ObjectMapper json) {
+                                      RuleAuditRepository audit, ObjectMapper json, FunctionMetadataService metadata) {
         this.functions = functions;
         this.exclusionChecker = exclusionChecker;
         this.audit = audit;
         this.json = json;
+        this.metadata = metadata;
     }
 
     public record Input(String functionCode, String functionName, String category, String returnType,
                         String allowedRules, String executionScope, String cacheStrategy, String handlerCode,
                         String dataSource, String parametersJson, String description, boolean enabled) {}
     public record ExclusionCheck(String providerCode, String clientId) {}
+
+    /** 函数试算入参：arguments 参数绑定（同条件节点），operator / value 为比较方式和期望值，sample 为右侧模拟面板的要素。 */
+    public record SimulationInput(Map<String, Object> arguments, String operator, Object value, Map<String, Object> sample) {}
 
     @PostConstruct
     @Transactional
@@ -62,13 +69,32 @@ public class BusinessFunctionController {
         functions.save(convert(new Input(code, name, category, type, rules, scope, cache, handler, source, params, description, enabled)));
     }
 
+    /** 函数库列表：每项带 usagePolicy（REQUIRED 系统必检 / OPTIONAL 可选）和 implemented（后端实现是否已注册）。 */
     @GetMapping
     public List<BusinessFunctionDefinition> list() {
-        return functions.findAll().stream().sorted(Comparator.comparing(f -> f.functionCode)).toList();
+        return functions.findAll().stream().sorted(Comparator.comparing(f -> f.functionCode)).map(metadata::decorate).toList();
     }
 
+    /** 可绑定的 Java Handler：已规划的一批，加上代码里已注册的。 */
     @GetMapping("/handlers")
-    public List<String> handlers() { return HANDLERS; }
+    public List<String> handlers() {
+        List<String> result = new ArrayList<>(HANDLERS);
+        metadata.registeredHandlers().forEach(code -> { if (!result.contains(code)) result.add(code); });
+        return result;
+    }
+
+    /** 「添加函数」选择器：受控取值路径、系统必检清单、该规则可添加的函数。目前仅 C1。 */
+    @GetMapping("/available")
+    public FunctionMetadataService.Catalog available(@RequestParam String ruleCode) {
+        return metadata.available(ruleCode);
+    }
+
+    /** 函数试算：解析入参并调用函数，返回入参、返回值、条件结果、数据来源、耗时、异常和命中记录 ID。 */
+    @PostMapping("/{code}/simulate")
+    public FunctionMetadataService.FunctionSimulation simulate(@PathVariable String code, @RequestBody SimulationInput input) {
+        if (input == null) throw new IllegalArgumentException("试算参数不能为空");
+        return metadata.simulate(code, input.arguments(), input.operator(), input.value(), input.sample());
+    }
 
     @PostMapping
     @Transactional
@@ -76,6 +102,7 @@ public class BusinessFunctionController {
         BusinessFunctionDefinition value = convert(input);
         if (functions.existsById(value.functionCode)) throw new IllegalArgumentException("函数编码已存在");
         functions.save(value);
+        metadata.decorate(value);
         writeAudit(value.functionCode, "CREATE", null, value);
         return value;
     }
@@ -86,7 +113,7 @@ public class BusinessFunctionController {
         BusinessFunctionDefinition old = functions.findById(code).orElseThrow(() -> new IllegalArgumentException("函数不存在"));
         BusinessFunctionDefinition value = convert(input);
         if (!code.equals(value.functionCode)) throw new IllegalArgumentException("函数编码不可修改");
-        String before = serialize(old);
+        String before = serialize(metadata.decorate(old));
         old.functionName = value.functionName;
         old.category = value.category;
         old.returnType = value.returnType;
@@ -99,6 +126,7 @@ public class BusinessFunctionController {
         old.description = value.description;
         old.enabled = value.enabled;
         functions.save(old);
+        metadata.decorate(old);
         writeAudit(code, "UPDATE", before, old);
         return old;
     }
@@ -107,18 +135,25 @@ public class BusinessFunctionController {
     @Transactional
     public BusinessFunctionDefinition toggle(@PathVariable String code) {
         BusinessFunctionDefinition value = functions.findById(code).orElseThrow(() -> new IllegalArgumentException("函数不存在"));
-        String before = serialize(value);
+        String before = serialize(metadata.decorate(value));
         value.enabled = !value.enabled;
         functions.save(value);
+        metadata.decorate(value);
         writeAudit(code, value.enabled ? "ENABLE" : "DISABLE", before, value);
         return value;
     }
 
+    /**
+     * 系统必检（REQUIRED）函数不能删除：C1 执行器在代码里强制落实，删除绕不过，只能停用。
+     * 已被字段绑定或已保存的 C1 条件引用的函数同样不能删除。
+     */
     @DeleteMapping("/{code}")
     @Transactional
     public Map<String, String> delete(@PathVariable String code) {
         BusinessFunctionDefinition value = functions.findById(code).orElseThrow(() -> new IllegalArgumentException("函数不存在"));
-        if ("clientExcluded".equals(code)) throw new IllegalArgumentException("C1 正在使用该内置函数，请停用而非删除");
+        if (metadata.isRequired(code)) throw new IllegalArgumentException("C1 正在使用该系统必检函数，请停用而非删除");
+        List<String> references = metadata.references(code);
+        if (!references.isEmpty()) throw new IllegalArgumentException("函数已被引用，不能删除：" + String.join("、", references.stream().limit(5).toList()));
         writeAudit(code, "DELETE", serialize(value), null);
         functions.delete(value);
         return Map.of("deleted", code);
@@ -145,7 +180,8 @@ public class BusinessFunctionController {
         if (rules.isEmpty() || rules.stream().anyMatch(s -> !s.matches("C([1-9]|10)"))) throw new IllegalArgumentException("请选择 C1–C10 适用规则");
         if (!List.of("CANDIDATE", "TRANSACTION", "GLOBAL").contains(in.executionScope())) throw new IllegalArgumentException("执行作用域无效");
         if (!List.of("REQUEST", "NONE").contains(in.cacheStrategy())) throw new IllegalArgumentException("缓存策略无效");
-        if (!HANDLERS.contains(in.handlerCode())) throw new IllegalArgumentException("只能绑定已注册的 Java Handler");
+        if (!HANDLERS.contains(in.handlerCode()) && !metadata.registeredHandlers().contains(in.handlerCode()))
+            throw new IllegalArgumentException("只能绑定已注册的 Java Handler");
         JsonNode params;
         try { params = json.readTree(blank(in.parametersJson()) ? "[]" : in.parametersJson()); }
         catch (Exception e) { throw new IllegalArgumentException("输入参数不是有效 JSON"); }

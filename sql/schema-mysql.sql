@@ -231,7 +231,16 @@ CREATE TABLE IF NOT EXISTS relay_rule_field
 ) NOT NULL, value_options VARCHAR
 (
     1000
-), enabled BOOLEAN NOT NULL
+), enabled BOOLEAN NOT NULL, value_source VARCHAR
+(
+    20
+) NULL, function_code VARCHAR
+(
+    64
+) NULL, argument_bindings VARCHAR
+(
+    4000
+) NULL
     ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS relay_rule_audit
 (

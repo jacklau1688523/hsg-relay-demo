@@ -90,6 +90,33 @@ class SchemaRestartTest {
         }
     }
 
+    @Test
+    void existingRuleFieldTableGainsFunctionBindingColumnsWithoutLosingData() throws Exception {
+        String url = "jdbc:h2:file:" + dir.resolve("rule_field_upgrade")
+                + ";MODE=MySQL;DATABASE_TO_UPPER=false;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
+        // 本次升级前的 relay_rule_field：没有取值来源、函数编码、参数绑定三列，带一个已在 C1 条件里使用的字段
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement()) {
+            stmt.execute("CREATE TABLE relay_rule_field (field_code VARCHAR(64) PRIMARY KEY,field_name VARCHAR(80) NOT NULL,"
+                    + "data_type VARCHAR(20) NOT NULL,allowed_operators VARCHAR(200) NOT NULL,allowed_rules VARCHAR(100) NOT NULL,"
+                    + "value_options VARCHAR(1000),enabled BOOLEAN NOT NULL)");
+            stmt.execute("INSERT INTO relay_rule_field (field_code,field_name,data_type,allowed_operators,allowed_rules,enabled) "
+                    + "VALUES ('clientProviderExcluded','合作方排除客户','BOOLEAN','EQ,NE','C1',TRUE)");
+        }
+        updateSchema(url, com.hsg.relay.domain.FieldDefinition.class);
+        // 再次启动：列已存在，不重复处理也不报错
+        updateSchema(url, com.hsg.relay.domain.FieldDefinition.class);
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement();
+             var rs = stmt.executeQuery("SELECT field_name,enabled,value_source,function_code,argument_bindings FROM relay_rule_field")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("field_name")).isEqualTo("合作方排除客户");
+            assertThat(rs.getBoolean("enabled")).isTrue();
+            assertThat(rs.getString("value_source")).as("升级前没有取值来源，保持为空").isNull();
+            assertThat(rs.getString("function_code")).isNull();
+            assertThat(rs.getString("argument_bindings")).isNull();
+            assertThat(rs.next()).isFalse();
+        }
+    }
+
     private void updateSchema(String url) {
         updateSchema(url, ProviderRestriction.class);
     }

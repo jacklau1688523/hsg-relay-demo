@@ -29,6 +29,12 @@ public class BusinessFunctionDefinition {
     public String description;
     @Column(nullable = false)
     public boolean enabled = true;
+    // 以下两项不落库，接口返回时由 FunctionMetadataService 按代码补上：
+    // usagePolicy：REQUIRED 系统必检（执行器强制落实，不可删除）/ OPTIONAL 可选；implemented：后端实现已注册且返回类型一致
+    @Transient
+    public String usagePolicy;
+    @Transient
+    public boolean implemented;
 
     public BusinessFunctionDefinition() {}
 }

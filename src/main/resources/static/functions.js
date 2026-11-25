@@ -26,12 +26,24 @@ function addFunctionParam(param = {}) {
     $('fnParams').append(row);
     previewFunction();
 }
+// 使用策略由规则执行器在代码里声明（REQUIRED = 系统必检），函数库元数据改不了，这里只读展示：
+// 系统必检的函数由执行器每次判定强制调用，只能停用、不能删除。实现状态说明后端 Handler 是否已注册。
+function usageCell(f) {
+    const policy = f.usagePolicy === 'REQUIRED'
+        ? '<span class="meta-tag">系统必检</span><br><span class="muted">执行器强制执行 · 不可删除</span>'
+        : '<span class="muted">可选 · 被条件引用时调用</span>';
+    // 系统必检但后端没有独立 Handler：由执行器内部落实，不能添加到条件
+    const implemented = f.implemented
+        ? '<span class="pass badge">实现已注册</span>'
+        : f.usagePolicy === 'REQUIRED' ? '<span class="pending badge">执行器内部落实</span>' : '<span class="fail badge">实现未注册</span>';
+    return `${policy}<br>${implemented}`;
+}
 function renderFunctionList() {
     const enabled = businessFunctions.filter(f => f.enabled);
     $('functionStats').innerHTML = [[businessFunctions.length,'函数总数'],[enabled.length,'启用函数'],[enabled.filter(f => fnSplit(f.allowedRules).includes('C1')).length,'C1 可用函数'],[enabled.filter(f => fnSplit(f.allowedRules).includes('C2')).length,'C2 可用函数']].map(([count,label]) => `<div class="meta-stat"><strong>${count}</strong><span>${label}</span></div>`).join('');
     const query = $('functionSearch').value.trim().toLowerCase(), rule = $('functionRuleFilter').value, status = $('functionStatusFilter').value;
     const shown = businessFunctions.filter(f => (!rule || fnSplit(f.allowedRules).includes(rule)) && (!status || (status === 'on') === f.enabled) && (!query || [f.functionCode,f.functionName,f.handlerCode,f.category,f.dataSource].join(' ').toLowerCase().includes(query)));
-    $('functionRows').innerHTML = shown.map(f => `<tr><td><span class="function-name">${esc(f.functionName)}</span><br><span class="function-code">${esc(f.functionCode)}</span></td><td>${esc(f.category)}</td><td><span class="meta-tag">${esc(f.returnType)}</span></td><td><div class="meta-tags">${fnSplit(f.allowedRules).map(r => `<span class="meta-tag">${esc(r)}</span>`).join('')}</div></td><td>${esc(f.executionScope)}</td><td class="mono">${esc(f.handlerCode)}</td><td class="mono">${esc(f.dataSource || '—')}</td><td>${f.enabled ? '<span class="pass badge">启用</span>' : '<span class="pending badge">停用</span>'}</td><td><div class="actions"><button type="button" class="btn secondary tiny" data-fn-edit="${esc(f.functionCode)}">编辑</button><button type="button" class="btn secondary tiny" data-fn-toggle="${esc(f.functionCode)}">${f.enabled ? '停用' : '启用'}</button><button type="button" class="btn secondary tiny" data-fn-delete="${esc(f.functionCode)}">删除</button></div></td></tr>`).join('') || '<tr><td colspan="9" class="meta-empty">没有匹配的函数</td></tr>';
+    $('functionRows').innerHTML = shown.map(f => `<tr><td><span class="function-name">${esc(f.functionName)}</span><br><span class="function-code">${esc(f.functionCode)}</span></td><td>${esc(f.category)}</td><td><span class="meta-tag">${esc(f.returnType)}</span></td><td><div class="meta-tags">${fnSplit(f.allowedRules).map(r => `<span class="meta-tag">${esc(r)}</span>`).join('')}</div></td><td>${esc(f.executionScope)}</td><td class="mono">${esc(f.handlerCode)}</td><td class="mono">${esc(f.dataSource || '—')}</td><td>${usageCell(f)}</td><td>${f.enabled ? '<span class="pass badge">启用</span>' : '<span class="pending badge">停用</span>'}</td><td><div class="actions"><button type="button" class="btn secondary tiny" data-fn-edit="${esc(f.functionCode)}">编辑</button><button type="button" class="btn secondary tiny" data-fn-toggle="${esc(f.functionCode)}">${f.enabled ? '停用' : '启用'}</button>${f.usagePolicy === 'REQUIRED' ? `<button type="button" class="btn secondary tiny" data-fn-delete="${esc(f.functionCode)}" disabled title="系统必检函数由规则执行器在代码里引用，只能停用，不能删除">删除</button>` : `<button type="button" class="btn secondary tiny" data-fn-delete="${esc(f.functionCode)}">删除</button>`}</div></td></tr>`).join('') || '<tr><td colspan="10" class="meta-empty">没有匹配的函数</td></tr>';
 }
 async function refreshFunctions() {
     const [list, handlers] = await Promise.all([api('/function-metadata'), api('/function-metadata/handlers')]);
@@ -97,10 +109,12 @@ $('functionRows').onclick = async event => {
     if (edit) openFunctionEditor(edit.dataset.fnEdit);
     if (toggle) {
         const f = businessFunctions.find(x => x.functionCode === toggle.dataset.fnToggle);
-        if (f && confirm(`确定${f.enabled ? '停用' : '启用'}函数「${f.functionName}」？`)) { try { await api('/function-metadata/' + encodeURIComponent(f.functionCode) + '/toggle', {method:'POST'}); await refreshFunctions(); } catch (error) { alert(error.message); } }
+        // 系统必检函数停用后执行器仍会执行这项检查；引用它的条件不能执行，对应规则按未命中处理
+        const warning = f?.usagePolicy === 'REQUIRED' ? '\n它是系统必检函数：C1 执行器每次判定仍会执行这项检查；引用它的条件不能执行，对应规则按未命中处理。' : '';
+        if (f && confirm(`确定${f.enabled ? '停用' : '启用'}函数「${f.functionName}」？${f.enabled ? warning : ''}`)) { try { await api('/function-metadata/' + encodeURIComponent(f.functionCode) + '/toggle', {method:'POST'}); await refreshFunctions(); } catch (error) { alert(error.message); } }
     }
     if (remove) {
         const f = businessFunctions.find(x => x.functionCode === remove.dataset.fnDelete);
-        if (f && confirm(`确定删除函数「${f.functionName}」？`)) { try { await api('/function-metadata/' + encodeURIComponent(f.functionCode), {method:'DELETE'}); await refreshFunctions(); } catch (error) { alert(error.message); } }
+        if (f && confirm(`确定删除函数「${f.functionName}」？已被规则引用的函数无法删除。`)) { try { await api('/function-metadata/' + encodeURIComponent(f.functionCode), {method:'DELETE'}); await refreshFunctions(); } catch (error) { alert(error.message); } }
     }
 };
