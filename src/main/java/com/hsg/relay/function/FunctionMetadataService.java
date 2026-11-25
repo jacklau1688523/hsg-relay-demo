@@ -8,6 +8,7 @@ import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
 import com.hsg.relay.repo.AppetiteRepository;
 import com.hsg.relay.repo.BusinessFunctionRepository;
+import com.hsg.relay.repo.C1ConditionConfigRepository;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
 import com.hsg.relay.service.ExpressionService;
@@ -83,13 +84,15 @@ public class FunctionMetadataService {
     private final ExpressionService expressions;
     private final FieldDefinitionRepository fields;
     private final AppetiteRepository appetites;
+    private final C1ConditionConfigRepository c1Conditions;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
 
     public FunctionMetadataService(BusinessFunctionRepository definitions, BusinessFunctionRegistry registry,
                                    List<RequiredFunctionProvider> executors, FunctionExecutionService execution,
                                    ExpressionService expressions, FieldDefinitionRepository fields,
-                                   AppetiteRepository appetites, RuleAuditRepository audit, ObjectMapper json) {
+                                   AppetiteRepository appetites, C1ConditionConfigRepository c1Conditions,
+                                   RuleAuditRepository audit, ObjectMapper json) {
         this.definitions = definitions;
         this.registry = registry;
         this.executors = executors;
@@ -97,6 +100,7 @@ public class FunctionMetadataService {
         this.expressions = expressions;
         this.fields = fields;
         this.appetites = appetites;
+        this.c1Conditions = c1Conditions;
         this.audit = audit;
         this.json = json;
     }
@@ -341,6 +345,9 @@ public class FunctionMetadataService {
         List<String> references = new ArrayList<>();
         for (FieldDefinition field : fields.findAll())
             if (FieldResolver.isFunctionBound(field) && functionCode.equals(field.functionCode)) references.add("字段绑定 " + field.fieldCode);
+        c1Conditions.findById(1L).ifPresent(row -> {
+            if (row.conditionJson != null && usesFunction(row.conditionJson, functionCode)) references.add("C1 全局过滤条件");
+        });
         for (Appetite rule : appetites.findAll())
             if (rule.conditionJson != null && usesFunction(rule.conditionJson, functionCode)) references.add("C1 准入规则 #" + rule.id);
         return references;

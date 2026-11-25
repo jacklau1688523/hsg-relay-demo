@@ -12,6 +12,7 @@ import com.hsg.relay.api.RelayController;
 import com.hsg.relay.domain.Appetite;
 import com.hsg.relay.domain.ClientExclusion;
 import com.hsg.relay.repo.AppetiteRepository;
+import com.hsg.relay.repo.ClientProfileRepository;
 import java.util.List;
 import java.util.Map;
 
@@ -33,9 +34,13 @@ class C1ServiceTest {
     @Autowired
     AppetiteRepository appetites;
     @Autowired
+    ClientProfileRepository clients;
+    @Autowired
     FieldMetadataController metadata;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    C1ConditionService globalConditions;
 
     // PROV-HO / PSP / USD / KG 为 CASE_BY_CASE，客户 C10001 有有效审批：命中即 PASS
     private Appetite headOfficePspRule() {
@@ -188,9 +193,52 @@ class C1ServiceTest {
     }
 
     @Test
-    void incompleteClientRejected() {
+    void incompleteClientIsEvaluatedByConfiguredAppetiteRules() {
         var result = service.evaluate(new C1Service.Simulation("C10003", "PROV-T1", "USD", "KG", new BigDecimal("150000")));
-        assertThat(result.reasonCode()).isEqualTo("CLIENT_NOT_CLASSIFIED");
+        // 分类状态不再由 C1 执行器硬编码拦截；C10003 的 WEB3 规则是配置的 EXCLUDE。
+        assertThat(result.reasonCode()).isEqualTo("APPETITE_EXCLUDED");
+    }
+
+    @Test
+    @Transactional
+    void pendingClassificationCanPassWhenRuleConditionAllowsIt() {
+        metadata.create(new FieldMetadataController.Input("clientClassificationStatus", "客户分类状态", "ENUM", "EQ,NE", "C1", "COMPLETE,PENDING", true));
+        var rule = appetites.findAll().stream()
+                .filter(a -> a.providerCode.equals("PROV-HO") && a.flowCategory.equals("PSP"))
+                .findFirst().orElseThrow();
+        controller.saveC1Condition(rule.id, new RelayController.C1ConditionUpdate(true,
+                new ExpressionService.Node("AND", List.of(
+                        new ExpressionService.Node(null, null, "clientClassificationStatus", "EQ", "PENDING"),
+                        new ExpressionService.Node(null, null, "paymentCurrency", "EQ", "USD")), null, null, null)));
+        // C10003 没有 PSP 档案类别，先改用已有 PSP 客户的档案状态进行验证；规则条件本身由配置决定。
+        clients.save(new com.hsg.relay.domain.ClientProfile("C1-PENDING", "PENDING", "PSP"));
+        var result = service.evaluate(new C1Service.Simulation("C1-PENDING", "PROV-HO", "USD", "KG", new BigDecimal("100")));
+        assertThat(result.reasonCode()).isEqualTo("APPETITE_APPROVAL_MISSING");
+    }
+
+    @Test
+    @Transactional
+    void globalConditionMustMatchForCandidateToContinue() {
+        metadata.create(new FieldMetadataController.Input("clientClassificationStatus", "客户分类状态", "ENUM", "EQ,NE", "C1", "COMPLETE,PENDING", true));
+        var tree = new ExpressionService.Node("AND", List.of(
+                new ExpressionService.Node(null, null, "clientClassificationStatus", "EQ", "PENDING")), null, null, null);
+        globalConditions.save(new C1ConditionService.Input(true, tree, null));
+
+        var complete = service.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100")));
+        assertThat(complete.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(complete.steps()).anySatisfy(step -> {
+            assertThat(step.step()).contains("C1 准入条件");
+            assertThat(step.status()).isEqualTo("FAIL");
+            assertThat(step.detail()).contains("准入条件不满足");
+        });
+
+        var pending = service.evaluate(new C1Service.Simulation("C10003", "PROV-T1", "USD", "KG", new BigDecimal("100")));
+        assertThat(pending.reasonCode()).isEqualTo("APPETITE_EXCLUDED");
+        assertThat(pending.steps()).anySatisfy(step -> {
+            assertThat(step.step()).contains("C1 准入条件");
+            assertThat(step.status()).isEqualTo("PASS");
+            assertThat(step.detail()).contains("准入条件满足");
+        });
     }
 
     @Test

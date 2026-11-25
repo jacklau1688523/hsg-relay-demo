@@ -327,9 +327,7 @@ public class RoutingService {
         for (int i = 0; i < valid.size(); i++) valid.get(i).rank = i + 1;
         String reason = null;
         if (valid.isEmpty()) {
-            if (!"COMPLETE".equals(clients.findById(r.clientId()).orElseThrow().classificationStatus))
-                reason = "CLIENT_NOT_CLASSIFIED";
-            else if (fx && all.isEmpty()) reason = "NO_FX_VENUE";
+            if (fx && all.isEmpty()) reason = "NO_FX_VENUE";
             else if (!all.isEmpty() && all.stream().allMatch(c -> c.checks.stream().anyMatch(x -> Set.of("C1", "C2").contains(x.code()) && !x.passed())))
                 reason = "NO_PROVIDER_ACCEPTS";
             else if (all.stream().anyMatch(c -> only(c).equals(List.of("C10")))) reason = "FX_WINDOW_CLOSED";

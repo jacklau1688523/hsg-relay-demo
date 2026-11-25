@@ -1,10 +1,9 @@
 'use strict';
 let c1ConditionTree = null;
-let c1ActiveRule = null;
+let c1ConditionConfig = null;
 // 函数库数据（GET /function-metadata/available?ruleCode=C1）：受控取值路径、系统必检清单、可添加到条件的函数。
 // 打开页面和打开「添加函数」时读取；读取失败不影响字段条件的配置，函数条件显示为不可用并说明原因。
 let c1FunctionCatalog = null, c1FunctionCatalogError = '', c1FunctionTarget = null, c1FunctionDrafts = {}, c1FunctionResults = {};
-const c1ConfiguredRuleId = new URLSearchParams(location.search).get('rule');
 const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 >',GTE:'大于等于 ≥',LT:'小于 <',LTE:'小于等于 ≤'};
 const c1Sources = {CANDIDATE:'候选合作方',TRANSACTION:'本笔交易',CONTEXT:'规则上下文'};
 const c1Split = value => String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
@@ -151,28 +150,24 @@ async function c1LoadFunctionCatalog(){
   catch(error){c1FunctionCatalog=null;c1FunctionCatalogError=error.message;}
   c1RenderPathOptions();
 }
-async function c1CompileCondition(){try{const out=await api('/appetites/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});$('c1Compiled').textContent=out.expression;$('c1ConditionError').textContent='';}catch(error){$('c1Compiled').textContent='条件校验失败';$('c1ConditionError').textContent=error.message;}}
+async function c1CompileCondition(){try{const out=await api('/c1/condition/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});$('c1Compiled').textContent=out.expression;$('c1ConditionError').textContent='';}catch(error){$('c1Compiled').textContent='条件校验失败';$('c1ConditionError').textContent=error.message;}}
 async function c1LoadConditionRules(){
   try{
-   // 左侧配置对象只由合作方详情的规则入口（rule 参数）决定；右侧模拟输入不更换配置对象
-   await Promise.all([api('/appetites'),api('/field-metadata')]).then(([rules,defs])=>{allRules=rules;fieldDefs=defs;});
-   const wanted=c1ActiveRule?.id||c1ConfiguredRuleId;
-   c1ActiveRule=allRules.find(r=>String(r.id)===String(wanted))||allRules.slice().sort((a,b)=>a.id-b.id)[0]||null;
+   // 左侧是 C1 全局过滤条件，与右侧模拟选择及具体合作方准入规则相互独立
+   await Promise.all([api('/c1/condition'),api('/field-metadata')]).then(([config,defs])=>{c1ConditionConfig=config;fieldDefs=defs;});
    await c1LoadFunctionCatalog();
-   c1InitCondition(c1ActiveRule?.conditionJson||null);
-   $('c1SaveButton').disabled=!c1ActiveRule;
-   $('c1SaveButton').textContent=c1ActiveRule?`保存条件至规则 #${c1ActiveRule.id}`:'保存条件配置';
-   $('c1SaveButton').title=c1ActiveRule?'': '请先在合作方详情新增准入规则';
+   c1InitCondition(c1ConditionConfig?.conditionJson||null);
+   $('c1SaveButton').disabled=false;
+   $('c1SaveButton').textContent='保存 C1 准入条件';
+   $('c1SaveButton').title='';
   }catch(error){$('c1ConditionError').textContent=error.message;}
 }
 async function c1SaveCondition(){
-  const id=c1ActiveRule?.id;if(!id)return;
   $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
   try{
-   const saved=await api('/appetites/'+encodeURIComponent(id)+'/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree})});
-   const index=allRules.findIndex(r=>String(r.id)===String(id));if(index>=0)allRules[index]=saved;
-   c1ActiveRule=saved;
-   $('c1ConditionGood').textContent=`条件配置已保存 · 规则 #${id} · 版本 ${saved.versionNo}`;
+   const saved=await api('/c1/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree,versionNo:c1ConditionConfig?.versionNo})});
+   c1ConditionConfig=saved;
+   $('c1ConditionGood').textContent=`C1 全局准入条件已保存 · 版本 ${saved.versionNo}`;
   }catch(error){$('c1ConditionError').textContent=error.message;}
 }
 

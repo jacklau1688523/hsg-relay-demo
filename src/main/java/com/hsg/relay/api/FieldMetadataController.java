@@ -9,6 +9,7 @@ import com.hsg.relay.function.FunctionMetadataService;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
 import com.hsg.relay.repo.AppetiteRepository;
+import com.hsg.relay.repo.C1ConditionConfigRepository;
 import com.hsg.relay.c2.RegulatoryRuleRepository;
 import com.hsg.relay.c2.C2ConditionConfigRepository;
 import com.hsg.relay.routing.C3ConditionConfigRepository;
@@ -28,19 +29,22 @@ public class FieldMetadataController {
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
     private final AppetiteRepository appetites;
+    private final C1ConditionConfigRepository c1Conditions;
     private final RegulatoryRuleRepository regulatoryRules;
     private final C2ConditionConfigRepository c2Conditions;
     private final C3ConditionConfigRepository c3Conditions;
     private final FunctionMetadataService functionMetadata;
 
     public FieldMetadataController(FieldDefinitionRepository fields, RuleAuditRepository audit, ObjectMapper json,
-                                   AppetiteRepository appetites, RegulatoryRuleRepository regulatoryRules,
+                                   AppetiteRepository appetites, C1ConditionConfigRepository c1Conditions,
+                                   RegulatoryRuleRepository regulatoryRules,
                                    C2ConditionConfigRepository c2Conditions, C3ConditionConfigRepository c3Conditions,
                                    FunctionMetadataService functionMetadata) {
         this.fields = fields;
         this.audit = audit;
         this.json = json;
         this.appetites = appetites;
+        this.c1Conditions = c1Conditions;
         this.regulatoryRules = regulatoryRules;
         this.c2Conditions = c2Conditions;
         this.c3Conditions = c3Conditions;
@@ -118,6 +122,9 @@ public class FieldMetadataController {
     public Map<String, String> delete(@PathVariable String code) {
         FieldDefinition field = fields.findById(code).orElseThrow(() -> new IllegalArgumentException("字段不存在"));
         List<String> references = new ArrayList<>();
+        c1Conditions.findById(1L).ifPresent(row -> {
+            if (usesField(row.conditionJson, code)) references.add("C1 全局过滤条件");
+        });
         appetites.findAll().forEach(row -> { if (usesField(row.conditionJson, code)) references.add("C1 准入规则 #" + row.id); });
         regulatoryRules.findAll().forEach(row -> {
             if (usesField(row.conditionJson, code) || usesField(row.triggerConditionJson, code))

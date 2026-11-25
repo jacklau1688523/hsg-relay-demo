@@ -35,11 +35,14 @@ public class C1Service implements RequiredFunctionProvider {
     private final ProviderMtdReader mtdReader;
     private final FunctionExecutionService functions;
     private final ExpressionService expressions;
+    private final C1ConditionService globalConditions;
     private final ObjectMapper json;
 
     // 审批和 MTD 的查询在各自的 Handler 里（CaseApprovalChecker / ProviderMtdReader），执行器的系统必检与条件节点共用它们的调用结果
-    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ExpressionService expressions, ObjectMapper json, ClientExclusionChecker exclusionChecker,
-                     CaseApprovalChecker approvalChecker, ProviderMtdReader mtdReader, FunctionExecutionService functions) {
+    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ExpressionService expressions,
+                     ObjectMapper json, ClientExclusionChecker exclusionChecker,
+                     CaseApprovalChecker approvalChecker, ProviderMtdReader mtdReader, FunctionExecutionService functions,
+                     C1ConditionService globalConditions) {
         providers = p;
         appetites = a;
         clients = c;
@@ -48,6 +51,7 @@ public class C1Service implements RequiredFunctionProvider {
         this.mtdReader = mtdReader;
         this.functions = functions;
         this.expressions = expressions;
+        this.globalConditions = globalConditions;
         this.json = json;
     }
 
@@ -108,38 +112,66 @@ public class C1Service implements RequiredFunctionProvider {
         // 请求级上下文：本次判定内相同函数 + 相同参数只查询一次；候选合作方、交易要素、决策时间都来自本次请求
         RuleExecutionContext context = RuleExecutionContext.c1(req.providerCode(), req.clientId(), req.paymentCurrency(), req.beneficiaryBankCountry(), req.amountUsd(), now);
         ClientProfile client = clients.findById(req.clientId()).orElse(null);
-        if (client == null || !"COMPLETE".equals(client.classificationStatus))
-            return fail("CLIENT_NOT_CLASSIFIED", null, null, steps, context, "客户分类不是 COMPLETE");
-        steps.add(new Trace("1. 客户分类", "PASS", "COMPLETE"));
+        if (client == null)
+            return fail("CLIENT_NOT_FOUND", null, null, steps, context, "客户档案不存在");
+        // 客户分类状态不再由执行器硬编码拦截；它作为 clientClassificationStatus 字段注入
+        // C1 页面保存的全局准入条件树，由表达式结果决定是否保留候选合作方。
+        steps.add(new Trace("1. 客户档案", "PASS", "已读取客户档案；分类状态由准入条件配置决定：" + client.classificationStatus));
+        List<String> flows = client.flowCategories == null ? List.of() : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
+        if (flows.isEmpty()) flows = List.of("STANDARD");
+
+        // 页面配置的是 C1 全局准入条件，不隶属于某一条合作方准入规则。
+        // 每个客户流转类别分别求值；任一类别不满足即过滤该合作方。
+        for (String flow : flows) {
+            context.set("candidate.flowCategory", flow);
+            Map<String, Object> variables = new HashMap<>();
+            if (req.variables() != null) variables.putAll(req.variables());
+            variables.put("clientClassificationStatus", client.classificationStatus);
+            variables.put("flowCategory", flow);
+            variables.put("paymentCurrency", req.paymentCurrency());
+            variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
+            variables.put("amountUsd", req.amountUsd());
+            variables.put("appetiteCurrencyEnabled", appetites.findAll().stream().anyMatch(a -> a.enabled
+                    && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory)
+                    && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency())));
+            variables.put("appetiteCountryEnabled", appetites.findAll().stream().anyMatch(a -> a.enabled
+                    && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory)
+                    && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry())));
+            C1ConditionService.Outcome trigger = globalConditions.evaluate(variables, context);
+            if (trigger.configured()) {
+                steps.add(new Trace("2. C1 准入条件 " + flow, trigger.matched() ? "PASS" : "FAIL",
+                        trigger.note() + "；表达式 " + trigger.expression()));
+                if (!trigger.matched())
+                    return fail("C1_CONDITION_NOT_MATCHED", null, null, steps, context,
+                            flow + " 不满足 C1 全局准入条件，候选合作方被过滤");
+            }
+        }
         // 2. 客户排除：系统必检。直接调用 Java Handler，不经过函数库元数据，也不管条件树里有没有 clientExcluded 节点。
         //    查询失败按不通过处理（不返回「未排除」放行）。
         Call exclusion;
         try {
             exclusion = functions.execute(exclusionChecker, "clientExcluded", EXCLUSION_ARGUMENTS, context);
         } catch (RuntimeException ex) {
-            steps.add(new Trace("2. 客户排除", "FAIL", ex.getMessage()));
+            steps.add(new Trace("3. 客户排除", "FAIL", ex.getMessage()));
             return fail("CLIENT_EXCLUSION_CHECK_FAILED", null, null, steps, context, "客户排除记录查询失败，按不通过处理：" + ex.getMessage());
         }
 
         boolean excluded = Boolean.TRUE.equals(exclusion.value());
         String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
         if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, context, "命中合作方客户排除记录（" + exclusionDetail + "）");
-        steps.add(new Trace("2. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
-        List<String> flows = client.flowCategories == null ? List.of() : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
-        if (flows.isEmpty()) flows = List.of("STANDARD");
+        steps.add(new Trace("3. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
         Long lastId = null;
         String lastAction = null;
         for (String flow : flows) {
             context.set("candidate.flowCategory", flow);
-            // 附加条件缺值或已失效的规则按不命中处理，并在校验过程里逐条说明
             List<String> skipped = new ArrayList<>();
             Optional<Appetite> match = appetites.findAll().stream().filter(a -> a.enabled && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory) && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.currency, req.paymentCurrency()) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry()) && conditionMatches(a, req, client, excluded, flow, skipped, context)).max(Comparator.comparingInt(a -> specificity(a, req)));
-            skipped.forEach(detail -> steps.add(new Trace("3. 规则匹配 " + flow, "SKIP", detail)));
+            skipped.forEach(detail -> steps.add(new Trace("4. 规则匹配 " + flow, "SKIP", detail)));
             if (match.isEmpty()) return fail("APPETITE_NOT_SET", null, null, steps, context, flow + " 无有效准入配置（默认拒绝）");
             Appetite a = match.get();
             lastId = a.id;
             lastAction = a.action;
-            steps.add(new Trace("3. 规则匹配 " + flow, "PASS", "命中 #" + a.id + "，" + a.currency + "/" + a.bankCountry + "，动作 " + a.action + "，版本 " + a.versionNo));
+            steps.add(new Trace("4. 规则匹配 " + flow, "PASS", "命中 #" + a.id + "，" + a.currency + "/" + a.bankCountry + "，动作 " + a.action + "，版本 " + a.versionNo));
             if ("EXCLUDE".equals(a.action))
                 return fail("APPETITE_EXCLUDED", a.id, a.action, steps, context, flow + " 被合作方禁止");
             if ("CASE_BY_CASE".equals(a.action)) {
@@ -147,7 +179,7 @@ public class C1Service implements RequiredFunctionProvider {
                 Call approval = functions.execute(approvalChecker, "hasValidCaseApproval", APPROVAL_ARGUMENTS, context);
                 if (!Boolean.TRUE.equals(approval.value()))
                     return fail("APPETITE_APPROVAL_MISSING", a.id, a.action, steps, context, "没有有效的合作方-客户-流转类别审批");
-                steps.add(new Trace("4. 个案审批 " + flow, "PASS", "找到有效审批" + (approval.recordId() == null ? "" : " #" + approval.recordId())));
+                steps.add(new Trace("5. 个案审批 " + flow, "PASS", "找到有效审批" + (approval.recordId() == null ? "" : " #" + approval.recordId())));
             } else if ("ACCEPT".equals(a.action)) {
                 if (a.monthlyCapUsd != null) {
                     // 系统必检：设有月度上限即校验 MTD + 本笔金额
@@ -155,11 +187,11 @@ public class C1Service implements RequiredFunctionProvider {
                     BigDecimal total = mtd.add(req.amountUsd());
                     if (total.compareTo(a.monthlyCapUsd) > 0)
                         return fail("APPETITE_CAP_REACHED", a.id, a.action, steps, context, "MTD " + mtd + " + 本笔 " + req.amountUsd() + " > 月上限 " + a.monthlyCapUsd);
-                    steps.add(new Trace("4. MTD " + flow, "PASS", "MTD " + mtd + " + " + req.amountUsd() + " <= " + a.monthlyCapUsd));
-                } else steps.add(new Trace("4. MTD " + flow, "PASS", "ACCEPT 未设置月度上限"));
+                    steps.add(new Trace("5. MTD " + flow, "PASS", "MTD " + mtd + " + " + req.amountUsd() + " <= " + a.monthlyCapUsd));
+                } else steps.add(new Trace("5. MTD " + flow, "PASS", "ACCEPT 未设置月度上限"));
             } else throw new IllegalStateException("未知准入动作 " + a.action);
         }
-        steps.add(new Trace("5. C1 汇总", "PASS", "全部流转类别通过；模拟不占用 MTD"));
+        steps.add(new Trace("6. C1 汇总", "PASS", "全部流转类别通过；模拟不占用 MTD"));
         return new Result(true, "PASS", lastId, lastAction, steps, context.calls());
     }
 
@@ -175,11 +207,11 @@ public class C1Service implements RequiredFunctionProvider {
         return (a.currency.equalsIgnoreCase(r.paymentCurrency()) ? 2 : 0) + (a.bankCountry.equalsIgnoreCase(r.beneficiaryBankCountry()) ? 1 : 0);
     }
 
+    /** 兼容合作方准入规则历史上保存的附加参与条件；C1 页面新配置使用全局过滤条件。 */
     private boolean conditionMatches(Appetite rule, Simulation req, ClientProfile client, boolean excluded, String flow, List<String> skipped, RuleExecutionContext context) {
         if (rule.conditionJson == null || rule.conditionJson.isBlank()) return true;
         try {
             var tree = json.readValue(rule.conditionJson, ExpressionService.Node.class);
-            // 规则保存后字段 / 函数在元数据中心被停用、不再适用 C1 或可选值被删：条件已无法按当前配置执行，按不命中处理并说明
             ExpressionService.Compiled compiled;
             try { compiled = expressions.compileDetailed(tree, "C1"); }
             catch (IllegalArgumentException ex) {
@@ -188,15 +220,12 @@ public class C1Service implements RequiredFunctionProvider {
             }
             Map<String, Object> variables = new HashMap<>();
             if (req.variables() != null) variables.putAll(req.variables());
-            // 客户和合作方状态从档案、排除记录读取，不接受模拟请求覆盖
             variables.put("clientClassificationStatus", client.classificationStatus);
             variables.put("clientProviderExcluded", excluded);
-            // 四个交易要素以模拟请求为准，不接受 variables 覆盖
             variables.put("flowCategory", flow);
             variables.put("paymentCurrency", req.paymentCurrency());
             variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
             variables.put("amountUsd", req.amountUsd());
-            // 绑定了函数的字段取值来自函数，不需要请求提供
             List<String> missing = expressions.referencedFields(tree).stream()
                     .filter(field -> !expressions.isFunctionBound(field))
                     .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
@@ -204,10 +233,10 @@ public class C1Service implements RequiredFunctionProvider {
                 skipped.add("规则 #" + rule.id + " 的附加条件引用了字段 " + String.join("、", missing) + "，本次没有提供取值，按不命中处理");
                 return false;
             }
-            // 函数节点与函数绑定字段在这步入参解析并调用；同一判定内相同函数 + 相同入参复用结果
             return expressions.evaluate(compiled, variables, context).matched();
         } catch (Exception ex) {
             throw new IllegalStateException("C1 规则 #" + rule.id + " 条件执行失败: " + ex.getMessage(), ex);
         }
     }
+
 }
