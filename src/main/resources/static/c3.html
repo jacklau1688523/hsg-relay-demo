@@ -151,7 +151,8 @@
                 grid-template-columns:1fr 1fr
             }
         }
-    </style>
+    .c1-group{border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}.c1-group .c1-group{margin-left:16px;background:#fff}.c1-head,.c1-line{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}.c1-head strong{flex:1}.c1-head select{width:190px}.c1-line select:first-child{flex:2;min-width:150px}.c1-line select:nth-child(2){flex:1;min-width:100px}.c1-line input,.c1-line select:nth-child(3){flex:1.5;min-width:120px}.c1-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}.c3-list-collapsed{display:none}
+</style>
 </head>
 <body>
 <div class="shell">
@@ -194,6 +195,14 @@
                 <button class="tab sel">业务覆盖查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div class="err" id="pageError" role="alert"></div>
+            <div class="panel" id="c3ConditionPanel">
+                <div class="rulebar"><div><h2 style="margin:0">① 触发条件：按字段库构建</h2><div class="muted">使用元数据中心已启用的 C3 字段，支持嵌套 AND / OR；覆盖行仍按最精确优先。</div></div><button type="button" class="btn secondary" onclick="c3CondLoad()">↻ 刷新条件 / 字段库</button></div>
+                <div id="c3ConditionTree"></div>
+                <button type="button" class="btn secondary tiny" onclick="c3CondCompileCondition()">校验并生成表达式</button>
+                <div id="c3Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div>
+                <div id="c3ConditionError" class="err" role="alert"></div><div id="c3ConditionGood" class="good" role="status"></div>
+                <div class="actions" style="justify-content:flex-end;margin-top:18px"><button type="button" class="btn" onclick="c3CondSave()">保存条件配置</button></div>
+            </div>
             <div class="c3-grid">
                 <section>
                     <div class="panel">
@@ -216,11 +225,11 @@
                     <div class="panel">
                         <div class="rulebar"><h2 id="rowCount" style="margin:0">业务覆盖列表</h2>
                             <div class="actions">
-                                <a class="btn" href="/providers.html">前往合作方详情维护 ↗</a>
+                                <button type="button" class="btn secondary" id="toggleList" aria-expanded="false">展开列表</button><a class="btn" href="/providers.html">前往合作方详情维护 ↗</a>
                                 <button class="btn secondary" id="refresh">↻ 刷新</button>
                             </div>
                         </div>
-                        <div class="tablewrap">
+                        <div id="coverageListBody" class="c3-list-collapsed"><div class="tablewrap">
                             <table>
                                 <thead>
                                 <tr>
@@ -238,7 +247,7 @@
                         </div>
                         <div class="notice">最精确行优先：指定地区 ＞ ALL；再比较指定国家 ＞ ALL；再比较银行 LIST ＞
                             ALL。同精确度按覆盖表顺序选取。选中行同时供 C5 起息日和 C6 限额使用。
-                        </div>
+                        </div></div>
                     </div>
                 </section>
                 <aside class="rightPanel">
@@ -295,5 +304,6 @@
     <option value="CN-ZJ">
 </datalist>
 <script src="/c3.js"></script>
+<script src="/c3-conditions.js"></script>
 </body>
 </html>

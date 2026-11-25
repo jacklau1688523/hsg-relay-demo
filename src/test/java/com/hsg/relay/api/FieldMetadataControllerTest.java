@@ -2,6 +2,8 @@ package com.hsg.relay.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.c2.C2FieldCatalog;
+import com.hsg.relay.c2.C2ConditionConfig;
+import com.hsg.relay.c2.C2ConditionConfigRepository;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.service.ExpressionService;
 import org.junit.jupiter.api.Test;
@@ -26,6 +28,22 @@ class FieldMetadataControllerTest {
     FieldDefinitionRepository repository;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    C2ConditionConfigRepository c2Conditions;
+
+    @Test
+    void deletesUnusedFieldButRejectsFieldReferencedBySavedCondition() {
+        controller.create(new FieldMetadataController.Input("testDeleteUnused", "可删字段", "BOOLEAN", "EQ", "C2", "", true));
+        controller.delete("testDeleteUnused");
+        assertFalse(repository.existsById("testDeleteUnused"));
+
+        controller.create(new FieldMetadataController.Input("testDeleteUsed", "已引用字段", "BOOLEAN", "EQ", "C2", "", true));
+        C2ConditionConfig condition = new C2ConditionConfig();
+        condition.conditionJson = "{\"logic\":\"AND\",\"children\":[{\"field\":\"testDeleteUsed\",\"operator\":\"EQ\",\"value\":\"true\"}]}";
+        c2Conditions.save(condition);
+        assertThrows(IllegalArgumentException.class, () -> controller.delete("testDeleteUsed"));
+        assertTrue(repository.existsById("testDeleteUsed"));
+    }
 
     @Test
     void newFieldFeedsExpressionAndC2PickerUntilDisabled() {

@@ -25,8 +25,9 @@ public class RoutingService {
     private final RuleAuditRepository audit;
     private final C1Service c1;
     private final C2Service c2;
+    private final C3ConditionService c3Conditions;
 
-    public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2) {
+    public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2, C3ConditionService c3Conditions) {
         docs = d;
         json = j;
         providers = p;
@@ -34,6 +35,7 @@ public class RoutingService {
         audit = a;
         this.c1 = c1;
         this.c2 = c2;
+        this.c3Conditions = c3Conditions;
     }
 
     public record ConfigView(long revision, RoutingConfig config) {
@@ -285,7 +287,7 @@ public class RoutingService {
                 check(c, "C1", a.passed() ? List.of() : List.of(a.reasonCode()), a);
                 var b = c2.simulate(new C2Service.Simulation(p.code, r.paymentCurrency(), r.debitCurrency(), r.beneficiaryBankCountry(), r.beneficiaryAddressCountry(), r.beneficiaryRegion(), r.orderingCountry(), r.clientCountry(), r.intermediaryCountry(), r.purpose(), r.directorUboNationalities()), now.toLocalDateTime());
                 check(c, "C2", b.hits().stream().map(C2Service.RuleHit::reasonCode).distinct().toList(), b);
-                Reach reach = C3Matcher.select(cfg.reaches(), new C3Matcher.Input(p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), r.beneficiaryRegion(), r.beneficiaryBankBic(), r.chargeOption())).map(C3Matcher.Row::reach).orElse(null);
+                Reach reach = c3Conditions.select(cfg.reaches(), new C3Matcher.Input(p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), r.beneficiaryRegion(), r.beneficiaryBankBic(), r.chargeOption())).map(C3Matcher.Row::reach).orElse(null);
                 check(c, "C3", reach == null ? List.of("NO_REACH") : List.of(), reach);
                 var c4 = C4Calculator.check(p.code, p.fundingCheckEnabled, venue, r.paymentCurrency(), r.debitCurrency(), r.amount(), cfg.hkdRates(), cfg.balances());
                 check(c, "C4", c4.reasons(), c4);

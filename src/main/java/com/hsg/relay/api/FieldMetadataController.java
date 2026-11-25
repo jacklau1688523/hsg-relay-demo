@@ -5,8 +5,13 @@ import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import com.hsg.relay.repo.AppetiteRepository;
+import com.hsg.relay.c2.RegulatoryRuleRepository;
+import com.hsg.relay.c2.C2ConditionConfigRepository;
+import com.hsg.relay.routing.C3ConditionConfigRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
 
 import java.util.*;
 
@@ -19,11 +24,21 @@ public class FieldMetadataController {
     private final FieldDefinitionRepository fields;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
+    private final AppetiteRepository appetites;
+    private final RegulatoryRuleRepository regulatoryRules;
+    private final C2ConditionConfigRepository c2Conditions;
+    private final C3ConditionConfigRepository c3Conditions;
 
-    public FieldMetadataController(FieldDefinitionRepository fields, RuleAuditRepository audit, ObjectMapper json) {
+    public FieldMetadataController(FieldDefinitionRepository fields, RuleAuditRepository audit, ObjectMapper json,
+                                   AppetiteRepository appetites, RegulatoryRuleRepository regulatoryRules,
+                                   C2ConditionConfigRepository c2Conditions, C3ConditionConfigRepository c3Conditions) {
         this.fields = fields;
         this.audit = audit;
         this.json = json;
+        this.appetites = appetites;
+        this.regulatoryRules = regulatoryRules;
+        this.c2Conditions = c2Conditions;
+        this.c3Conditions = c3Conditions;
     }
 
     public record Input(String fieldCode, String fieldName, String dataType, String allowedOperators,
@@ -75,6 +90,39 @@ public class FieldMetadataController {
         return saved;
     }
 
+    @DeleteMapping("/{code}")
+    @Transactional
+    public Map<String, String> delete(@PathVariable String code) {
+        FieldDefinition field = fields.findById(code).orElseThrow(() -> new IllegalArgumentException("字段不存在"));
+        List<String> references = new ArrayList<>();
+        appetites.findAll().forEach(row -> { if (usesField(row.conditionJson, code)) references.add("C1 准入规则 #" + row.id); });
+        regulatoryRules.findAll().forEach(row -> {
+            if (usesField(row.conditionJson, code) || usesField(row.triggerConditionJson, code))
+                references.add("监管路由规则 " + row.ruleId);
+        });
+        c2Conditions.findById(1L).ifPresent(row -> { if (usesField(row.conditionJson, code)) references.add("C2 全局条件"); });
+        c3Conditions.findById(1L).ifPresent(row -> { if (usesField(row.conditionJson, code)) references.add("C3 全局条件"); });
+        if (!references.isEmpty()) throw new IllegalArgumentException("字段已被引用，不能删除：" + String.join("、", references.stream().limit(5).toList()));
+        writeAudit(code, "DELETE", serialize(field), null);
+        fields.delete(field);
+        return Map.of("deleted", code);
+    }
+
+    private boolean usesField(String conditionJson, String code) {
+        if (conditionJson == null || conditionJson.isBlank()) return false;
+        try { return usesField(json.readTree(conditionJson), code); }
+        catch (Exception e) { throw new IllegalStateException("已保存的规则条件无法读取，请先修复规则配置", e); }
+    }
+
+    private boolean usesField(com.fasterxml.jackson.databind.JsonNode node, String code) {
+        if (node == null) return false;
+        if (node.isObject()) {
+            if (code.equals(node.path("field").asText())) return true;
+            for (var child : node) if (usesField(child, code)) return true;
+        } else if (node.isArray()) for (var child : node) if (usesField(child, code)) return true;
+        return false;
+    }
+
     private FieldDefinition validate(Input input) {
         if (input == null) throw new IllegalArgumentException("字段信息不能为空");
         String code = trim(input.fieldCode()), name = trim(input.fieldName()), type = trim(input.dataType());
@@ -121,5 +169,10 @@ public class FieldMetadataController {
 
     private void writeAudit(String code, String action, String before, Object after) {
         audit.save(new RuleAudit("FIELD_METADATA", code, action, "demo.operator", before, serialize(after)));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> invalid(IllegalArgumentException error) {
+        return ResponseEntity.badRequest().body(Map.of("error", error.getMessage()));
     }
 }

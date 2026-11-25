@@ -9,10 +9,23 @@ import java.util.Map;
 @RequestMapping("/api/c3")
 public class C3Controller {
     private final C3Service service;
+    private final C3ConditionService conditions;
 
-    public C3Controller(C3Service service) {
+    public C3Controller(C3Service service, C3ConditionService conditions) {
         this.service = service;
+        this.conditions = conditions;
     }
+
+    @GetMapping("/condition")
+    public C3ConditionConfig condition() { return conditions.get(); }
+
+    @PostMapping("/condition/compile")
+    public Map<String,String> compileCondition(@RequestBody C3ConditionService.Input input) {
+        return Map.of("expression",conditions.compile(input));
+    }
+
+    @PutMapping("/condition")
+    public C3ConditionConfig saveCondition(@RequestBody C3ConditionService.Input input) { return conditions.save(input); }
 
     @GetMapping("/reaches")
     public C3Service.Listing list() {

@@ -13,10 +13,12 @@ import static com.hsg.relay.routing.RoutingConfig.Reach;
 public class C3Service {
     private final RoutingService routing;
     private final ProviderRepository providers;
+    private final C3ConditionService conditions;
 
-    public C3Service(RoutingService r, ProviderRepository p) {
+    public C3Service(RoutingService r, ProviderRepository p, C3ConditionService conditions) {
         routing = r;
         providers = p;
+        this.conditions = conditions;
     }
 
     public record RowView(int index, Reach reach) {
@@ -32,6 +34,7 @@ public class C3Service {
     }
 
     public record Simulation(boolean passed, String reasonCode, long revision, Integer selectedIndex,
+                             boolean coverageMatched,
                              Reach selectedReach, List<C3Matcher.Row> rows) {
     }
 
@@ -90,7 +93,8 @@ public class C3Service {
         if (!providers.existsById(in.providerCode())) throw new IllegalArgumentException("合作方不存在");
         var cv = routing.config();
         var rows = C3Matcher.rows(cv.config().reaches(), in);
-        var selected = C3Matcher.select(cv.config().reaches(), in).orElse(null);
-        return new Simulation(selected != null, selected == null ? "NO_REACH" : "PASS", cv.revision(), selected == null ? null : selected.index(), selected == null ? null : selected.reach(), rows);
+        var selected = conditions.select(cv.config().reaches(), in).orElse(null);
+        return new Simulation(selected != null, selected == null ? "NO_REACH" : "PASS", cv.revision(), selected == null ? null : selected.index(),
+                rows.stream().anyMatch(C3Matcher.Row::matched), selected == null ? null : selected.reach(), rows);
     }
 }

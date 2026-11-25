@@ -54,7 +54,7 @@ function renderCatalog() {
     const query = $('fieldSearch').value.trim().toLowerCase(), rule = $('ruleFilter').value,
         status = $('statusFilter').value;
     const shown = fields.filter(f => (!rule || split(f.allowedRules).includes(rule)) && (!status || (status === 'on') === f.enabled) && (!query || [f.fieldName, f.fieldCode, f.dataType, f.valueOptions].join(' ').toLowerCase().includes(query)));
-    $('fieldRows').innerHTML = shown.map(f => `<tr><td><strong>${esc(f.fieldName)}</strong><br><span class="meta-code mono">${esc(f.fieldCode)}</span></td><td><span class="meta-tag">${esc(f.dataType)}</span></td><td><div class="meta-tags">${split(f.allowedRules).map(r => `<span class="meta-tag">${esc(r)}</span>`).join('')}</div></td><td>${split(f.allowedOperators).map(op => esc(opNames[op] || op)).join(' · ')}</td><td class="mono">${esc(f.valueOptions || '—')}</td><td>${f.enabled ? '<span class="pass badge">启用</span>' : '<span class="pending badge">停用</span>'}</td><td><div class="actions"><button type="button" class="btn secondary tiny" data-edit="${esc(f.fieldCode)}">编辑</button><button type="button" class="btn secondary tiny" data-toggle="${esc(f.fieldCode)}">${f.enabled ? '停用' : '启用'}</button></div></td></tr>`).join('') || '<tr><td colspan="7" class="meta-empty">没有匹配的字段</td></tr>';
+    $('fieldRows').innerHTML = shown.map(f => `<tr><td><strong>${esc(f.fieldName)}</strong><br><span class="meta-code mono">${esc(f.fieldCode)}</span></td><td><span class="meta-tag">${esc(f.dataType)}</span></td><td><div class="meta-tags">${split(f.allowedRules).map(r => `<span class="meta-tag">${esc(r)}</span>`).join('')}</div></td><td>${split(f.allowedOperators).map(op => esc(opNames[op] || op)).join(' · ')}</td><td class="mono">${esc(f.valueOptions || '—')}</td><td>${f.enabled ? '<span class="pass badge">启用</span>' : '<span class="pending badge">停用</span>'}</td><td><div class="actions"><button type="button" class="btn secondary tiny" data-edit="${esc(f.fieldCode)}">编辑</button><button type="button" class="btn secondary tiny" data-toggle="${esc(f.fieldCode)}">${f.enabled ? '停用' : '启用'}</button><button type="button" class="btn secondary tiny" data-delete="${esc(f.fieldCode)}">删除</button></div></td></tr>`).join('') || '<tr><td colspan="7" class="meta-empty">没有匹配的字段</td></tr>';
 }
 
 function renderChecks(container, options, selected) {
@@ -136,6 +136,15 @@ async function toggleField(code) {
     }
 }
 
+async function deleteField(code) {
+    const field = selectedField(code);
+    if (!field || !confirm(`确定删除字段「${field.fieldName}」（${code}）？已被规则引用的字段无法删除。`)) return;
+    try {
+        await api('/field-metadata/' + encodeURIComponent(code), {method: 'DELETE'});
+        await refresh();
+    } catch (error) { alert(error.message); }
+}
+
 function defaultCondition() {
     const f = availableFields()[0];
     return f ? {
@@ -205,9 +214,10 @@ $('fieldSearch').oninput = renderCatalog;
 $('ruleFilter').onchange = renderCatalog;
 $('statusFilter').onchange = renderCatalog;
 $('fieldRows').onclick = event => {
-    const edit = event.target.closest('[data-edit]'), toggle = event.target.closest('[data-toggle]');
+    const edit = event.target.closest('[data-edit]'), toggle = event.target.closest('[data-toggle]'), remove = event.target.closest('[data-delete]');
     if (edit) openEditor(edit.dataset.edit);
     if (toggle) toggleField(toggle.dataset.toggle);
+    if (remove) deleteField(remove.dataset.delete);
 };
 $('newField').onclick = () => openEditor();
 $('editType').onchange = () => renderOperators();
