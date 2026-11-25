@@ -293,6 +293,18 @@
             width: 140px
         }
 
+        .function-grid { display:grid; grid-template-columns:repeat(4,minmax(135px,1fr)); gap:12px; margin-bottom:16px }
+        .function-grid .meta-stat { padding:18px }
+        .function-grid .meta-stat strong { font-size:28px }
+        .function-editor { width:min(760px,100%) }
+        .function-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 18px }
+        .function-form-grid .span-all { grid-column:1/-1 }
+        .function-param { display:grid; grid-template-columns:1.15fr .8fr 1fr auto; gap:7px; margin-top:8px }
+        .function-param .btn { padding:6px 10px }
+        .function-name { font-weight:700 }
+        .function-code { color:#1265d7; font-family:ui-monospace,Menlo,monospace; font-size:12px }
+        @media(max-width:700px) { .function-grid { grid-template-columns:1fr 1fr } .function-form-grid { grid-template-columns:1fr } .function-form-grid .span-all { grid-column:auto } }
+
         @media (max-width: 1100px) {
             .meta-preview {
                 grid-template-columns:1fr
@@ -349,13 +361,14 @@
         <div class="content">
             <div class="heading meta-intro">
                 <div><h1>元数据中心</h1>
-                    <div class="muted">集中管理表达式字段、适用规则、运算符和可选值；各规则页面与试算菜单共享字段定义。
+                    <div class="muted">集中管理规则字段、业务函数及表达式执行能力。
                     </div>
                 </div>
                 <button class="btn secondary" id="refresh">↻ 刷新</button>
             </div>
             <div class="meta-tabs">
                 <button type="button" class="sel" data-tab="catalog">字段库</button>
+                <button type="button" data-tab="functions">业务函数库</button>
                 <button type="button" data-tab="expression">表达式菜单与试算</button>
             </div>
             <section id="catalogTab">
@@ -393,6 +406,19 @@
                 <div class="notice meta-help">字段编码保存后不可更改。停用字段会从试算菜单、C1 触发条件和 C2
                     模拟页的下拉可选值中移除；已保存规则仍保留原条件，重新编译时会检查字段状态。配置变更记录在审计日志中。
                 </div>
+            </section>
+            <section id="functionsTab" class="hidden">
+                <div class="function-grid" id="functionStats"></div>
+                <div class="panel">
+                    <div class="meta-toolbar">
+                        <input id="functionSearch" type="search" placeholder="搜索函数名称、编码、实现类" aria-label="搜索函数">
+                        <select id="functionRuleFilter" aria-label="函数适用规则"><option value="">全部规则</option></select>
+                        <select id="functionStatusFilter" aria-label="函数状态"><option value="">全部状态</option><option value="on">启用</option><option value="off">停用</option></select>
+                        <span class="spacer"></span><button class="btn" id="newFunction">＋ 新增函数</button>
+                    </div>
+                    <div class="tablewrap"><table class="meta-table"><thead><tr><th>函数名称 / 编码</th><th>分类</th><th>返回类型</th><th>适用规则</th><th>执行作用域</th><th>Java 实现绑定</th><th>数据来源</th><th>状态</th><th>操作</th></tr></thead><tbody id="functionRows"></tbody></table></div>
+                </div>
+                <div class="notice meta-help">函数库仅登记已注册的后端 Handler。函数元数据不会生成 Java 代码；C1 的 clientExcluded 使用合作方详情中的客户排除记录。</div>
             </section>
             <section id="expressionTab" class="hidden">
                 <div class="meta-preview">
@@ -474,6 +500,27 @@
         </form>
     </div>
 </div>
+<div id="functionBackdrop" class="meta-drawer" role="dialog" aria-modal="true" aria-label="业务函数配置">
+    <div class="meta-editor function-editor">
+        <div class="rowbetween"><div><h2 id="functionEditorTitle">新增业务函数</h2><div class="muted">定义可供 C1–C10 规则调用的业务能力</div></div><button type="button" class="btn secondary tiny" id="closeFunctionEditor">✕</button></div>
+        <form id="functionForm"><div class="function-form-grid">
+            <div class="field"><label for="fnCode">函数编码 *</label><input id="fnCode" required maxlength="64" pattern="[A-Za-z][A-Za-z0-9_]*" placeholder="clientExcluded"></div>
+            <div class="field"><label for="fnName">函数名称 *</label><input id="fnName" required maxlength="80" placeholder="客户是否被合作方排除"></div>
+            <div class="field"><label for="fnCategory">函数分类 *</label><input id="fnCategory" required maxlength="40" list="fnCategories" value="客户与准入"><datalist id="fnCategories"><option value="客户与准入"><option value="合规与能力"><option value="覆盖与限额"><option value="头寸与限额"><option value="评分与外汇"></datalist></div>
+            <div class="field"><label for="fnReturnType">返回数据类型 *</label><select id="fnReturnType"><option>BOOLEAN</option><option>STRING</option><option>INTEGER</option><option>DECIMAL</option><option>DATE</option></select></div>
+            <div class="field span-all"><label>适用规则 *</label><div id="fnRules" class="meta-checks"></div></div>
+            <div class="field"><label for="fnScope">执行作用域 *</label><select id="fnScope"><option value="CANDIDATE">候选合作方 CANDIDATE</option><option value="TRANSACTION">本笔交易 TRANSACTION</option><option value="GLOBAL">全局 GLOBAL</option></select></div>
+            <div class="field"><label for="fnCache">缓存策略 *</label><select id="fnCache"><option value="REQUEST">REQUEST · 本笔交易复用</option><option value="NONE">NONE · 不缓存</option></select></div>
+            <div class="field span-all"><label for="fnHandler">Java 实现绑定 *</label><select id="fnHandler" required></select><div class="muted">只能绑定后端白名单中已注册的函数 Handler。新增元数据不会自动生成 Java 代码。</div></div>
+            <div class="field span-all"><label for="fnDataSource">数据来源</label><input id="fnDataSource" maxlength="100" placeholder="例如 CLIENT_EXCLUSION / REACH_TABLE"></div>
+            <div class="field span-all"><label>输入参数定义</label><div id="fnParams"></div><button type="button" class="btn secondary tiny" id="fnAddParam" style="margin-top:8px">＋ 添加参数</button><div class="muted">例如 providerCode 取自 CANDIDATE，clientId 取自 TRANSACTION。</div></div>
+            <div class="field span-all"><label for="fnDescription">函数说明</label><textarea id="fnDescription" class="meta-json" style="min-height:80px" maxlength="2000" placeholder="说明用途、返回值及异常处理方式"></textarea></div>
+            <div class="field span-all"><label><input id="fnEnabled" type="checkbox" style="width:auto;min-height:0" checked> 启用函数</label></div>
+            <div class="field span-all"><label>定义预览</label><pre id="fnPreview" class="meta-codeblock" style="min-height:100px"></pre></div>
+        </div><div id="fnError" class="meta-error" role="alert"></div><div class="actions"><button type="button" class="btn secondary" id="cancelFunctionEditor">取消</button><button type="submit" class="btn" id="saveFunction">保存函数</button></div></form>
+    </div>
+</div>
 <script src="/fields.js"></script>
+<script src="/functions.js"></script>
 </body>
 </html>

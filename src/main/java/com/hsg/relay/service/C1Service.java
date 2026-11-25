@@ -14,17 +14,17 @@ public class C1Service {
     private final ProviderRepository providers;
     private final AppetiteRepository appetites;
     private final ClientProfileRepository clients;
-    private final ClientExclusionRepository exclusions;
+    private final ClientExclusionChecker exclusionChecker;
     private final CaseApprovalRepository approvals;
     private final ProviderUsageRepository usages;
     private final ExpressionService expressions;
     private final ObjectMapper json;
 
-    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ClientExclusionRepository e, CaseApprovalRepository ap, ProviderUsageRepository u, ExpressionService expressions, ObjectMapper json) {
+    public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, CaseApprovalRepository ap, ProviderUsageRepository u, ExpressionService expressions, ObjectMapper json, ClientExclusionChecker exclusionChecker) {
         providers = p;
         appetites = a;
         clients = c;
-        exclusions = e;
+        this.exclusionChecker = exclusionChecker;
         approvals = ap;
         usages = u;
         this.expressions = expressions;
@@ -66,7 +66,7 @@ public class C1Service {
         if (client == null || !"COMPLETE".equals(client.classificationStatus))
             return fail("CLIENT_NOT_CLASSIFIED", null, null, steps, "客户分类不是 COMPLETE");
         steps.add(new Trace("1. 客户分类", "PASS", "COMPLETE"));
-        boolean excluded = exclusions.findAll().stream().anyMatch(e -> e.clientId.equals(req.clientId()) && e.providerCode.equals(req.providerCode()) && active(e.effectiveFrom, e.effectiveTo, now));
+        boolean excluded = exclusionChecker.clientExcluded(req.providerCode(), req.clientId(), now);
         if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, "命中合作方客户排除记录");
         steps.add(new Trace("2. 客户排除", "PASS", "未命中排除记录"));
         List<String> flows = client.flowCategories == null ? List.of() : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();

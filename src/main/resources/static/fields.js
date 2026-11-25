@@ -44,8 +44,10 @@ function showTab(tab) {
     activeTab = tab;
     document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('sel', button.dataset.tab === tab));
     $('catalogTab').classList.toggle('hidden', tab !== 'catalog');
+    $('functionsTab').classList.toggle('hidden', tab !== 'functions');
     $('expressionTab').classList.toggle('hidden', tab !== 'expression');
     if (tab === 'expression') renderConditions();
+    if (tab === 'functions' && typeof refreshFunctions === 'function') refreshFunctions().catch(error => alert(error.message));
 }
 
 function renderCatalog() {
@@ -205,6 +207,7 @@ async function refresh() {
     fields = await api('/field-metadata');
     renderCatalog();
     renderConditions();
+    if (activeTab === 'functions' && typeof refreshFunctions === 'function') await refreshFunctions();
 }
 
 $('ruleFilter').innerHTML += rules.map(r => `<option value="${r}">${r}</option>`).join('');
