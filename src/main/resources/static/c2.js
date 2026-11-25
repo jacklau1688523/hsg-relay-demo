@@ -24,6 +24,66 @@ const c2RestrictionTypes = {
     BENEFICIARY_REGION: '受益人地区', ORDERING_COUNTRY: '客户 / 发起方国家',
     INTERMEDIARY_COUNTRY: '中间行国家', CURRENCY: '扣账 / 交易币种', PURPOSE: '交易用途'
 };
+// 规则编辑器为 C2 设计的条件结构：根条件组 8 项、全部满足（AND），每项是若干「字段命中屏蔽 = false」叶子的规则组，叶子之间也是 AND。
+// 页面顶部的「C2 校验顺序与配置来源」和模拟结果的「校验过程」共用这一份定义；code 对应接口返回的 groups[].code，叶子字段对应 leaves[].field。
+const c2Logic = {AND: '全部满足 AND', SINGLE: '单项判断'};
+const c2Groups = [
+    {code: 'BENEFICIARY_COUNTRY', title: '受益方国家未被限制', logic: 'AND', reason: 'RESTRICTED_COUNTRY',
+        leaves: [['beneficiaryBankCountry', '受益行国家命中屏蔽'], ['beneficiaryAddressCountry', '受益人地址国家命中屏蔽']]},
+    {code: 'DIRECTOR_UBO_NATIONALITY', title: '董事 / UBO 国籍未被限制', logic: 'AND', reason: 'RESTRICTED_NATIONALITY',
+        leaves: [['directorNationalities', '客户董事国籍命中屏蔽'], ['uboNationalities', '客户 UBO 国籍命中屏蔽']]},
+    {code: 'BENEFICIARY_REGION', title: '受益人地区未被限制', logic: 'SINGLE', reason: 'RESTRICTED_REGION',
+        leaves: [['beneficiaryRegion', '受益人地区命中屏蔽']]},
+    {code: 'ORDERING_COUNTRY', title: '付款 / 发起方国家未被限制', logic: 'AND', reason: 'RESTRICTED_COUNTRY',
+        leaves: [['clientCountry', '付款客户国家命中屏蔽'], ['orderingCountry', '发起方国家命中屏蔽']]},
+    {code: 'INTERMEDIARY_COUNTRY', title: '中间行国家未被限制', logic: 'SINGLE', reason: 'RESTRICTED_COUNTRY',
+        leaves: [['intermediaryCountry', '中间行国家命中屏蔽']]},
+    {code: 'CURRENCY', title: '交易币种未被限制', logic: 'AND', reason: 'RESTRICTED_CURRENCY',
+        leaves: [['debitCurrency', '扣账币种命中屏蔽'], ['paymentCurrency', '交易币种命中屏蔽']]},
+    {code: 'PURPOSE', title: '交易用途未被限制', logic: 'SINGLE', reason: 'RESTRICTED_PURPOSE',
+        leaves: [['purpose', '交易用途命中屏蔽']]},
+    {code: 'REGULATORY', title: '监管路由要求已满足', logic: 'SINGLE', reason: 'REG_RULE_NOT_MET',
+        leaves: [['providerCapabilities', '监管能力要求不满足']]}
+];
+const c2GlobalGroup = {code:'GLOBAL_CONDITION', title:'全局附加条件已满足', logic:'SINGLE', reason:'C2_CONDITION_NOT_MET', leaves:[['globalCondition','字段库条件不满足']]};
+const c2Group = code => c2Groups.find(g => g.code === code) || (code === 'GLOBAL_CONDITION' ? c2GlobalGroup : {title: code, logic: 'SINGLE', leaves: []});
+
+/**
+ * 规则组内的叶子条件。AND 连接同组的两个叶子：说明面板的卡片较窄，AND 放在上一行末尾以免折行（joinAfter）；校验过程放在下一个叶子之前。
+ * tail 生成每个叶子「等于 false」之后的内容（说明面板不带）。
+ */
+function c2LeafRows(group, tail, joinAfter = false) {
+    const join = n => n > 0 && n < group.leaves.length ? '<span class="c2-join">AND</span>' : '';
+    return group.leaves.map(([field, label], n) => `<div class="c2-leaf">${joinAfter ? '' : join(n)}<span>${c2Esc(label)}</span><span class="muted">等于</span><code>false</code>${tail ? tail(field) : ''}${joinAfter ? join(n + 1) : ''}</div>`).join('');
+}
+
+/** 「C2 校验顺序与配置来源」：按规则编辑器的条件结构逐组列出叶子条件、不满足时返回的原因码和配置来源。 */
+function c2RenderStructure() {
+    c2$('c2Structure').innerHTML = `<div class="c2-root">根条件组（${c2Groups.length} 项）<span class="badge pending">全部满足 AND</span></div>
+ <div class="c2-groups" id="c2StructureGroups">${c2Groups.map((g, i) => `<div class="c2-group">
+ <div class="c2-group-head"><span class="c2-order">${i + 1}</span><b>${c2Esc(g.title)}</b></div>
+ <div class="c2-logic">${c2Esc(c2Logic[g.logic])}</div>
+ ${c2LeafRows(g, null, true)}
+ <div class="c2-group-foot"><span class="muted">不满足 →</span><code>${c2Esc(g.reason)}</code></div>
+ <div class="c2-source">${g.code === 'GLOBAL_CONDITION' ? '<a href="#c2ConditionPanel">字段库条件 ↑</a>在本页维护' : g.code === 'REGULATORY'
+     ? '<a href="/c2-regulatory.html">监管路由规则 ↗</a>能力标签在合作方编辑页维护'
+     : `<a href="/providers.html">合作方管理 ↗</a>${c2Esc(c2RestrictionTypes[g.code])} · 在合作方详情维护`}</div>
+</div>`).join('')}</div>
+ <div class="c2-final"><b>最终判定</b>　全部字段均为 false → C2 PASS；任意字段为 true → C2 FAIL，记录全部命中原因。</div>`;
+    // 「合作方限制 ↓」：滚到下方的限制查询，并按该规则组的限制类型筛选
+    c2$('c2Structure').querySelectorAll('a[data-c2-type]').forEach(a => a.onclick = event => {
+        event.preventDefault();
+        c2$('c2RestrictionType').value = a.dataset.c2Type;
+        c2RenderRestrictions();
+        c2$('c2RestrictionPanel').scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+}
+
+function c2ToggleStructure() {
+    const collapsed = c2$('c2StructureGroups').classList.toggle('collapsed');
+    c2$('c2StructureToggle').textContent = collapsed ? '展开规则组' : '收起规则组';
+}
+
 function c2RenderRestrictions() {
     const provider=c2$('c2RestrictionProvider').value, type=c2$('c2RestrictionType').value, status=c2$('c2RestrictionStatus').value;
     const rows=c2Restrictions.rows.filter(r=>(!provider||r.providerCode===provider)&&(!type||r.restrictionType===type)&&(!status||String(r.enabled)===status));
@@ -71,9 +131,14 @@ async function c2Simulate() {
         intermediaryCountry: 'c2SimIntermediaryCountry',
         purpose: 'c2SimPurpose'
     };
+    // 董事、UBO 国籍分别提交，校验过程才能给出「客户董事国籍命中屏蔽」「客户 UBO 国籍命中屏蔽」各自的结果；合并字段照旧提交
+    const directors = c2$('c2SimDirectorNationalities').value.split(',').map(x => x.trim()).filter(Boolean);
+    const ubos = c2$('c2SimUboNationalities').value.split(',').map(x => x.trim()).filter(Boolean);
     const req = {
         providerCode: c2$('c2SimProvider').value,
-        directorUboNationalities: c2$('c2SimNationalities').value.split(',').map(x => x.trim()).filter(Boolean),
+        directorUboNationalities: [...directors, ...ubos],
+        directorNationalities: directors,
+        uboNationalities: ubos,
         variables: {}
     };
     for (const [key, id] of Object.entries(keys)) req[key] = c2$(id).value || null;
@@ -86,7 +151,7 @@ async function c2Simulate() {
     try {
         const res = await c2Api('/simulate', {method: 'POST', body: JSON.stringify(req)});
         let html = `<div class="result ${res.passed ? '' : 'error'}">${res.passed ? '✓ C2 校验通过' : '✕ C2 校验失败'}</div>
- <p class="caps">返回原因码：<b>${c2Esc(res.reasonCode)}</b></p><p class="muted">${c2Esc(res.note)}</p>`;
+ <p class="caps">返回原因码：<b>${c2Esc(res.reasonCode)}</b></p><p class="muted">${c2Esc(res.note)}</p>${c2RenderChecks(res)}`;
         if (res.hits.length) {
             html += '<h2>命中限制（按 C2 序号排序）</h2>';
             html += res.hits.map(h => `<div class="trace"><span class="badge fail">${c2Esc(h.reasonCode)}</span>
@@ -109,6 +174,48 @@ async function c2Simulate() {
     } catch (e) {
         c2$('c2SimResult').innerHTML = `<div class="result error">${c2Esc(e.message)}</div>`;
     }
+}
+
+// 校验过程里每个叶子旁注明的本次取值来自模拟表单；接口响应只返回是否命中，不含取值
+const c2LeafInputs = {
+    beneficiaryBankCountry: 'c2SimBeneficiaryBankCountry', beneficiaryAddressCountry: 'c2SimBeneficiaryAddressCountry',
+    beneficiaryRegion: 'c2SimBeneficiaryRegion', clientCountry: 'c2SimClientCountry', orderingCountry: 'c2SimOrderingCountry',
+    intermediaryCountry: 'c2SimIntermediaryCountry', debitCurrency: 'c2SimDebitCurrency', paymentCurrency: 'c2SimPaymentCurrency',
+    purpose: 'c2SimPurpose', directorNationalities: 'c2SimDirectorNationalities', uboNationalities: 'c2SimUboNationalities'
+};
+
+function c2LeafNote(leaf, res) {
+    if (leaf.field === 'globalCondition') return leaf.hit ? '附加条件未满足或配置失效' : '附加条件已满足或尚未配置';
+    if (leaf.field === 'providerCapabilities') {
+        const unmet = res.regulatoryChecks.filter(c => leaf.ruleIds.includes(c.ruleId));
+        return unmet.length ? unmet.map(c => `${c.ruleId} 缺少能力标签：${c2Esc(c.missingTags.join(', '))}`).join('；')
+            : '合作方能力标签：' + c2Esc(res.providerCapabilities.join(', ') || '无');
+    }
+    if (leaf.hit) return '命中限制记录：' + c2Esc(leaf.ruleIds.join('、'));
+    const value = c2$(c2LeafInputs[leaf.field]).value.trim();
+    return value ? '本次取值：' + c2Esc(value) : '本次未填写';
+}
+
+/** 「校验过程」：接口按规则组返回判断结果（groups），逐组给出 PASS / FAIL，以及每个叶子本次的实际取值（期望均为 false）。 */
+function c2RenderChecks(res) {
+    const groups = res.groups || [];
+    if (!groups.length) return '';
+    const failed = groups.filter(g => !g.passed);
+    const rows = groups.map(g => {
+        const meta = c2Group(g.code);
+        const actual = field => {
+            const leaf = g.leaves.find(x => x.field === field) || {};
+            return `<span class="c2-join">→</span><code class="actual ${leaf.hit ? 'hit' : ''}">实际 ${leaf.hit ? 'true' : 'false'}</code><span class="muted">${c2LeafNote(leaf, res)}</span>`;
+        };
+        return `<div class="c2-check ${g.passed ? '' : 'fail'}">
+ <div class="c2-check-head"><span class="badge ${g.passed ? 'pass' : 'fail'}">${g.passed ? 'PASS' : 'FAIL'}</span><b>${g.order}. ${c2Esc(meta.title)}</b>${g.passed ? '' : `<span class="muted">不满足 →</span><code>${c2Esc(g.reasonCode)}</code>`}<span class="c2-logic">${c2Esc(c2Logic[meta.logic])}</span></div>
+ ${c2LeafRows(meta, actual)}
+</div>`;
+    }).join('');
+    const reasons = [...new Set(res.hits.map(h => h.reasonCode))].join('、');
+    return `<h2 style="margin:15px 0 4px">校验过程</h2><div class="muted" style="margin-bottom:8px">根条件组（${groups.length} 项）· 全部满足 AND</div>${rows}
+ <div class="c2-final" style="margin:10px 0 0"><b>最终判定</b>　${res.passed ? '全部字段均为 false → C2 PASS'
+        : `第 ${failed.map(g => g.order).join('、')} 项存在为 true 的字段 → C2 FAIL，记录全部命中原因：${c2Esc(reasons)}`}</div>`;
 }
 
 function c2FillSelect(id, fieldCode, defaultValue, optional = false) {
@@ -173,5 +280,7 @@ async function c2Init() {
     }
 }
 
+c2RenderStructure();
+c2$('c2StructureToggle').onclick = c2ToggleStructure;
 c2Init();
 c2LoadRestrictions();

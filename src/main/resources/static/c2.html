@@ -32,7 +32,168 @@
         #c2SimVariables:empty {
             display: none
         }
-    </style>
+
+        /* 「C2 校验顺序与配置来源」：根条件组 → 8 个规则组 → 叶子条件，结构与规则编辑器里的 C2 条件树一致 */
+        .c2-root {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding-left: 12px;
+            border-left: 3px solid #2462bf;
+            font-size: 13px;
+            font-weight: 750
+        }
+
+        /* 卡片最小宽度按「10 字叶子 + 等于 false + AND」一行放得下来定：宽屏 4 列、中等 3 列、窄屏 2 列，自动排列 */
+        .c2-groups {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(254px, 1fr));
+            gap: 12px;
+            margin: 12px 0 0 14px
+        }
+
+        .c2-groups.collapsed {
+            display: none
+        }
+
+        .c2-group {
+            min-width: 0;
+            padding: 10px;
+            border: 1px solid #cad9ec;
+            border-radius: 9px;
+            background: #f8fbff
+        }
+
+        .c2-group-head, .c2-check-head {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            flex-wrap: wrap;
+            font-size: 13px
+        }
+
+        .c2-order {
+            flex: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #2462bf;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .c2-logic {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 700;
+            color: #2763ad;
+            white-space: nowrap
+        }
+
+        /* 说明面板里逻辑标签独占一行（同规则编辑器），校验过程里靠右 */
+        .c2-group .c2-logic {
+            display: block;
+            margin: 3px 0 0 27px
+        }
+
+        .c2-leaf {
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+            color: #274369;
+            font-size: 12px
+        }
+
+        .c2-join {
+            font-size: 11px;
+            font-weight: 800;
+            color: #2763ad
+        }
+
+        .c2-leaf code, .c2-group-foot code, .c2-check-head code {
+            padding: 1px 4px;
+            border-radius: 4px;
+            background: #eef4fc;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px
+        }
+
+        .c2-group-foot {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            padding-top: 7px;
+            border-top: 1px dashed #cad9ec;
+            font-size: 12px
+        }
+
+        .c2-group-foot code, .c2-check-head code {
+            font-weight: 700;
+            color: #ca3e49
+        }
+
+        /* 校验过程里叶子的实际取值：false 为绿色，true（命中屏蔽）为红色 */
+        .c2-check .c2-leaf code.actual {
+            background: #e9faef;
+            color: #139447
+        }
+
+        .c2-check .c2-leaf code.actual.hit {
+            font-weight: 700;
+            background: #fff1f2;
+            color: #ca3e49
+        }
+
+        .c2-source {
+            margin-top: 5px;
+            color: #748298;
+            font-size: 12px
+        }
+
+        .c2-source a {
+            margin-right: 4px
+        }
+
+        .c2-final {
+            margin: 12px 0 0 14px;
+            padding: 9px 11px;
+            border-radius: 6px;
+            background: #f0f6ff;
+            color: #35629e;
+            font-size: 12px
+        }
+
+        /* 模拟结果的「校验过程」：每个规则组的 PASS / FAIL，以及各叶子本次的实际取值 */
+        .c2-check {
+            margin-bottom: 8px;
+            padding: 9px 11px;
+            border: 1px solid #e5eaf2;
+            border-radius: 8px
+        }
+
+        .c2-check.fail {
+            border-color: #f5a8ae;
+            background: #fff7f7
+        }
+
+        .c2-check-head {
+            font-weight: 750
+        }
+
+        .c2-check .c2-leaf {
+            margin: 5px 0 0 27px
+        }
+    .c1-group{border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}.c1-group .c1-group{margin-left:16px;background:#fff}.c1-head,.c1-line{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}.c1-head strong{flex:1}.c1-head select{width:190px}.c1-line select:first-child{flex:2;min-width:150px}.c1-line select:nth-child(2){flex:1;min-width:100px}.c1-line input,.c1-line select:nth-child(3){flex:1.5;min-width:120px}.c1-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}
+</style>
 </head>
 <body>
 <div class="shell">
@@ -65,11 +226,25 @@
         </div>
         <div class="content">
             <div class="heading"><h1>C2 制裁及监管限制</h1>
-                <div class="muted">合作方限制在下方查询，并在合作方详情页维护；全局监管路由规则（适用范围、必需能力标签和附加触发条件）在「监管路由规则」页维护。交易落在规则适用范围内且满足附加触发条件时规则触发，候选合作方缺少要求的能力标签即返回
+                <div class="muted">合作方限制在合作方详情页查询和维护；全局监管路由规则（适用范围、必需能力标签和附加触发条件）在「监管路由规则」页维护。交易落在规则适用范围内且满足附加触发条件时规则触发，候选合作方缺少要求的能力标签即返回
                     REG_RULE_NOT_MET。
                 </div>
             </div>
             <div class="panel">
+                <div class="rowbetween"><h2 style="margin:0">C2 校验顺序与配置来源</h2><button type="button" class="btn secondary"
+                                                                                               id="c2StructureToggle">收起规则组</button>
+                </div>
+                <div id="c2Structure"></div>
+            </div>
+            <div class="panel" id="c2ConditionPanel">
+                <div class="rowbetween"><div><h2 style="margin:0">附加条件：按字段库构建</h2><div class="muted">使用元数据中心已启用的 C2 字段，支持嵌套 AND / OR。此条件对所有合作方生效；原有八组限制仍独立执行。</div></div><button type="button" class="btn secondary" onclick="c2CondLoad()">↻ 刷新条件 / 字段库</button></div>
+                <div id="c2ConditionTree"></div>
+                <button type="button" class="btn secondary tiny" onclick="c2CondCompileCondition()">校验并生成表达式</button>
+                <div id="c2Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div>
+                <div id="c2ConditionError" class="err" role="alert"></div><div id="c2ConditionGood" class="good" role="status"></div>
+                <div class="actions" style="justify-content:flex-end;margin-top:18px"><button type="button" class="btn" onclick="c2CondSave()">保存条件配置</button></div>
+            </div>
+            <div class="panel" id="c2RestrictionPanel" style="display:none" aria-hidden="true">
                 <div class="rowbetween"><h2 style="margin:0">合作方限制查询</h2><button type="button" class="btn secondary" id="c2RestrictionRefresh">↻ 刷新</button></div>
                 <div class="layout3 section" style="margin-top:14px">
                     <div class="field"><label for="c2RestrictionProvider">合作方</label><select id="c2RestrictionProvider"><option value="">全部合作方</option></select></div>
@@ -83,8 +258,8 @@
             <div class="grid">
                 <section class="panel">
                     <div class="ptitle">模拟结果 ⓘ</div>
-                    <div id="c2SimResult" class="notice">选择合作方并填写交易字段，点击「执行 C2
-                        校验」。此处返回失败原因码、命中记录及监管标签检查过程。
+                        <div id="c2SimResult" class="notice">选择合作方并填写交易字段，点击「执行 C2
+                        校验」。此处展示原有 8 个规则组及已配置的附加条件，包括失败原因码、命中记录和监管标签检查过程。
                     </div>
                 </section>
                 <aside class="rightPanel">
@@ -110,8 +285,10 @@
                             <div class="field"><label>中间行国家（可选）</label><select
                                     id="c2SimIntermediaryCountry"></select></div>
                             <div class="field"><label>用途代码</label><select id="c2SimPurpose"></select></div>
-                            <div class="field"><label>董事/UBO 国籍（逗号分隔）</label><input id="c2SimNationalities"
-                                                                                             placeholder="KG,RU"></div>
+                            <div class="field"><label>客户董事国籍（逗号分隔）</label><input id="c2SimDirectorNationalities"
+                                                                                                  placeholder="KG,RU"></div>
+                            <div class="field"><label>客户 UBO 国籍（逗号分隔）</label><input id="c2SimUboNationalities"
+                                                                                            placeholder="KG,RU"></div>
                         </div>
                         <div id="c2SimVariables"></div>
                         <div class="notice">该合作方的能力标签：<b id="c2SimTags">—</b></div>
@@ -125,5 +302,6 @@
     </main>
 </div>
 <script src="/c2.js"></script>
+<script src="/c2-conditions.js"></script>
 </body>
 </html>

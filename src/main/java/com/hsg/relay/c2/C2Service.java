@@ -28,11 +28,12 @@ public class C2Service {
     private final C2ExpressionCompiler compiler;
     private final ExpressionService expressions;
     private final ObjectMapper mapper;
+    private final C2ConditionConfigRepository conditionRepo;
 
     public C2Service(RegulatoryRuleRepository regulatoryRepo, ProviderRestrictionRepository restrictionRepo,
                      ProviderCapabilityRepository capabilityRepo, CapabilityTagRepository tagRepo, ProviderRepository providerRepo,
                      FieldDefinitionRepository fieldRepo, RuleAuditRepository auditRepo, C2ExpressionCompiler compiler,
-                     ExpressionService expressions, ObjectMapper mapper) {
+                     ExpressionService expressions, ObjectMapper mapper, C2ConditionConfigRepository conditionRepo) {
         this.regulatoryRepo = regulatoryRepo;
         this.restrictionRepo = restrictionRepo;
         this.capabilityRepo = capabilityRepo;
@@ -43,6 +44,7 @@ public class C2Service {
         this.compiler = compiler;
         this.expressions = expressions;
         this.mapper = mapper;
+        this.conditionRepo = conditionRepo;
     }
 
     public record Requirement(String type, List<String> requiredTags) {
@@ -92,11 +94,24 @@ public class C2Service {
     public record CapabilitiesInput(List<String> tags) {
     }
 
-    /** variables：附加触发条件字段的取值（字段编码 → 值）。九个固定交易要素以同名字段为准，不接受 variables 覆盖。 */
+    /**
+     * variables：附加触发条件字段的取值（字段编码 → 值）。九个固定交易要素以同名字段为准，不接受 variables 覆盖。
+     * directorNationalities / uboNationalities：董事、UBO 国籍各自的可选入参，用于分别判断「客户董事国籍命中屏蔽」「客户 UBO 国籍命中屏蔽」；
+     * 未提供（null）时该类沿用合并的 directorUboNationalities，原有调用方的判断结果不变。
+     */
     public record Simulation(String providerCode, String paymentCurrency, String debitCurrency,
                              String beneficiaryBankCountry, String beneficiaryAddressCountry, String beneficiaryRegion,
                              String orderingCountry, String clientCountry, String intermediaryCountry, String purpose,
-                             List<String> directorUboNationalities, Map<String, Object> variables) {
+                             List<String> directorUboNationalities, Map<String, Object> variables,
+                             List<String> directorNationalities, List<String> uboNationalities) {
+        public Simulation(String providerCode, String paymentCurrency, String debitCurrency,
+                          String beneficiaryBankCountry, String beneficiaryAddressCountry, String beneficiaryRegion,
+                          String orderingCountry, String clientCountry, String intermediaryCountry, String purpose,
+                          List<String> directorUboNationalities, Map<String, Object> variables) {
+            this(providerCode, paymentCurrency, debitCurrency, beneficiaryBankCountry, beneficiaryAddressCountry, beneficiaryRegion,
+                    orderingCountry, clientCountry, intermediaryCountry, purpose, directorUboNationalities, variables, null, null);
+        }
+
         public Simulation(String providerCode, String paymentCurrency, String debitCurrency,
                           String beneficiaryBankCountry, String beneficiaryAddressCountry, String beneficiaryRegion,
                           String orderingCountry, String clientCountry, String intermediaryCountry, String purpose,
@@ -111,6 +126,20 @@ public class C2Service {
     }
 
     /**
+     * 校验过程的一个分组，对应规则编辑器里 C2 根条件组（8 项、全部满足）下的一项：code 第 1–7 项为合作方限制类型，第 8 项为 REGULATORY。
+     * passed 为组内全部叶子均为 false；reasonCode 为不满足时返回的原因码；leaves 为组内每个「字段命中屏蔽」的判断结果，顺序与规则组内一致。
+     */
+    public record GroupCheck(int order, String code, boolean passed, String reasonCode, List<LeafCheck> leaves) {
+    }
+
+    /**
+     * 叶子「字段命中屏蔽 = false」的判断结果：hit 为该字段的取值命中本合作方当前有效的同类限制（第 8 项为监管规则触发且缺少能力标签）；
+     * ruleIds 为命中的限制记录或监管规则。响应不含字段取值，董事 / UBO 国籍尤其如此。
+     */
+    public record LeafCheck(String field, boolean hit, List<String> ruleIds) {
+    }
+
+    /**
      * condition 为规则的适用范围（或旧版条件树摘要）；expression 仅旧版规则才有，是其编译后的 AviatorScript。
      * triggerCondition / triggerExpression 为附加触发条件的摘要和编译后的表达式（未配置或未能求值时为 null）；
      * note 说明附加条件缺值（按未触发）或失效（按触发）时的处理。
@@ -119,8 +148,9 @@ public class C2Service {
                                   String triggerCondition, String triggerExpression, String note) {
     }
 
-    public record Result(boolean passed, String reasonCode, List<RuleHit> hits, List<RegulatoryCheck> regulatoryChecks,
-                         List<String> providerCapabilities, String note) {
+    /** groups 为按规则组返回的校验过程（结构见 GroupCheck），与 hits 的判断结果一致：任一分组不满足即 passed=false。 */
+    public record Result(boolean passed, String reasonCode, List<RuleHit> hits, List<GroupCheck> groups,
+                         List<RegulatoryCheck> regulatoryChecks, List<String> providerCapabilities, String note) {
     }
 
     private String encode(Object value) {
@@ -313,6 +343,20 @@ public class C2Service {
             "BENEFICIARY_COUNTRY", 1, "DIRECTOR_UBO_NATIONALITY", 2, "BENEFICIARY_REGION", 3,
             "ORDERING_COUNTRY", 4, "INTERMEDIARY_COUNTRY", 5, "CURRENCY", 6, "PURPOSE", 7, "REGULATORY", 8);
 
+    /**
+     * 规则编辑器为 C2 设计的条件结构：根条件组 8 项、全部满足（AND），每项是若干「字段命中屏蔽 = false」叶子的规则组，叶子之间也是 AND。
+     * 第 1–7 项的键是合作方限制类型，值是组内逐个判断的请求字段（顺序即 PRIORITIES 的序号）；
+     * 第 8 项 REGULATORY 的叶子是监管能力要求，在监管规则求值后得出。页面的「C2 校验顺序与配置来源」和模拟结果的「校验过程」都按这个结构展示。
+     */
+    private static final List<Map.Entry<String, List<String>>> GROUPS = List.of(
+            Map.entry("BENEFICIARY_COUNTRY", List.of("beneficiaryBankCountry", "beneficiaryAddressCountry")),
+            Map.entry("DIRECTOR_UBO_NATIONALITY", List.of("directorNationalities", "uboNationalities")),
+            Map.entry("BENEFICIARY_REGION", List.of("beneficiaryRegion")),
+            Map.entry("ORDERING_COUNTRY", List.of("clientCountry", "orderingCountry")),
+            Map.entry("INTERMEDIARY_COUNTRY", List.of("intermediaryCountry")),
+            Map.entry("CURRENCY", List.of("debitCurrency", "paymentCurrency")),
+            Map.entry("PURPOSE", List.of("purpose")));
+
     public List<ProviderRestriction> restrictions() {
         return restrictionRepo.findAll().stream().sorted(Comparator.comparing(x -> x.id)).toList();
     }
@@ -398,26 +442,60 @@ public class C2Service {
         return !normalize(value).isEmpty() && blocked.contains(normalize(value));
     }
 
-    private static boolean hitNationality(Set<String> blocked, List<String> nationalities) {
-        return nationalities != null && nationalities.stream().anyMatch(v -> hit(blocked, v));
+    /** 叶子字段的取值：单值字段最多一个值；董事 / UBO 国籍可以多个，未单独提供时沿用合并的 directorUboNationalities。 */
+    private static List<String> leafValues(Simulation req, String field) {
+        return switch (field) {
+            case "directorNationalities" -> orMerged(req.directorNationalities(), req.directorUboNationalities());
+            case "uboNationalities" -> orMerged(req.uboNationalities(), req.directorUboNationalities());
+            case "beneficiaryBankCountry" -> single(req.beneficiaryBankCountry());
+            case "beneficiaryAddressCountry" -> single(req.beneficiaryAddressCountry());
+            case "beneficiaryRegion" -> single(req.beneficiaryRegion());
+            case "clientCountry" -> single(req.clientCountry());
+            case "orderingCountry" -> single(req.orderingCountry());
+            case "intermediaryCountry" -> single(req.intermediaryCountry());
+            case "debitCurrency" -> single(req.debitCurrency());
+            case "paymentCurrency" -> single(req.paymentCurrency());
+            case "purpose" -> single(req.purpose());
+            default -> throw new IllegalStateException("未知字段: " + field);
+        };
     }
 
-    private static String matchedField(ProviderRestriction r, Simulation req) {
+    private static List<String> single(String value) {
+        return value == null ? List.of() : List.of(value);
+    }
+
+    private static List<String> orMerged(List<String> own, List<String> merged) {
+        List<String> values = own != null ? own : merged;
+        return values == null ? List.of() : values;
+    }
+
+    private static List<String> groupFields(String restrictionType) {
+        return GROUPS.stream().filter(group -> group.getKey().equals(restrictionType)).map(Map.Entry::getValue).findFirst()
+                .orElseThrow(() -> new IllegalStateException("未知限制类型"));
+    }
+
+    /** 该限制记录命中的叶子字段（按规则组内的顺序）：组内每个字段的取值逐个与这条记录的屏蔽值比对。 */
+    private static List<String> matchedFields(ProviderRestriction r, Simulation req) {
         Set<String> blocked = blocked(r);
-        return switch (r.restrictionType) {
-            case "BENEFICIARY_COUNTRY" ->
-                    hit(blocked, req.beneficiaryBankCountry()) ? "beneficiaryBankCountry" : hit(blocked, req.beneficiaryAddressCountry()) ? "beneficiaryAddressCountry" : null;
-            case "DIRECTOR_UBO_NATIONALITY" ->
-                    hitNationality(blocked, req.directorUboNationalities()) ? "directorUboNationalities" : null;
-            case "BENEFICIARY_REGION" -> hit(blocked, req.beneficiaryRegion()) ? "beneficiaryRegion" : null;
-            case "ORDERING_COUNTRY" ->
-                    hit(blocked, req.clientCountry()) ? "clientCountry" : hit(blocked, req.orderingCountry()) ? "orderingCountry" : null;
-            case "INTERMEDIARY_COUNTRY" -> hit(blocked, req.intermediaryCountry()) ? "intermediaryCountry" : null;
-            case "CURRENCY" ->
-                    hit(blocked, req.debitCurrency()) ? "debitCurrency" : hit(blocked, req.paymentCurrency()) ? "paymentCurrency" : null;
-            case "PURPOSE" -> hit(blocked, req.purpose()) ? "purpose" : null;
-            default -> throw new IllegalStateException("未知限制类型");
-        };
+        return groupFields(r.restrictionType).stream()
+                .filter(field -> leafValues(req, field).stream().anyMatch(value -> hit(blocked, value))).toList();
+    }
+
+    /** 按规则编辑器的条件结构组装校验过程：七个限制规则组 + 监管路由要求；leafHits 为各叶子命中的限制记录，unmetRules 为触发后缺少能力标签的监管规则。 */
+    private static List<GroupCheck> groups(Map<String, List<String>> leafHits, List<String> unmetRules) {
+        List<GroupCheck> groups = new ArrayList<>();
+        for (var group : GROUPS) {
+            List<LeafCheck> leaves = group.getValue().stream().map(field -> leaf(field, leafHits.getOrDefault(field, List.of()))).toList();
+            groups.add(new GroupCheck(groups.size() + 1, group.getKey(), leaves.stream().noneMatch(LeafCheck::hit),
+                    REASONS.get(group.getKey()), leaves));
+        }
+        groups.add(new GroupCheck(groups.size() + 1, "REGULATORY", unmetRules.isEmpty(), "REG_RULE_NOT_MET",
+                List.of(leaf("providerCapabilities", unmetRules))));
+        return List.copyOf(groups);
+    }
+
+    private static LeafCheck leaf(String field, List<String> ruleIds) {
+        return new LeafCheck(field, !ruleIds.isEmpty(), List.copyOf(ruleIds));
     }
 
     public Result simulate(Simulation req) {
@@ -431,15 +509,19 @@ public class C2Service {
             throw new IllegalArgumentException("交易币种、受益行国家必填");
         List<String> capabilities = providerCapabilities(req.providerCode());
         List<RuleHit> hits = new ArrayList<>();
+        // 各叶子命中的限制记录，供校验过程按规则组展示；hits 只记录每条限制记录在组内的首个命中字段，口径不变
+        Map<String, List<String>> leafHits = new HashMap<>();
         for (ProviderRestriction rule : restrictionRepo.findAll()) {
             if (!req.providerCode().equals(rule.providerCode) || !active(rule.enabled, rule.effectiveFrom, rule.effectiveTo, now))
                 continue;
-            String field = matchedField(rule, req);
-            if (field != null) {
-                // Never expose actual UBO nationality values in public response.
-                hits.add(new RuleHit(PRIORITIES.get(rule.restrictionType), "C2-RESTRICTION-" + rule.id,
-                        rule.restrictionType, REASONS.get(rule.restrictionType), field, "命中合作方限制类型 " + rule.restrictionType));
-            }
+            List<String> fields = matchedFields(rule, req);
+            if (fields.isEmpty()) continue;
+            String ruleId = "C2-RESTRICTION-" + rule.id;
+            for (String field : fields) leafHits.computeIfAbsent(field, x -> new ArrayList<>()).add(ruleId);
+            // 国籍命中的 field 仍为合并字段名。Never expose actual UBO nationality values in public response.
+            hits.add(new RuleHit(PRIORITIES.get(rule.restrictionType), ruleId, rule.restrictionType, REASONS.get(rule.restrictionType),
+                    "DIRECTOR_UBO_NATIONALITY".equals(rule.restrictionType) ? "directorUboNationalities" : fields.get(0),
+                    "命中合作方限制类型 " + rule.restrictionType));
         }
         Map<String, Object> variables = new HashMap<>();
         // 附加触发条件字段的取值；九个固定交易要素以模拟请求为准，不接受 variables 覆盖
@@ -454,6 +536,8 @@ public class C2Service {
         variables.put("intermediaryCountry", req.intermediaryCountry());
         variables.put("purpose", req.purpose());
         List<RegulatoryCheck> checks = new ArrayList<>();
+        // 触发后缺少能力标签的监管规则：第 8 个规则组的叶子「监管能力要求不满足」为 true
+        List<String> unmetRules = new ArrayList<>();
         for (RegulatoryRule rule : regulatoryRepo.findAll()) {
             if (!active(rule.enabled, rule.effectiveFrom, rule.effectiveTo, now)) continue;
             RegulatoryView view = view(rule);
@@ -477,11 +561,47 @@ public class C2Service {
             List<String> missing = triggered ? view.requirement().requiredTags().stream().filter(tag -> !capabilities.contains(tag)).toList() : List.of();
             checks.add(new RegulatoryCheck(rule.ruleId, triggered, missing, view.conditionText(), expression,
                     view.triggerText(), triggerExpression, note));
-            if (!missing.isEmpty()) hits.add(new RuleHit(8, rule.ruleId, "REGULATORY", "REG_RULE_NOT_MET",
-                    "providerCapabilities", "监管规则命中，缺少能力标签：" + String.join(",", missing)));
+            if (!missing.isEmpty()) {
+                unmetRules.add(rule.ruleId);
+                hits.add(new RuleHit(8, rule.ruleId, "REGULATORY", "REG_RULE_NOT_MET",
+                        "providerCapabilities", "监管规则命中，缺少能力标签：" + String.join(",", missing)));
+            }
+        }
+        Map<String, String> screeningFields = Map.ofEntries(
+                Map.entry("beneficiaryBankCountryRestricted", "beneficiaryBankCountry"),
+                Map.entry("beneficiaryAddressCountryRestricted", "beneficiaryAddressCountry"),
+                Map.entry("beneficiaryRegionRestricted", "beneficiaryRegion"),
+                Map.entry("clientCountryRestricted", "clientCountry"),
+                Map.entry("orderingCountryRestricted", "orderingCountry"),
+                Map.entry("intermediaryCountryRestricted", "intermediaryCountry"),
+                Map.entry("debitCurrencyRestricted", "debitCurrency"),
+                Map.entry("paymentCurrencyRestricted", "paymentCurrency"),
+                Map.entry("purposeRestricted", "purpose"),
+                Map.entry("directorNationalityRestricted", "directorNationalities"),
+                Map.entry("uboNationalityRestricted", "uboNationalities"));
+        screeningFields.forEach((field, source) -> variables.put(field, !leafHits.getOrDefault(source, List.of()).isEmpty()));
+        variables.put("regulatoryRequirementFailed", !unmetRules.isEmpty());
+        variables.put("providerRestrictionEnabled", restrictionRepo.findAll().stream().anyMatch(r -> req.providerCode().equals(r.providerCode) && active(r.enabled, r.effectiveFrom, r.effectiveTo, now)));
+        variables.put("providerHasSwift", capabilities.contains("SWIFT"));
+        variables.put("providerHasLocalClearing", capabilities.contains("LOCAL_CLEARING"));
+        variables.put("providerHasCnyOnshore", capabilities.contains("CNY_ONSHORE"));
+        variables.put("providerHasCrossBorderCny", capabilities.contains("CROSS_BORDER_CNY"));
+        var configured = conditionRepo.findById(1L).orElse(null);
+        boolean globalPassed = true;
+        if (configured != null && configured.conditionJson != null) {
+            var tree = RegulatoryTrigger.parse(configured.conditionJson, mapper);
+            var outcome = RegulatoryTrigger.evaluate(tree, variables, expressions);
+            globalPassed = outcome.matched() && outcome.note() == null;
+            if (!globalPassed) hits.add(new RuleHit(9, "C2-GLOBAL-CONDITION", "GLOBAL_CONDITION",
+                    "C2_CONDITION_NOT_MET", "globalCondition", outcome.note() == null ? "C2 全局附加条件未满足" : outcome.note()));
         }
         hits.sort(Comparator.comparingInt(RuleHit::order).thenComparing(RuleHit::ruleId));
-        return new Result(hits.isEmpty(), hits.isEmpty() ? "PASS" : hits.get(0).reasonCode(), List.copyOf(hits), checks, capabilities,
+        List<GroupCheck> allGroups = new ArrayList<>(groups(leafHits, unmetRules));
+        if (configured != null && configured.conditionJson != null)
+            allGroups.add(new GroupCheck(9, "GLOBAL_CONDITION", globalPassed, "C2_CONDITION_NOT_MET",
+                    List.of(new LeafCheck("globalCondition", !globalPassed, globalPassed ? List.of() : List.of("C2-GLOBAL-CONDITION")))));
+        return new Result(hits.isEmpty(), hits.isEmpty() ? "PASS" : hits.get(0).reasonCode(), List.copyOf(hits),
+                allGroups, checks, capabilities,
                 "仅模拟 C2；不代表通过 C1、C3/C4/C6/C10。未填写的可选字段按未命中处理；监管规则的附加触发条件引用的字段没有取值时，该规则按未触发处理。");
     }
 }

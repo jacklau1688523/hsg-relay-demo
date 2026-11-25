@@ -92,6 +92,38 @@ class C2RegulatoryControllerTest {
     }
 
     @Test
+    void simulateReturnsTheConfiguredGroupsAndKeepsNationalitiesOutOfTheResponse() throws Exception {
+        String body = mvc.perform(post("/api/c2/simulate").contentType(MediaType.APPLICATION_JSON).content("""
+                        {"providerCode":"PROV-W","paymentCurrency":"USD","debitCurrency":"USD","beneficiaryBankCountry":"KG",
+                         "beneficiaryAddressCountry":"KG","orderingCountry":"HK","clientCountry":"HK",
+                         "directorNationalities":["US"],"uboNationalities":["RU"]}
+                        """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.passed").value(false))
+                .andExpect(jsonPath("$.reasonCode").value("RESTRICTED_COUNTRY"))
+                .andExpect(jsonPath("$.groups.length()").value(8))
+                .andExpect(jsonPath("$.groups[0].code").value("BENEFICIARY_COUNTRY"))
+                .andExpect(jsonPath("$.groups[0].order").value(1))
+                .andExpect(jsonPath("$.groups[0].passed").value(false))
+                .andExpect(jsonPath("$.groups[0].reasonCode").value("RESTRICTED_COUNTRY"))
+                .andExpect(jsonPath("$.groups[0].leaves[0].field").value("beneficiaryBankCountry"))
+                .andExpect(jsonPath("$.groups[0].leaves[0].hit").value(true))
+                .andExpect(jsonPath("$.groups[1].code").value("DIRECTOR_UBO_NATIONALITY"))
+                .andExpect(jsonPath("$.groups[1].leaves[0].field").value("directorNationalities"))
+                .andExpect(jsonPath("$.groups[1].leaves[0].hit").value(false))
+                .andExpect(jsonPath("$.groups[1].leaves[1].field").value("uboNationalities"))
+                .andExpect(jsonPath("$.groups[1].leaves[1].hit").value(true))
+                .andExpect(jsonPath("$.groups[1].leaves[1].ruleIds.length()").value(1))
+                .andExpect(jsonPath("$.groups[7].code").value("REGULATORY"))
+                .andExpect(jsonPath("$.groups[7].passed").value(true))
+                .andExpect(jsonPath("$.hits[?(@.restrictionType=='DIRECTOR_UBO_NATIONALITY')].field").value(contains("directorUboNationalities")))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        // 国籍取值不出现在响应里
+        assertFalse(body.contains("\"RU\""));
+        assertFalse(body.contains("\"US\""));
+    }
+
+    @Test
     void invalidCountryCurrencyAndLegacyOnlyBodiesAreRejected() throws Exception {
         mvc.perform(post("/api/c2/regulatory-rules").contentType(MediaType.APPLICATION_JSON).content(RULE.replace("\"JP\"", "\"UK\"")))
                 .andExpect(status().isBadRequest())

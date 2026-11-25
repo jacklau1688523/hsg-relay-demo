@@ -10,10 +10,43 @@ import java.util.*;
 public class C2Controller {
     private final C2Service service;
     private final C2FieldCatalog catalog;
+    private final C2ConditionConfigRepository conditions;
+    private final com.hsg.relay.service.ExpressionService expressions;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper;
 
-    public C2Controller(C2Service service, C2FieldCatalog catalog) {
+    public C2Controller(C2Service service, C2FieldCatalog catalog, C2ConditionConfigRepository conditions,
+                        com.hsg.relay.service.ExpressionService expressions, com.fasterxml.jackson.databind.ObjectMapper mapper) {
         this.service = service;
         this.catalog = catalog;
+        this.conditions = conditions;
+        this.expressions = expressions;
+        this.mapper = mapper;
+    }
+
+    public record GlobalConditionInput(com.hsg.relay.service.ExpressionService.Node tree, Integer versionNo) {}
+
+    @GetMapping("/condition")
+    public C2ConditionConfig condition() {
+        return conditions.findById(1L).orElseGet(C2ConditionConfig::new);
+    }
+
+    @PostMapping("/condition/compile")
+    public Map<String, String> compileCondition(@RequestBody GlobalConditionInput input) {
+        return Map.of("expression", expressions.compile(input.tree(), "C2"));
+    }
+
+    @PutMapping("/condition")
+    public C2ConditionConfig saveCondition(@RequestBody GlobalConditionInput input) throws com.fasterxml.jackson.core.JsonProcessingException {
+        if (input == null || input.tree() == null) throw new IllegalArgumentException("条件树不能为空");
+        expressions.compile(input.tree(), "C2");
+        String json = mapper.writeValueAsString(input.tree());
+        if (json.length() > 12000) throw new IllegalArgumentException("C2 条件树过长");
+        C2ConditionConfig row = conditions.findById(1L).orElseGet(C2ConditionConfig::new);
+        if (input.versionNo() != null && input.versionNo() != row.versionNo)
+            throw new IllegalArgumentException("条件配置已更新，请刷新后重试");
+        row.conditionJson = json;
+        row.versionNo++;
+        return conditions.save(row);
     }
 
     @GetMapping("/fields")

@@ -68,15 +68,24 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - **监管能力要求**：每条 GLOBAL 监管规则可勾选多个 `requiredTags`（ALL 语义），范围命中但合作方缺失任何一项，返回
   `REG_RULE_NOT_MET`。原因码不可修改。
 - **合作方限制**：`BENEFICIARY_COUNTRY` / `DIRECTOR_UBO_NATIONALITY` / `BENEFICIARY_REGION` / `ORDERING_COUNTRY` /
-  `INTERMEDIARY_COUNTRY` / `CURRENCY` / `PURPOSE`，逐项配置屏蔽名单，自动映射固定返回码。维护入口在合作方编辑页（
-  `/provider-edit.html?code=合作方编码&tab=restrictions`，由列表行「编辑」进入）的「合作方限制」页签，按合作方显示其限制列表并支持新增 /
+  `INTERMEDIARY_COUNTRY` / `CURRENCY` / `PURPOSE`，逐项配置屏蔽名单，自动映射固定返回码。维护入口在合作方详情页（
+  `/provider-detail.html?code=合作方编码&tab=restrictions`）的「合作方限制」页签，按合作方显示其限制列表并支持新增 /
   编辑 / 启停（C2 校验实时读取）。
 - **合作方能力标签**：按合作方编辑标签（如 `SWIFT`、`CNY_ONSHORE`）。维护入口在合作方新增 / 编辑页（`/provider-edit.html`）的「C2
   能力标签」勾选区——原 C2 页面的「合作方能力标签」标签页已并入此处，C2 页面仅保留模拟校验中的标签只读展示。
-- **C2 模拟测试**：右侧填写交易国家、币种、中间行、董事/UBO 国籍、用途等字段，返回全部命中限制、主原因码、监管规则是否触发（附规则的适用范围和本次交易的币种
+- **C2 校验顺序与配置来源**（`/c2.html` 顶部面板，对应 C1 首页的「过滤顺序与配置来源」）：按规则编辑器设计的 C2 条件结构展示——根条件组 8 项、全部满足（AND），每项是一个规则组，组内是若干「字段命中屏蔽 等于 false」的叶子条件，
+  叶子之间也是 AND（只有一个叶子的组标为「单项判断」）：① 受益方国家未被限制（受益行国家、受益人地址国家）→ `RESTRICTED_COUNTRY`；② 董事 / UBO 国籍未被限制（客户董事国籍、客户 UBO 国籍）→
+  `RESTRICTED_NATIONALITY`；③ 受益人地区未被限制 → `RESTRICTED_REGION`；④ 付款 / 发起方国家未被限制（付款客户国家、发起方国家）→ `RESTRICTED_COUNTRY`；⑤ 中间行国家未被限制 →
+  `RESTRICTED_COUNTRY`；⑥ 交易币种未被限制（扣账币种、交易币种）→ `RESTRICTED_CURRENCY`；⑦ 交易用途未被限制 → `RESTRICTED_PURPOSE`；⑧ 监管路由要求已满足（监管能力要求不满足）→
+  `REG_RULE_NOT_MET`。最终判定：全部字段均为 false → C2 PASS；任意字段为 true → C2 FAIL，记录全部命中原因。每张卡片下方是配置来源：第 1–7 项的「合作方限制 ↓」把下方的「合作方限制查询」筛选到该限制类型并滚动过去，
+  第 8 项链接到「监管路由规则」页。右上角可「收起规则组 / 展开规则组」，收起后保留根条件组和最终判定（不记忆状态）。
+- **C2 模拟测试**：右侧填写交易国家、币种、中间行、董事国籍和 UBO 国籍（两项分开填写）、用途等字段，返回全部命中限制、主原因码、监管规则是否触发（附规则的适用范围和本次交易的币种
   / 受益行国家）和缺失标签；旧版规则另附编译表达式。受益行国家下拉在字段库可选值之外补齐全部 ISO 代码，任意国家的监管规则都能在这里模拟；不会释放交易或占用额度。
   配置了附加触发条件、且条件引用了九个固定输入项之外的字段时，右侧自动出现这些字段的取值控件（「附加触发条件字段（按字段库生成）」）；执行过程里每条规则另附附加条件摘要、
   编译后的表达式，以及缺值 / 失效时的处理说明。
+  结果里的「校验过程」与顶部面板同一结构：8 个规则组逐组 PASS / FAIL，每个叶子给出「等于 false → 实际 true / false」，并附本次取值（未填写时标「本次未填写」）、命中的限制记录，或监管规则缺少的能力标签；
+  不满足的组标出原因码，末行为最终判定。逐组结果来自接口返回的 `groups`（见「C2 REST API」），页面不自行推断；国籍取值只取自表单输入，接口响应不含国籍取值。董事国籍、UBO
+  国籍分开提交，第 2 项的两个叶子分别给出结果。
 - **版本与审计**：每次修改规则递增 `version_no` 并写入 `relay_rule_audit`（新增 / 编辑页的保存记为 `CREATE` / `UPDATE`，附加触发条件随规则一并保存时也是这一条记录；仅单独调用 `PUT /api/c2/regulatory-rules/{id}/condition` 时记为
   `UPDATE_CONDITION`）；演示项目为覆盖式编辑+审计，生产需改为不可变发布版本。
 
@@ -126,6 +135,15 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 不触发）、编辑页（回显、修改条件后保存为版本 2、取消勾选后确认清除并保存为版本 3）、规则不存在时的提示、旧版规则的回填提示、附加条件失效（列表标记与筛选、编辑页说明、模拟仍触发并提示到「监管路由规则」页处理）、
 未到生效时间 / 已过失效时间的标记、删除（确认文案、行与汇总卡更新），以及 `/c2.html`（`?rule=` 参数不再有专门处理、「▶ 执行 C2 校验」结果与接口一致、窄屏时表单在结果上方）；列表表格在 1500 / 1440 /
 1366 / 1280 / 1100 宽度下均不横向溢出；无前端 JavaScript 异常。验证未读写 8080 / 8081 实例的数据库。
+
+2026-11-25（C2 条件结构）：C2 模拟页（`/c2.html`）顶部新增「C2 校验顺序与配置来源」面板，按规则编辑器设计的 C2 条件结构展示根条件组（8 项、全部满足 AND）、每个规则组的叶子条件（「字段命中屏蔽 = false」）、
+不满足时返回的原因码、配置来源和最终判定；模拟结果新增「校验过程」，按同样的 8 个规则组逐组给出 PASS / FAIL 和每个叶子的实际 true / false。逐组结果由后端返回（`POST /api/c2/simulate` 响应新增
+`groups`），页面不自行推断；请求增加可选的 `directorNationalities` / `uboNationalities`，董事、UBO 国籍分别判断，不传时沿用合并的 `directorUboNationalities`，全流程 Check
+与原有调用方结果不变；`hits`、`reasonCode` 口径不变，响应不含国籍取值。全套227项测试通过（本次新增6项）：`C2ServiceTest` 5项（规则组的顺序、叶子字段和原因码；合并国籍名单的回退；董事 / UBO
+分别判断；同一规则组的两个叶子各自命中；监管能力缺失使第 8 项不满足），`C2RegulatoryControllerTest` 1项（新入参与 `groups` 的 HTTP 契约、响应不含国籍取值）。在独立端口与临时数据库上以无头 Chrome
+完成 51 项检查：面板内容与设计结构逐项一致（8 个规则组的顺序、逻辑、叶子条件、AND 连接、原因码、配置来源链接）、收起 / 展开、「合作方限制 ↓」筛选并滚动到限制查询、三种模拟的「校验过程」（监管能力缺失；
+第 1、2 项同时不满足且仅 UBO 国籍命中；全部通过），前两种的逐组结果与接口返回一致，请求体分开提交董事 / UBO 国籍，只传合并名单时两个国籍叶子均命中，1500 / 1440 / 1366 / 1280 /
+1100 / 390 宽度下不横向溢出、1100 及以上宽度卡片内不折行；无前端 JavaScript 异常。README「合作方限制」一条的维护入口同步更正为合作方详情页。验证未读写 8080 / 8081 实例的数据库。
 
 ### C2 预置数据验证场景
 
@@ -220,7 +238,11 @@ curl -X PUT http://localhost:8080/api/usage \
   可选，带上时须与规则当前版本一致；返回更新后的规则（`versionNo` +1），规则不存在、条件不合法或版本不一致返回 400
 - `GET /api/c2/restrictions`、`POST /api/c2/restrictions`、`POST /api/c2/restrictions/{id}/toggle`：合作方限制管理
 - `GET /api/c2/providers/{code}/capabilities`、`PUT /api/c2/providers/{code}/capabilities`：合作方标签
-- `POST /api/c2/simulate`：C2 模拟；请求可带 `variables`（附加触发条件字段的取值，字段编码 → 值）
+- `POST /api/c2/simulate`：C2 模拟；请求可带 `variables`（附加触发条件字段的取值，字段编码 → 值），以及可选的 `directorNationalities` / `uboNationalities`（董事、UBO
+  国籍各自的名单，用于分别判断第 2 项「董事 / UBO 国籍未被限制」的两个叶子；不传或为 `null` 时沿用合并的 `directorUboNationalities`，原有调用方结果不变）。响应在原有字段之外增加 `groups`：按规则组返回的校验过程，8
+  项、顺序同「C2 校验顺序与配置来源」，每项 `{order, code, passed, reasonCode, leaves}`，`leaves` 每项 `{field, hit, ruleIds}`——`hit` 为该字段的取值命中本合作方当前有效的同类限制（第 8
+  项为监管规则触发且缺少能力标签），`ruleIds` 为命中的限制记录（`C2-RESTRICTION-<id>`）或监管规则。任一项 `passed=false` 即整体 `passed=false`；`hits`、`reasonCode`
+  的口径不变（同一条限制记录在组内命中多个字段时只记一条、取首个命中字段，国籍命中仍记为合并字段 `directorUboNationalities`）。响应不含任何字段取值，国籍取值尤其如此。
 
 **监管规则创建请求**（范围只提交币种和受益行国家，后端存为标准条件树）：
 
@@ -259,6 +281,18 @@ curl -s -X POST http://localhost:8080/api/c2/simulate \
 ```
 
 预期 `passed=false`、`reasonCode=REG_RULE_NOT_MET`。
+
+响应另带按规则组的校验过程 `groups`（8 项，与页面「校验过程」一致）。上面这笔的第 1 项（通过）和第 8 项（不满足）分别是：
+
+```json
+{"order": 1, "code": "BENEFICIARY_COUNTRY", "passed": true, "reasonCode": "RESTRICTED_COUNTRY",
+ "leaves": [{"field": "beneficiaryBankCountry", "hit": false, "ruleIds": []},
+            {"field": "beneficiaryAddressCountry", "hit": false, "ruleIds": []}]}
+{"order": 8, "code": "REGULATORY", "passed": false, "reasonCode": "REG_RULE_NOT_MET",
+ "leaves": [{"field": "providerCapabilities", "hit": true, "ruleIds": ["REG-001"]}]}
+```
+
+`groups` 每项的 `passed` 为组内全部叶子均为 `false`，`reasonCode` 为不满足时返回的原因码。
 
 **附加触发条件**（形态与 C1 附加条件相同：条件组 `{logic, children}`，叶子 `{field, operator, value}`；字段须已启用且适用规则含 C2，运算符和条件值按字段库校验）：
 
@@ -337,7 +371,8 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 覆盖监管规则按「币种 + 受益行国家」的保存、校验、求值、旧版条件树兼容及 HTTP 契约。附加触发条件由 `C2RegulatoryRuleTest`（附加条件收窄触发、缺值 / 失效的处理、布尔和数字比较、固定要素不能被
 `variables` 覆盖、非法条件拒绝、不带 `trigger` 的范围重新保存与启停保留条件、清除与审计、规则与附加条件随同一个请求保存）、`C2RegulatoryControllerTest`（compile / condition / simulate 的 HTTP
 契约，以及新增 / 编辑页的保存与单条载入）、`RegulatoryTriggerTest`（条件树解析与摘要）和
-`SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。执行：
+`SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。模拟响应里的 C2 条件结构（`groups`）另由 `C2ServiceTest` 的 5 项（8 个规则组的顺序、叶子字段和原因码；只传合并国籍名单时两个国籍叶子结果一致；
+董事、UBO 国籍分别判断且响应不含国籍取值；同一规则组的两个叶子各命中一条限制记录；监管能力缺失使第 8 项不满足）和 `C2RegulatoryControllerTest` 的 1 项（`simulate` 的新入参与 `groups` 的 HTTP 契约）覆盖。执行：
 
 ```bash
 mvn clean test
