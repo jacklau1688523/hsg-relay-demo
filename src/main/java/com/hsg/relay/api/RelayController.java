@@ -148,8 +148,11 @@ public class RelayController {
         if (!clients.existsById(x.clientId) || !providers.existsById(x.providerCode) || x.reason == null || x.reason.isBlank())
             throw new IllegalArgumentException("客户/合作方/原因无效");
         if (x.effectiveFrom == null) x.effectiveFrom = LocalDateTime.now(ZoneId.of("Asia/Hong_Kong"));
+        boolean updating = x.id != null;
+        if (updating && exclusions.findById(x.id).filter(old -> old.providerCode.equals(x.providerCode)).isEmpty())
+            throw new IllegalArgumentException("排除记录不存在或合作方不匹配");
         ClientExclusion saved = exclusions.save(x);
-        audit.save(new RuleAudit("EXCLUSION", saved.id.toString(), "CREATE", "demo.compliance", null, "client=" + x.clientId + ",provider=" + x.providerCode));
+        audit.save(new RuleAudit("EXCLUSION", saved.id.toString(), updating ? "UPDATE" : "CREATE", "demo.compliance", null, "client=" + x.clientId + ",provider=" + x.providerCode));
         return saved;
     }
 
@@ -174,8 +177,11 @@ public class RelayController {
     public CaseApproval addApproval(@RequestBody CaseApproval x) {
         if (!clients.existsById(x.clientId) || !providers.existsById(x.providerCode) || x.flowCategory == null || x.approvalReference == null || x.approvalReference.isBlank() || x.effectiveFrom == null || x.expiresAt == null || !x.expiresAt.isAfter(x.effectiveFrom))
             throw new IllegalArgumentException("审批字段无效");
+        boolean updating = x.id != null;
+        if (updating && approvals.findById(x.id).filter(old -> old.providerCode.equals(x.providerCode)).isEmpty())
+            throw new IllegalArgumentException("审批记录不存在或合作方不匹配");
         CaseApproval saved = approvals.save(x);
-        audit.save(new RuleAudit("APPROVAL", saved.id.toString(), "CREATE", "demo.ops", null, "reference=" + x.approvalReference));
+        audit.save(new RuleAudit("APPROVAL", saved.id.toString(), updating ? "UPDATE" : "CREATE", "demo.ops", null, "reference=" + x.approvalReference));
         return saved;
     }
 

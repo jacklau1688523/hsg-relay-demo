@@ -34,6 +34,11 @@ public class C9Controller {
         return service.mtd(in);
     }
 
+    @PostMapping("/mtd/delete")
+    public C9Service.Listing deleteMtd(@RequestBody C9Service.DeleteMtd in) {
+        return service.deleteMtd(in);
+    }
+
     @PostMapping("/simulate")
     public C9Service.Simulation simulate(@RequestBody C9Service.Input in) {
         return service.simulate(in);

@@ -38,7 +38,7 @@ function render() {
     const p = $('filterProvider').value, o = $('filterOutcome').value;
     const rows = state.rows.filter(r => (!p || r.provider === p) && (!o || r.calculation.outcome === o));
     $('rowCount').textContent = `合作方履约进度（共 ${rows.length} 家）`;
-    $('rows').innerHTML = rows.map(r => `<tr class="${state.editProvider === r.provider ? 'row-selected' : ''}"><td>${esc(r.provider)}<br><span class="muted">${esc(r.name)} · ${r.status === 'LIVE' ? '上线' : '未上线'}</span></td><td class="agreements">${r.agreements.length ? r.agreements.map(a => `<button class="linklike" data-edit-agree="${esc(r.provider)}|${esc(a.metric)}">${esc(a.metric)} · 目标 ${esc(fmt(a.monthlyTarget))}</button>`).join('<br>') : '<span class="muted">无协议</span>'}</td><td>${esc(fmt(r.monthUsd))} USD<br><span class="muted">${esc(fmt(r.monthCount, 0))} 笔</span></td><td>第 ${r.calculation.dayOfMonth} / ${r.calculation.daysInMonth} 天<br><span class="muted">${esc(fmt(r.calculation.timePercent, 1))}%</span></td><td>${r.calculation.items.length ? r.calculation.items.map(i => paceCell(i, r.calculation.timePercent)).join('<hr style="border:0;border-top:1px dashed #e3eaf3;margin:6px 0">') : '<span class="pace-note">—</span>'}</td><td>${r.calculation.items.map(i => `${badge(i.score)}<span class="outcome">${esc(OUTCOME[i.outcome] || i.outcome)}</span>`).join('') || '<span class="pace-note">—</span>'}<b style="display:block;margin-top:4px">综合 ${badge(r.calculation.score)}</b></td><td>${r.agreements.length ? '' : `<button class="btn secondary tiny" data-edit-agree="${esc(r.provider)}|AMOUNT">＋ 新增协议</button>`}<button class="btn secondary tiny" data-edit-mtd="${esc(r.provider)}">调整 MTD</button></td></tr>`).join('') || '<tr><td colspan="7">暂无符合条件的合作方。</td></tr>';
+    $('rows').innerHTML = rows.map(r => `<tr><td>${esc(r.provider)}<br><span class="muted">${esc(r.name)} · ${r.status === 'LIVE' ? '上线' : '未上线'}</span></td><td class="agreements">${r.agreements.length ? r.agreements.map(a => `${esc(a.metric)} · 目标 ${esc(fmt(a.monthlyTarget))}`).join('<br>') : '<span class="muted">无协议</span>'}</td><td>${esc(fmt(r.monthUsd))} USD<br><span class="muted">${esc(fmt(r.monthCount, 0))} 笔</span></td><td>第 ${r.calculation.dayOfMonth} / ${r.calculation.daysInMonth} 天<br><span class="muted">${esc(fmt(r.calculation.timePercent, 1))}%</span></td><td>${r.calculation.items.length ? r.calculation.items.map(i => paceCell(i, r.calculation.timePercent)).join('<hr style="border:0;border-top:1px dashed #e3eaf3;margin:6px 0">') : '<span class="pace-note">—</span>'}</td><td>${r.calculation.items.map(i => `${badge(i.score)}<span class="outcome">${esc(OUTCOME[i.outcome] || i.outcome)}</span>`).join('') || '<span class="pace-note">—</span>'}<b style="display:block;margin-top:4px">综合 ${badge(r.calculation.score)}</b></td><td><a href="/provider-detail.html?code=${encodeURIComponent(r.provider)}&tab=agreements">合作方详情 ↗</a></td></tr>`).join('') || '<tr><td colspan="7">暂无符合条件的合作方。</td></tr>';
 }
 
 function apply(data) {
@@ -48,132 +48,12 @@ function apply(data) {
     render();
 }
 
-function providerOptions(sel) {
-    return state.providers.map(p => `<option value="${esc(p.code)}" ${p.code === sel ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');
-}
-
-function fillAgreement(provider, metric) {
-    const row = state.rows.find(r => r.provider === provider);
-    const agree = row && metric ? row.agreements.find(a => a.metric === metric) : null;
-    state.editProvider = provider;
-    state.editMetric = agree ? metric : null;
-    $('agProvider').innerHTML = providerOptions(provider);
-    $('agMetric').value = agree ? agree.metric : (metric || 'AMOUNT');
-    $('agTarget').value = agree ? agree.monthlyTarget : '';
-    $('agDelete').disabled = !agree;
-    $('formTitle').textContent = agree ? `编辑协议 · ${provider} ${agree.metric}` : '新增商业协议';
-    $('agError').textContent = '';
-    $('agGood').textContent = '';
-    render();
-}
-
-function fillMtd(provider) {
-    const row = state.rows.find(r => r.provider === provider) || state.rows[0];
-    $('mtdProvider').innerHTML = providerOptions(row?.provider);
-    $('mtdUsd').value = row ? row.monthUsd : '';
-    $('mtdCount').value = row ? row.monthCount : '';
-    $('mtdError').textContent = '';
-    $('mtdGood').textContent = '';
-}
-
-function stale() {
-    $('simResult').className = 'notice';
-    $('simResult').textContent = '配置或 MTD 已保存，请重新试算查看最新履约评分。';
-}
-
 $('filterProvider').onchange = render;
 $('filterOutcome').onchange = render;
 $('query').onclick = render;
-$('agProvider').onchange = () => fillAgreement($('agProvider').value, null);
-$('agCancel').onclick = () => fillAgreement(state.editProvider || state.providers[0]?.code, null);
-$('mtdCancel').onclick = () => fillMtd($('mtdProvider').value);
 $('refresh').onclick = async () => {
-    try {
-        apply(await api('/c9/agreements'));
-        fillAgreement(state.editProvider || state.rows[0]?.provider, null);
-        fillMtd($('mtdProvider').value || state.rows[0]?.provider);
-        $('pageError').textContent = '';
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
-};
-$('rows').onclick = e => {
-    const a = e.target.closest('[data-edit-agree]');
-    if (a) {
-        const [p, m] = a.dataset.editAgree.split('|');
-        fillAgreement(p, m);
-        $('formPanel').scrollIntoView({behavior: 'smooth'});
-        return;
-    }
-    const b = e.target.closest('[data-edit-mtd]');
-    if (b) {
-        fillMtd(b.dataset.editMtd);
-        b.closest('tr').scrollIntoView({behavior: 'smooth'});
-    }
-};
-$('agreementForm').onsubmit = async e => {
-    e.preventDefault();
-    $('agError').textContent = '';
-    $('agGood').textContent = '';
-    $('agSave').disabled = true;
-    try {
-        const input = {
-            revision: state.revision,
-            provider: $('agProvider').value,
-            metric: $('agMetric').value,
-            monthlyTarget: Number($('agTarget').value)
-        };
-        if (!(input.monthlyTarget >= 0)) throw Error('月度目标必须为不小于0的数字');
-        apply(await api('/c9/agreements', {method: 'PUT', body: JSON.stringify(input)}));
-        fillAgreement(input.provider, input.metric);
-        $('agGood').textContent = `已保存，配置版本 ${state.revision}。C9 列表、试算与全流程路由共用此协议。`;
-        stale();
-    } catch (err) {
-        $('agError').textContent = err.message;
-    } finally {
-        $('agSave').disabled = false;
-    }
-};
-$('agDelete').onclick = async () => {
-    const provider = $('agProvider').value, metric = $('agMetric').value;
-    if (!state.rows.find(r => r.provider === provider)?.agreements.some(a => a.metric === metric)) return;
-    if (!confirm(`确定删除 ${provider} 的 ${metric} 协议？删除后按无月度目标计0分。`)) return;
-    $('agError').textContent = '';
-    $('agGood').textContent = '';
-    try {
-        apply(await api('/c9/agreements/delete', {
-            method: 'POST',
-            body: JSON.stringify({revision: state.revision, provider, metric})
-        }));
-        fillAgreement(provider, null);
-        $('agGood').textContent = '协议已删除，该指标按无月度目标评分。';
-        stale();
-    } catch (err) {
-        $('agError').textContent = err.message;
-    }
-};
-$('mtdForm').onsubmit = async e => {
-    e.preventDefault();
-    $('mtdError').textContent = '';
-    $('mtdGood').textContent = '';
-    $('mtdSave').disabled = true;
-    try {
-        const input = {
-            revision: state.revision,
-            provider: $('mtdProvider').value,
-            monthUsd: $('mtdUsd').value === '' ? null : Number($('mtdUsd').value),
-            monthCount: $('mtdCount').value === '' ? null : Number($('mtdCount').value)
-        };
-        if (input.monthUsd == null && input.monthCount == null) throw Error('请至少填写月累计金额或笔数');
-        apply(await api('/c9/mtd', {method: 'PUT', body: JSON.stringify(input)}));
-        fillMtd(input.provider);
-        $('mtdGood').textContent = `已保存 ${input.provider} 的 MTD，配置版本 ${state.revision}。`;
-        stale();
-    } catch (err) {
-        $('mtdError').textContent = err.message;
-    } finally {
-        $('mtdSave').disabled = false;
-    }
+    try { apply(await api('/c9/agreements')); $('pageError').textContent = ''; }
+    catch (e) { $('pageError').textContent = e.message; }
 };
 
 function step(n, title, value, detail) {
@@ -244,8 +124,6 @@ document.querySelectorAll('[data-sample]').forEach(b => b.onclick = () => {
         $('filterProvider').innerHTML = '<option value="">全部合作方</option>' + options(providers.map(p => p.code));
         $('simProvider').innerHTML = providers.map(p => `<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');
         apply(data);
-        fillAgreement((data.rows.find(r => r.agreements.length) || data.rows[0])?.provider, null);
-        fillMtd(data.rows[0]?.provider);
     } catch (e) {
         $('pageError').textContent = e.message;
     }

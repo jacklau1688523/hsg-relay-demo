@@ -64,10 +64,21 @@
             <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
         </div>
         <div class="content">
-            <div class="heading"><h1>C2 制裁及监管限制模拟</h1>
-                <div class="muted">合作方限制在合作方详情页维护；全局监管路由规则（适用范围、必需能力标签和附加触发条件）在「监管路由规则」页维护，这里只做模拟。交易落在规则适用范围内且满足附加触发条件时规则触发，候选合作方缺少要求的能力标签即返回
+            <div class="heading"><h1>C2 制裁及监管限制</h1>
+                <div class="muted">合作方限制在下方查询，并在合作方详情页维护；全局监管路由规则（适用范围、必需能力标签和附加触发条件）在「监管路由规则」页维护。交易落在规则适用范围内且满足附加触发条件时规则触发，候选合作方缺少要求的能力标签即返回
                     REG_RULE_NOT_MET。
                 </div>
+            </div>
+            <div class="panel">
+                <div class="rowbetween"><h2 style="margin:0">合作方限制查询</h2><button type="button" class="btn secondary" id="c2RestrictionRefresh">↻ 刷新</button></div>
+                <div class="layout3 section" style="margin-top:14px">
+                    <div class="field"><label for="c2RestrictionProvider">合作方</label><select id="c2RestrictionProvider"><option value="">全部合作方</option></select></div>
+                    <div class="field"><label for="c2RestrictionType">限制类型</label><select id="c2RestrictionType"><option value="">全部类型</option></select></div>
+                    <div class="field"><label for="c2RestrictionStatus">状态</label><select id="c2RestrictionStatus"><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></select></div>
+                </div>
+                <div class="tablewrap"><table><thead><tr><th>ID</th><th>合作方</th><th>限制类型</th><th>屏蔽值</th><th>生效时间</th><th>失效时间</th><th>版本</th><th>状态</th><th>备注</th><th>维护入口</th></tr></thead><tbody id="c2RestrictionRows"><tr><td colspan="10">正在加载…</td></tr></tbody></table></div>
+                <div id="c2RestrictionError" class="err" role="alert"></div>
+                <div class="notice">此处仅查询合作方限制。新增、编辑和启停请到对应合作方详情的“合作方限制”页签。</div>
             </div>
             <div class="grid">
                 <section class="panel">

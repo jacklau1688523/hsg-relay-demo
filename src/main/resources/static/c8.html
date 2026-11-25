@@ -219,7 +219,7 @@
                 </div>
             </div>
             <div class="tabs">
-                <button class="tab sel">偏好规则配置</button>
+                <button class="tab sel">偏好规则查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
             <div class="c8-grid">
@@ -255,62 +255,8 @@
                             </table>
                         </div>
                         <div class="notice">规则与全流程路由共用参考配置（BRD
-                            9.3），保存后下一次路由试算生效；修改递增配置版本并写入审计。
+                            9.3），此处仅供查询；请在合作方详情的“偏好规则”页签维护，保存后下一次路由试算生效。
                         </div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">维护偏好规则</h2><span
-                                class="badge pending">评分项 · 不剔除候选</span></div>
-                        <form id="ruleForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="ruleProvider">目标合作方 *</label><select
-                                        id="ruleProvider"></select></div>
-                                <div class="field"><label for="ruleCurrency">币种（空＝全部）</label><input
-                                        id="ruleCurrency" maxlength="3" placeholder="如 USD / ALL"></div>
-                                <div class="field"><label for="ruleCountry">受益行国家（空＝全部）</label><input
-                                        id="ruleCountry" maxlength="5" placeholder="如 KG / ALL"></div>
-                                <div class="field"><label for="ruleRegion">受益人地区（空＝全部）</label><input
-                                        id="ruleRegion" placeholder="如 CN-GD / ALL"></div>
-                                <div class="field"><label for="ruleMin">金额下限 USD</label><input id="ruleMin"
-                                                                                                   type="number" min="0"
-                                                                                                   step="0.01"
-                                                                                                   placeholder="不限">
-                                </div>
-                                <div class="field"><label for="ruleMax">金额上限 USD</label><input id="ruleMax"
-                                                                                                   type="number" min="0"
-                                                                                                   step="0.01"
-                                                                                                   placeholder="不限">
-                                </div>
-                                <div class="field"><label for="ruleType">交易类型（空＝全部）</label><select id="ruleType">
-                                    <option value="">匹配全部</option>
-                                    <option>TRADE</option>
-                                    <option>TREASURY</option>
-                                    <option>INTRAGROUP</option>
-                                    <option>PAYROLL</option>
-                                    <option>FEE</option>
-                                    <option>REFUND</option>
-                                    <option>OTHER</option>
-                                </select></div>
-                                <div class="field"><label for="ruleSegment">客户分层（空＝全部）</label><input
-                                        id="ruleSegment" placeholder="如 SME / CORPORATE"></div>
-                                <div class="field"><label for="rulePoints">奖励分 1–100 *</label><input id="rulePoints"
-                                                                                                        type="number"
-                                                                                                        min="1"
-                                                                                                        max="100"
-                                                                                                        step="1"
-                                                                                                        required></div>
-                            </div>
-                            <div class="muted">同一合作方可配置多条规则，命中奖励分累加后封顶100。文本条件留空或填 ALL
-                                代表匹配全部；金额条件按美元等价比较。
-                            </div>
-                            <div class="err" id="ruleError" role="alert"></div>
-                            <div class="good" id="ruleGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="ruleSave" type="submit">保存规则</button>
-                                <button class="btn secondary" id="ruleDelete" type="button">删除此规则</button>
-                                <button class="btn secondary" id="ruleCancel" type="button">重置</button>
-                            </div>
-                        </form>
                     </div>
                 </section>
                 <aside class="rightPanel">

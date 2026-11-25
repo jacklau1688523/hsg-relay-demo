@@ -18,6 +18,31 @@ const c2Api = async (path, opt = {}) => {
     return data;
 };
 const c2State = {providers: [], fields: []};
+const c2Restrictions = {rows: []};
+const c2RestrictionTypes = {
+    BENEFICIARY_COUNTRY: '受益行 / 地址国家', DIRECTOR_UBO_NATIONALITY: '董事 / UBO 国籍',
+    BENEFICIARY_REGION: '受益人地区', ORDERING_COUNTRY: '客户 / 发起方国家',
+    INTERMEDIARY_COUNTRY: '中间行国家', CURRENCY: '扣账 / 交易币种', PURPOSE: '交易用途'
+};
+function c2RenderRestrictions() {
+    const provider=c2$('c2RestrictionProvider').value, type=c2$('c2RestrictionType').value, status=c2$('c2RestrictionStatus').value;
+    const rows=c2Restrictions.rows.filter(r=>(!provider||r.providerCode===provider)&&(!type||r.restrictionType===type)&&(!status||String(r.enabled)===status));
+    c2$('c2RestrictionRows').innerHTML=rows.map(r=>`<tr><td>#${c2Esc(r.id)}</td><td>${c2Esc(r.providerCode)}</td><td>${c2Esc(c2RestrictionTypes[r.restrictionType]||r.restrictionType)}</td><td>${c2Esc(r.blockedValues)}</td><td>${c2Esc((r.effectiveFrom||'').replace('T',' ').slice(0,16))}</td><td>${c2Esc((r.effectiveTo||'—').replace('T',' ').slice(0,16))}</td><td>v${c2Esc(r.versionNo)}</td><td><span class="badge ${r.enabled?'pass':'pending'}">${r.enabled?'启用':'停用'}</span></td><td>${c2Esc(r.remark||'—')}</td><td><a href="/provider-detail.html?code=${encodeURIComponent(r.providerCode)}&tab=restrictions">合作方详情 ↗</a></td></tr>`).join('')||'<tr><td colspan="10">暂无符合条件的合作方限制。</td></tr>';
+}
+async function c2LoadRestrictions() {
+    c2$('c2RestrictionError').textContent='';
+    try {
+        const [providers, rows]=await Promise.all([fetch('/api/providers').then(r=>r.json()),c2Api('/restrictions')]);
+        const selectedProvider=c2$('c2RestrictionProvider').value,selectedType=c2$('c2RestrictionType').value;
+        c2Restrictions.rows=rows;
+        c2$('c2RestrictionProvider').innerHTML='<option value="">全部合作方</option>'+providers.map(p=>`<option value="${c2Esc(p.code)}">${c2Esc(p.code)} · ${c2Esc(p.name)}</option>`).join('');
+        c2$('c2RestrictionType').innerHTML='<option value="">全部类型</option>'+Object.entries(c2RestrictionTypes).map(([key,label])=>`<option value="${c2Esc(key)}">${c2Esc(label)}</option>`).join('');
+        c2$('c2RestrictionProvider').value=selectedProvider;c2$('c2RestrictionType').value=selectedType;
+        c2RenderRestrictions();
+    } catch(e) { c2$('c2RestrictionError').textContent=e.message; }
+}
+for(const id of ['c2RestrictionProvider','c2RestrictionType','c2RestrictionStatus'])c2$(id).onchange=c2RenderRestrictions;
+c2$('c2RestrictionRefresh').onclick=c2LoadRestrictions;
 // 模拟面板有专门输入项的九个交易要素；字段库里其余已启用的 C2 字段由 c2RenderVariableInputs 自动生成取值控件
 const c2FixedFields = ['paymentCurrency', 'debitCurrency', 'beneficiaryBankCountry', 'beneficiaryAddressCountry', 'beneficiaryRegion', 'orderingCountry', 'clientCountry', 'intermediaryCountry', 'purpose'];
 
@@ -149,3 +174,4 @@ async function c2Init() {
 }
 
 c2Init();
+c2LoadRestrictions();

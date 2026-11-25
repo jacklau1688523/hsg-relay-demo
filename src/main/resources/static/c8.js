@@ -6,7 +6,7 @@ const $ = id => document.getElementById(id), esc = v => String(v ?? '—').repla
     '"': '&quot;',
     "'": '&#39;'
 }[c]));
-const state = {revision: 0, rows: [], providers: [], editIndex: null};
+const state = {revision: 0, rows: [], providers: []};
 
 async function api(path, options = {}) {
     const r = await fetch('/api' + path, {...options, headers: {'Content-Type': 'application/json'}});
@@ -25,120 +25,23 @@ function render() {
     $('rowCount').textContent = `偏好规则（共 ${rows.length} 条）`;
     $('rows').innerHTML = rows.map(r => {
         const x = r.rule;
-        return `<tr class="${state.editIndex === r.index ? 'row-selected' : ''}"><td>#${r.index}</td><td>${esc(x.provider)}</td><td>${esc(show(x.currency))}</td><td>${esc(show(x.country))}</td><td>${esc(show(x.region))}</td><td>${esc(range(x.minUsd, x.maxUsd))}</td><td>${esc(show(x.paymentType))}</td><td>${esc(show(x.segment))}</td><td><span class="points-badge">＋${esc(x.points)}</span></td><td><button class="btn secondary tiny" data-edit="${r.index}">编辑</button></td></tr>`;
+        return `<tr><td>#${r.index}</td><td>${esc(x.provider)}</td><td>${esc(show(x.currency))}</td><td>${esc(show(x.country))}</td><td>${esc(show(x.region))}</td><td>${esc(range(x.minUsd, x.maxUsd))}</td><td>${esc(show(x.paymentType))}</td><td>${esc(show(x.segment))}</td><td><span class="points-badge">＋${esc(x.points)}</span></td><td><a href="/provider-detail.html?code=${encodeURIComponent(x.provider)}&tab=preferences">合作方详情 ↗</a></td></tr>`;
     }).join('') || '<tr><td colspan="10">暂无符合条件的规则。</td></tr>';
 }
-
-const providerOptions = sel => state.providers.map(p => `<option value="${esc(p.code)}" ${p.code === sel ? 'selected' : ''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');
 
 function apply(data) {
     state.rows = data.rows;
     state.revision = data.revision;
     $('revision').textContent = `配置版本 ${state.revision}`;
     $('filterProvider').innerHTML = '<option value="">全部合作方</option>' + [...new Set(data.rows.map(r => r.rule.provider))].map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
-    $('ruleProvider').innerHTML = providerOptions($('ruleProvider').value);
-    render();
-}
-
-function fillForm(index) {
-    const row = typeof index === 'number' ? state.rows.find(r => r.index === index) : null;
-    state.editIndex = row ? row.index : null;
-    const x = row ? row.rule : {
-        provider: state.providers[0]?.code,
-        currency: '',
-        country: '',
-        region: '',
-        minUsd: null,
-        maxUsd: null,
-        paymentType: '',
-        segment: '',
-        points: 100
-    };
-    $('ruleProvider').innerHTML = providerOptions(x.provider);
-    $('ruleCurrency').value = x.currency || '';
-    $('ruleCountry').value = x.country || '';
-    $('ruleRegion').value = x.region || '';
-    $('ruleMin').value = x.minUsd ?? '';
-    $('ruleMax').value = x.maxUsd ?? '';
-    $('ruleType').value = x.paymentType || '';
-    $('ruleSegment').value = x.segment || '';
-    $('rulePoints').value = x.points;
-    $('ruleDelete').disabled = !row;
-    $('formTitle').textContent = row ? `编辑偏好规则 · #${row.index}` : '新增偏好规则';
-    $('ruleError').textContent = '';
-    $('ruleGood').textContent = '';
     render();
 }
 
 $('filterProvider').onchange = render;
 $('query').onclick = render;
 $('refresh').onclick = async () => {
-    try {
-        apply(await api('/c8/rules'));
-        fillForm();
-        $('pageError').textContent = '';
-    } catch (e) {
-        $('pageError').textContent = e.message;
-    }
-};
-$('rows').onclick = e => {
-    const b = e.target.closest('[data-edit]');
-    if (b) {
-        fillForm(Number(b.dataset.edit));
-        $('formPanel').scrollIntoView({behavior: 'smooth'});
-    }
-};
-$('ruleCancel').onclick = () => fillForm();
-$('ruleForm').onsubmit = async e => {
-    e.preventDefault();
-    $('ruleError').textContent = '';
-    $('ruleGood').textContent = '';
-    $('ruleSave').disabled = true;
-    try {
-        const clean = s => s && s.trim() ? s.trim().toUpperCase() : null;
-        const rule = {
-            provider: $('ruleProvider').value,
-            currency: clean($('ruleCurrency').value),
-            country: clean($('ruleCountry').value),
-            region: clean($('ruleRegion').value),
-            minUsd: $('ruleMin').value === '' ? null : Number($('ruleMin').value),
-            maxUsd: $('ruleMax').value === '' ? null : Number($('ruleMax').value),
-            paymentType: $('ruleType').value || null,
-            segment: clean($('ruleSegment').value),
-            points: Number($('rulePoints').value)
-        };
-        if (!(rule.points >= 1 && rule.points <= 100)) throw Error('奖励分数必须为 1–100 的整数');
-        if (rule.minUsd != null && rule.minUsd < 0) throw Error('金额下限必须非负');
-        if (rule.maxUsd != null && (rule.maxUsd < 0 || (rule.minUsd != null && rule.maxUsd < rule.minUsd))) throw Error('金额上限必须非负且不小于下限');
-        apply(await api('/c8/rules', {
-            method: 'PUT',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex, rule})
-        }));
-        fillForm(state.editIndex);
-        $('ruleGood').textContent = `已保存，配置版本 ${state.revision}。下一次路由试算即按新规则计算 C8。`;
-        $('simResult').className = 'notice';
-        $('simResult').textContent = '规则已保存，请重新试算查看最新评分。';
-    } catch (err) {
-        $('ruleError').textContent = err.message;
-    } finally {
-        $('ruleSave').disabled = false;
-    }
-};
-$('ruleDelete').onclick = async () => {
-    if (state.editIndex == null) return;
-    if (!confirm(`确定删除偏好规则 #${state.editIndex}？`)) return;
-    $('ruleError').textContent = '';
-    $('ruleGood').textContent = '';
-    try {
-        apply(await api('/c8/rules/delete', {
-            method: 'POST',
-            body: JSON.stringify({revision: state.revision, index: state.editIndex})
-        }));
-        fillForm();
-        $('ruleGood').textContent = '规则已删除。';
-    } catch (err) {
-        $('ruleError').textContent = err.message;
-    }
+    try { apply(await api('/c8/rules')); $('pageError').textContent = ''; }
+    catch (e) { $('pageError').textContent = e.message; }
 };
 $('simForm').onsubmit = async e => {
     e.preventDefault();
@@ -191,7 +94,6 @@ document.querySelectorAll('[data-sample]').forEach(b => b.onclick = () => {
         const [providers, data] = await Promise.all([api('/providers'), api('/c8/rules')]);
         state.providers = providers;
         apply(data);
-        fillForm();
     } catch (e) {
         $('pageError').textContent = e.message;
     }

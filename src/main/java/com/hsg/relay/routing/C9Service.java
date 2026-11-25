@@ -41,6 +41,9 @@ public class C9Service {
     public record Mtd(Long revision, String provider, BigDecimal monthUsd, Long monthCount) {
     }
 
+    public record DeleteMtd(Long revision, String provider) {
+    }
+
     public record Input(String providerCode, String metric, BigDecimal monthlyTarget, BigDecimal monthUsd,
                         Long monthCount, ZonedDateTime at) {
     }
@@ -119,6 +122,22 @@ public class C9Service {
             if (in.monthUsd() != null) usd.put(in.provider(), in.monthUsd());
             Map<String, Long> count = new HashMap<>(cfg.monthCount());
             if (in.monthCount() != null) count.put(in.provider(), in.monthCount());
+            return new RoutingConfig(cfg.hkdRates(), cfg.reaches(), cfg.balances(), cfg.fees(), cfg.fxWindows(), cfg.preferences(), cfg.agreements(), cfg.weights(), cfg.todayUsd(), usd, count, cfg.hongKongHolidays());
+        });
+        return list();
+    }
+
+    @Transactional
+    public Listing deleteMtd(DeleteMtd in) {
+        if (in == null) throw new IllegalArgumentException("删除请求必填");
+        requireProvider(in.provider());
+        updated(in.revision(), cfg -> {
+            if (!cfg.monthUsd().containsKey(in.provider()) && !cfg.monthCount().containsKey(in.provider()))
+                throw new IllegalArgumentException("月度进度记录不存在");
+            Map<String, BigDecimal> usd = new HashMap<>(cfg.monthUsd());
+            Map<String, Long> count = new HashMap<>(cfg.monthCount());
+            usd.remove(in.provider());
+            count.remove(in.provider());
             return new RoutingConfig(cfg.hkdRates(), cfg.reaches(), cfg.balances(), cfg.fees(), cfg.fxWindows(), cfg.preferences(), cfg.agreements(), cfg.weights(), cfg.todayUsd(), usd, count, cfg.hongKongHolidays());
         });
         return list();

@@ -190,6 +190,8 @@
                                 <button type="button" class="tab" data-tab="reaches">业务覆盖</button>
                                 <button type="button" class="tab" data-tab="limits">交易限额</button>
                                 <button type="button" class="tab" data-tab="fees">手续费配置</button>
+                                <button type="button" class="tab" data-tab="preferences">偏好规则</button>
+                                <button type="button" class="tab" data-tab="agreements">商业协议与月度进度</button>
                                 <button type="button" class="tab" data-tab="schedules">截单与工作日日历</button>
                                 <button type="button" class="tab" data-tab="exclusions">客户排除管理</button>
                                 <button type="button" class="tab" data-tab="approvals">个案审批管理</button>
@@ -203,6 +205,8 @@
                             <div id="reachesView" class="hidden"></div>
                             <div id="limitsView" class="hidden"></div>
                             <div id="feesView" class="hidden"></div>
+                            <div id="preferencesView" class="hidden"></div>
+                            <div id="agreementsView" class="hidden"></div>
                             <div id="schedulesView" class="hidden"></div>
                             <div id="exclusionsView" class="hidden"></div>
                             <div id="approvalsView" class="hidden"></div>
@@ -234,6 +238,7 @@
     </main>
 </div>
 <div class="modalback" id="appetiteModal"><div class="modal"><div class="rowbetween"><h2 id="appetiteModalTitle">新增准入规则</h2><button type="button" class="btn secondary tiny" onclick="closeProviderAppetite()">✕ 关闭</button></div><form id="appetiteForm"><div id="appetiteFields"></div><div class="err" id="appetiteError" role="alert"></div><div class="actions" style="justify-content:flex-end;margin-top:18px"><button type="button" class="btn secondary" onclick="closeProviderAppetite()">取消</button><button type="submit" class="btn">保存配置</button></div></form></div></div>
+<div class="modalback" id="restrictionModal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="restrictionModalTitle"><div class="rowbetween"><h2 id="restrictionModalTitle">新增合作方限制</h2><button type="button" class="btn secondary tiny" data-restriction-close>✕ 关闭</button></div><div id="restrictionFormPanel"></div></div></div>
 <script src="/provider-common.js"></script>
 <script src="/provider-detail.js"></script>
 </body>

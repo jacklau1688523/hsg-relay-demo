@@ -84,6 +84,19 @@ class C9ServiceTest {
     }
 
     @Test
+    void deleteMtdClearsBothProgressMeasuresAndKeepsAgreements() {
+        var before = c9.list();
+        var agreements = row("PROV-T1").agreements();
+        var saved = c9.mtd(new C9Service.Mtd(before.revision(), "PROV-T1", new BigDecimal("123"), 4L));
+        assertThatThrownBy(() -> c9.deleteMtd(new C9Service.DeleteMtd(before.revision(), "PROV-T1"))).hasMessageContaining("更新");
+        var deleted = c9.deleteMtd(new C9Service.DeleteMtd(saved.revision(), "PROV-T1"));
+        assertThat(deleted.rows().stream().filter(r -> r.provider().equals("PROV-T1")).findFirst().orElseThrow().monthUsd()).isEqualByComparingTo("0");
+        assertThat(routing.config().config().monthUsd()).doesNotContainKey("PROV-T1");
+        assertThat(routing.config().config().monthCount()).doesNotContainKey("PROV-T1");
+        assertThat(row("PROV-T1").agreements()).isEqualTo(agreements);
+    }
+
+    @Test
     void simulateUsesSavedAgreementAndMtd() {
         var sim = c9.simulate(new C9Service.Input("PROV-T1", null, null, null, null, AT));
         assertThat(sim.calculation().score()).isEqualTo(100);

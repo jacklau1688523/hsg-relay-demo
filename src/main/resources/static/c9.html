@@ -285,7 +285,7 @@
                     分</b><span>MTD ＜ 目标 ×（当月日期 ÷ 当月总天数），路由加权引流</span></div>
             </div>
             <div class="tabs">
-                <button class="tab sel">商业协议与月度进度</button>
+                <button class="tab sel">商业协议与月度进度查询</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
             <div class="c9-grid">
@@ -325,61 +325,8 @@
                             </table>
                         </div>
                         <div class="notice">进度基准＝月度目标 ×（当月日期 ÷ 当月总天数），按香港自然月计算；AMOUNT
-                            按美元等价金额、COUNT 按交易笔数。MTD 为演示输入，真实环境由交易统计按月回填。
+                            按美元等价金额、COUNT 按交易笔数。MTD 为演示输入，真实环境由交易统计按月回填。此处仅供查询；请在合作方详情的“商业协议与月度进度”页签维护。
                         </div>
-                    </div>
-                    <div class="panel" id="formPanel">
-                        <div class="rulebar"><h2 id="formTitle" style="margin:0">维护商业协议</h2><span
-                                class="badge pending">评分项 · 不剔除候选</span></div>
-                        <form id="agreementForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="agProvider">合作方 *</label><select
-                                        id="agProvider"></select></div>
-                                <div class="field"><label for="agMetric">履约指标 *</label><select id="agMetric">
-                                    <option value="AMOUNT">AMOUNT · 月累计金额 USD</option>
-                                    <option value="COUNT">COUNT · 月累计笔数</option>
-                                </select></div>
-                                <div class="field"><label for="agTarget">月度目标 *（金额为 USD 等价）</label><input
-                                        id="agTarget" type="number" min="0" step="0.01" required></div>
-                            </div>
-                            <div class="muted">目标为 0 视同无月度目标，得0分。同一合作方＋指标已存在时为编辑，否则新增；与其他
-                                C3–C10 配置共用同一份参考配置并记录审计。
-                            </div>
-                            <div class="err" id="agError" role="alert"></div>
-                            <div class="good" id="agGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="agSave" type="submit">保存协议</button>
-                                <button class="btn secondary" id="agDelete" type="button">删除此协议</button>
-                                <button class="btn secondary" id="agCancel" type="button">重置</button>
-                            </div>
-                        </form>
-                    </div>
-                    <div class="panel">
-                        <div class="rulebar"><h2 style="margin:0">调整 MTD 月累计（演示输入）</h2></div>
-                        <form id="mtdForm">
-                            <div class="layout3" style="margin-top:16px">
-                                <div class="field"><label for="mtdProvider">合作方 *</label><select
-                                        id="mtdProvider"></select></div>
-                                <div class="field"><label for="mtdUsd">MTD 月累计金额 USD</label><input id="mtdUsd"
-                                                                                                        type="number"
-                                                                                                        min="0"
-                                                                                                        step="0.01">
-                                </div>
-                                <div class="field"><label for="mtdCount">MTD 月累计笔数</label><input id="mtdCount"
-                                                                                                      type="number"
-                                                                                                      min="0" step="1">
-                                </div>
-                            </div>
-                            <div class="muted">仅用于演示三种评分进度场景；AMOUNT 协议读取金额、COUNT
-                                协议读取笔数。保存后立即反映在列表、试算及全流程路由的 C9 分数。
-                            </div>
-                            <div class="err" id="mtdError" role="alert"></div>
-                            <div class="good" id="mtdGood" role="status"></div>
-                            <div class="actions" style="margin-top:16px">
-                                <button class="btn" id="mtdSave" type="submit">保存 MTD</button>
-                                <button class="btn secondary" id="mtdCancel" type="button">重置</button>
-                            </div>
-                        </form>
                     </div>
                 </section>
                 <aside class="rightPanel">
