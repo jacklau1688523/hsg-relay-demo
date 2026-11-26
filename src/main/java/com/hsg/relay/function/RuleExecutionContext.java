@@ -11,7 +11,25 @@ import java.util.*;
  * 同时承载本次求值内只读函数的结果：相同 Handler + 相同有效参数只真正执行一次，见 {@link FunctionExecutionService}。
  */
 public final class RuleExecutionContext {
-    public enum Group { CANDIDATE, TRANSACTION, CONTEXT }
+    /**
+     * 取值路径的分组（name 即页面和接口里用的编码）：CANDIDATE 当前正在评估的候选路由、TRANSACTION 当前支付交易的数据、
+     * CONTEXT 规则引擎执行过程中的上下文数据；label 是日志里展示的中文名称。
+     */
+    public enum Group {
+        CANDIDATE("当前正在评估的候选路由"),
+        TRANSACTION("当前支付交易的数据"),
+        CONTEXT("规则引擎执行过程中的上下文数据");
+
+        private final String label;
+
+        Group(String label) {
+            this.label = label;
+        }
+
+        public String label() {
+            return label;
+        }
+    }
 
     /** 受控取值路径：name 形如 candidate.providerCode；type 为 STRING / DECIMAL / DATE；label 供页面展示。 */
     public record Path(String name, Group group, String type, String label) {
@@ -84,6 +102,17 @@ public final class RuleExecutionContext {
     public Object value(String path) {
         if (!has(path)) throw new IllegalArgumentException("未登记的取值路径：" + path);
         return values.get(path);
+    }
+
+    /**
+     * 已登记路径的当前取值，按分组归类、按登记顺序排列，供求值日志按 CANDIDATE / TRANSACTION / CONTEXT 三组展示；
+     * 还没有取值的路径也在其中（值为 null）。
+     */
+    public Map<Group, Map<String, Object>> valuesByGroup() {
+        Map<Group, Map<String, Object>> result = new EnumMap<>(Group.class);
+        for (Path path : paths)
+            result.computeIfAbsent(path.group(), group -> new LinkedHashMap<>()).put(path.name(), values.get(path.name()));
+        return result;
     }
 
     public LocalDateTime decisionTime() {

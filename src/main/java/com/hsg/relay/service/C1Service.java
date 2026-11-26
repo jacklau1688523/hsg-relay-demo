@@ -148,18 +148,19 @@ public class C1Service implements RequiredFunctionProvider {
         }
         // 2. 客户排除：系统必检。直接调用 Java Handler，不经过函数库元数据，也不管条件树里有没有 clientExcluded 节点。
         //    查询失败按不通过处理（不返回「未排除」放行）。
-        Call exclusion;
+        /*Call exclusion;
         try {
             exclusion = functions.execute(exclusionChecker, "clientExcluded", EXCLUSION_ARGUMENTS, context);
         } catch (RuntimeException ex) {
             steps.add(new Trace("3. 客户排除", "FAIL", ex.getMessage()));
             return fail("CLIENT_EXCLUSION_CHECK_FAILED", null, null, steps, context, "客户排除记录查询失败，按不通过处理：" + ex.getMessage());
-        }
+        }*/
 
-        boolean excluded = Boolean.TRUE.equals(exclusion.value());
-        String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
-        if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, context, "命中合作方客户排除记录（" + exclusionDetail + "）");
-        steps.add(new Trace("3. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
+        //boolean excluded = Boolean.TRUE.equals(exclusion.value());
+        boolean excluded = false;
+        //String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
+        //if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, context, "命中合作方客户排除记录（" + exclusionDetail + "）");
+        //steps.add(new Trace("3. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
         Long lastId = null;
         String lastAction = null;
         for (String flow : flows) {

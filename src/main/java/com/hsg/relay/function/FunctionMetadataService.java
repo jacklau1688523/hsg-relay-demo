@@ -228,7 +228,7 @@ public class FunctionMetadataService {
         Boolean matched = null;
         String error = null;
         try {
-            matched = expressions.evaluate(compiled, Map.of(), context).matched();
+            matched = expressions.evaluate(compiled, Map.of(), context, "函数试算 " + functionCode).matched();
         } catch (FunctionExecutionService.FunctionExecutionException ex) {
             error = ex.getMessage();
         }

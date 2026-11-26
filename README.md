@@ -234,6 +234,17 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 - 规则保存后函数在函数库里被停用、不再适用 C1 或 Handler 不再可用：引用它的规则在第 3 步按不命中处理，并在校验过程中给出 `SKIP` 说明（「附加条件已失效」），全部不命中时为 `APPETITE_NOT_SET`，与字段失效的处理一致；
   系统必检照常执行。条件编辑器把这样的函数条件标为「不可用」并在表达式区提示，不会悄悄换成别的函数，需删除后按需重新添加。
 
+**条件求值过程日志（溯源计算过程）：**
+
+- `ExpressionService.evaluate` 每次求值输出一个 DEBUG 日志块（logger `com.hsg.relay.service.ExpressionService`）。`application.yml` 的 `logging.level` 已为演示打开；日志含客户与交易数据，生产环境请删除这一项或改为 `info`。
+  所有经过 `evaluate` 的条件都会记录：C1 全局准入条件（标题带「C1 全局准入条件」）、C1 准入规则条件、函数试算（「函数试算 {函数编码}」）、`POST /api/expression/preview`、C2 附加触发条件和 C3 全局条件。
+- 块内依次是：`表达式`（页面可读形式；含函数时另给 `可执行表达式`）→ **CANDIDATE 当前正在评估的候选路由 / TRANSACTION 当前支付交易的数据 / CONTEXT 规则引擎执行过程中的上下文数据**
+  三组受控路径的当前取值（没有执行上下文时说明只有请求变量参与）→ `函数调用`（目标 ← 函数与 Handler｜入参｜返回值｜耗时或复用｜数据来源｜命中记录；调用前就失败的给出参数绑定和原因）
+  → `代入变量`（表达式引用的每个变量代入的取值和来源：请求取值 / 函数计算 / 函数返回值）→ `逐项求值`（每个叶子条件的真假）→ `结果：命中 / 未命中 / 执行失败｜耗时`。
+- 排查入口：条件不命中却不报错时，先看 `代入变量` 里标为 `—（请求变量里没有提供取值，Aviator 按 nil 比较）` 的变量——Aviator 对没有取值的变量做 `==` 比较得 false、不报错。
+  函数执行失败时块里保留到失败为止的全部过程，异常照常抛给调用方。
+- DEBUG 关闭时不创建记录，也不做额外计算；`逐项求值` 只用于展示，不改变求值结果。调用 `evaluate(compiled, variables, context, owner)` 可自定义标题里的来源说明。
+
 **`clientExcluded` 的完整链路：**
 
 1. 参数：`providerCode`（必填，STRING / CANDIDATE）、`clientId`（必填，STRING / TRANSACTION）、`decisionTime`（可选，DATE / CONTEXT，未配置时取 `context.decisionTime`）。
@@ -484,7 +495,7 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 函数条件在 AND / OR 子条件组内可用；缺少或类型错误的入参被拒绝；DECIMAL 返回值按数字比较；旧版字段 / 条件组 JSON 照常执行；个案审批与 MTD 检查不受影响并记入调用记录；函数计算字段的取值来自函数；模拟结果报告入参、返回值和命中记录；
 内置字段只自动绑定一次且不覆盖运营的明确选择）、`C1FunctionFailureTest`（2 项：排除记录查询失败不按「未排除」处理；同一函数同一入参一次判定只查询一次）、`FunctionMetadataApiTest`（8 项：选择器数据；仅 C1 可用；试算结果；
 试算参数不合法返回 400；系统必检函数只能停用不能删除；被引用的可选函数不能删除；列表带使用策略和实现状态；字段绑定经接口保存且旧版请求体保留已有绑定）、`ConditionJsonCompatibilityTest`（4 项：旧版不带 `type` 的 JSON 照常读取；
-函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。执行：
+函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。条件求值过程日志由 `ConditionTraceLogTest`（5 项：成功时输出上下文三组 / 函数调用 / 代入变量 / 逐项求值；没有取值的变量被点名；函数调用失败的过程与异常照常抛出；DEBUG 关闭时不输出；C1 全局准入条件与函数试算的标题带来源说明）覆盖。执行：
 
 ```bash
 mvn clean test

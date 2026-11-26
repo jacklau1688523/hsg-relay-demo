@@ -62,7 +62,7 @@ public class C1ConditionService {
                     .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
             if (!missing.isEmpty())
                 return new Outcome(true, false, compiled.readable(), "字段 " + String.join("、", missing) + " 没有取值，准入条件不满足");
-            boolean matched = expressions.evaluate(compiled, variables, context).matched();
+            boolean matched = expressions.evaluate(compiled, variables, context, "C1 全局准入条件").matched();
             return new Outcome(true, matched, compiled.readable(), matched ? "准入条件满足" : "准入条件不满足");
         } catch (IllegalArgumentException ex) {
             throw new IllegalStateException("C1 全局过滤条件已失效：" + ex.getMessage(), ex);
