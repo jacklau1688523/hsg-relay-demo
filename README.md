@@ -44,9 +44,9 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - HKT 自然月 MTD 查询，C1 模拟校验，逐步骤 PASS / FAIL 和原因码
 - MTD 模拟数据页面（工具 → MTD 模拟数据）：按「合作方＋流转类别＋月份」通过 `PUT /api/usage` 覆盖月累计金额，用于演示月度上限 `APPETITE_CAP_REACHED`；无定时任务，C1 只读取香港当月记录
 - 字段库与 AND/OR 条件组 → 后端生成安全受控表达式 → AviatorScript 执行试算
-- **C1 全局准入条件按元数据中心字段库动态构建**：首页「① 全局准入条件：字段库 + 函数库」通过 `GET/PUT /api/c1/condition` 独立读取和保存一棵条件树；每次 C1 判定先执行该树，表达式不满足即过滤候选合作方并返回 `C1_CONDITION_NOT_MATCHED`，满足才继续客户排除、准入规则、个案审批和 MTD。字段下拉读取 `GET /api/field-metadata`，运算符和值均受字段元数据约束
+- **C1 全局准入条件按元数据中心字段库动态构建**：首页「① 全局准入条件：字段库 + 函数库」通过 `GET/PUT /api/c1/condition` 独立读取和保存一棵条件树；每次 C1 判定先执行该树，表达式不满足即过滤候选合作方并返回 `C1_CONDITION_NOT_MATCHED`，满足才继续准入规则、个案审批和 MTD。字段下拉读取 `GET /api/field-metadata`，运算符和值均受字段元数据约束
 - C1 模拟校验支持附加条件字段：除固定的交易要素外，模拟面板按字段库为其余 C1 字段自动生成取值控件；条件缺值或失效的规则按不命中处理并在校验过程中给出 `SKIP` 说明（见下文「附加条件的取值与不命中处理」）
-- **C1 触发条件接入函数库**：条件组里可以添加字段条件、子条件组和函数条件；「ƒ 添加函数」选择器列出可用于 C1 的业务函数（名称、编码、返回类型、参数与数据来源），选好比较方式和期望值后加入条件树。客户排除、准入匹配、个案审批、MTD 四项检查由 C1 执行器在代码里强制落实（系统必检），与条件树里有没有对应节点无关（见下文「C1 条件接入函数库」）
+- **C1 触发条件接入函数库**：条件组里可以添加字段条件、子条件组和函数条件；「ƒ 添加函数」选择器列出可用于 C1 的业务函数（名称、编码、返回类型、参数与数据来源），选好比较方式和期望值后加入条件树。准入匹配、个案审批、MTD 三项检查由 C1 执行器在代码里强制落实（系统必检），与条件树里有没有对应节点无关；客户排除是可选函数 `clientExcluded`，只在条件树里有它的节点（或字段绑定到它）时才检查（见下文「C1 条件接入函数库」）
 - 演示模拟不会扣减 MTD
 
 ## C2 功能（本次新增）
@@ -168,11 +168,11 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 - 无匹配默认拒绝，`EXCLUDE` 禁止；CASE_BY_CASE 只检查有效审批；`ACCEPT` 有上限则查实时 MTD。
 - C1 内部遇第一失败即返回；完整 RELAY 系统应继续检查 C2/C3/C4/C6/C10，以记录候选全部失败原因。
 - 页面上的字段库 / 函数库条件是独立的 C1 全局过滤判断，不绑定某条准入规则，也不受右侧模拟客户切换影响；规则本身仍按精确度匹配和默认拒绝执行。
-- 系统必检（客户排除、准入匹配、个案审批、MTD）由执行器在代码里强制落实，条件树里有没有对应的函数节点都执行；函数条件只是把函数返回值作为一个可选条件参与比较，见下文「C1 全局条件接入函数库」。
+- 系统必检（准入匹配、个案审批、MTD）由执行器在代码里强制落实，条件树里有没有对应的函数节点都执行；客户排除不在必检之列，需要时在全局准入条件里加 `clientExcluded` 函数节点；函数条件只是把函数返回值作为一个可选条件参与比较，见下文「C1 全局条件接入函数库」。
 
 **全局过滤条件的取值与不命中处理：**
 
-- 全局条件是 C1 的候选准入门槛：对客户的每个流转类别求值，任一类别不满足即返回 `C1_CONDITION_NOT_MATCHED`；全部满足才进入合作方客户排除和准入规则匹配。
+- 全局条件是 C1 的候选准入门槛：对客户的每个流转类别求值，任一类别不满足即返回 `C1_CONDITION_NOT_MATCHED`；全部满足才进入准入规则匹配。
 - `flowCategory`、`paymentCurrency`、`beneficiaryBankCountry`、`amountUsd` 四个交易要素固定取自模拟表单（客户档案的流转类别、交易币种、受益行国家、本笔金额 USD），不能用 `variables` 覆盖；其余 C1 字段的取值来自模拟请求的 `variables`（字段编码 → 值）。
 - C1 模拟面板为字段库里其余已启用的 C1 字段自动生成取值控件：有可选值 → 下拉（首项「（不提供）」，默认选中第一个可选值）；数字 → 数字输入框；布尔 → true / false 下拉；其它 → 文本框。选「（不提供）」或留空的字段不提交。
 - 全局条件引用字段本次没有取值时按**未命中**处理，并在「C1 过滤条件 <流转类别>」步骤说明；条件保存后字段被停用、不再适用 C1 或值不再合法时，执行会明确报出全局条件已失效，要求重新保存，避免静默改变过滤语义。
@@ -207,10 +207,10 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 **使用策略（系统必检 / 可选）：**
 
 - 使用策略由规则执行器在代码里声明（`C1Service` 实现 `RequiredFunctionProvider`），函数库元数据和页面配置都改不了它，也不落库。被声明的是系统必检（`REQUIRED`），其余是可选（`OPTIONAL`）。
-- C1 的系统必检清单：`clientExcluded`（命中有效排除记录即拒绝 `CLIENT_EXCLUDED`，先于准入规则匹配）、`findBestAppetiteRule`（每个流转类别按四级匹配，无有效匹配默认拒绝 `APPETITE_NOT_SET`）、
+- C1 的系统必检清单：`findBestAppetiteRule`（每个流转类别按四级匹配，无有效匹配默认拒绝 `APPETITE_NOT_SET`）、
   `hasValidCaseApproval`（命中 CASE_BY_CASE 规则时须有有效审批 `APPETITE_APPROVAL_MISSING`）、`getProviderMtd`（命中设有月度上限的 ACCEPT 规则时校验 MTD + 本笔金额 `APPETITE_CAP_REACHED`）。
 - 执行器的系统必检直接调用 Java Handler，不经过函数库元数据，也不看条件树里有没有对应节点：在函数库里停用、删除、改绑定都绕不过。
-- 系统必检函数可以加入条件树（节点带「系统必检」标记，此时只是把它的返回值作为一个可选条件参与比较），也可以从条件树删除，删除前页面提示执行器每次判定仍会执行这项检查。页面右侧的「系统必检清单」只读展示这四项，没有删除按钮。
+- 系统必检函数可以加入条件树（节点带「系统必检」标记，此时只是把它的返回值作为一个可选条件参与比较），也可以从条件树删除，删除前页面提示执行器每次判定仍会执行这项检查。页面右侧的「系统必检清单」只读展示这三项，没有删除按钮。
 - 函数库里系统必检函数不能删除（「C1 正在使用该系统必检函数，请停用而非删除」），可以停用；可选函数被字段绑定或已保存的 C1 条件引用时同样不能删除。可选函数只有在条件树里时才执行。
 
 **参数解析（只允许受控取值路径或字面量）：**
@@ -252,11 +252,13 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 3. 查询 `relay_client_exclusion`（合作方详情「客户排除管理」维护的记录）：同一合作方 + 同一客户，且 `effectiveFrom <= 决策时间 < effectiveTo`（`effectiveTo` 为空表示长期有效）；未到生效时间、已过失效时间、已解除的记录
    都不算有效，命中多条取 ID 最小的一条。
 4. 返回 BOOLEAN：命中为 `true`，`recordId` 为排除记录 ID；未命中为 `false`；数据来源 `CLIENT_EXCLUSION`。
-5. C1 执行顺序：`1. 客户分类` → `2. 客户排除`（系统必检，直接调用 Handler，不看条件树）→ `3. 规则匹配 <流转类别>`（在这里求值条件树）→ `4. 个案审批 / MTD <流转类别>` → `5. C1 汇总`。
-6. 第 2 步命中即返回 `CLIENT_EXCLUDED`，先于规则匹配。所以运营把 `clientExcluded` 从条件树删除后，C1 仍返回 `CLIENT_EXCLUDED`；未命中且条件树里还有 `clientExcluded` 节点时，第 3 步复用第 2 步的查询结果
-   （`functionCalls` 两条，其中一条 `cached=true`），一次判定只查询一次。
-7. 查询失败（数据库异常）时第 2 步 FAIL，返回 `CLIENT_EXCLUSION_CHECK_FAILED`，不会按「未排除」放行；函数库里未配置、停用或删除 `clientExcluded` 都不影响第 2 步。模拟请求 `variables` 里的 `clientProviderExcluded`
-   不生效（取系统必检的结果）。
+5. C1 执行顺序：`1. 客户档案` → `2. C1 准入条件 <流转类别>`（全局条件树）→ `3. 规则匹配 <流转类别>`（在这里求值规则的附加条件树）→ `4. 个案审批 / MTD <流转类别>` → `5. C1 汇总`。
+   执行器不再单独检查客户排除：`clientExcluded` 是可选函数，条件树（全局或规则）里有它的节点、或字段绑定到它时才查询排除记录。
+6. 被排除的客户：全局准入条件里有 `clientExcluded == false` 节点时不满足，返回 `C1_CONDITION_NOT_MATCHED`；规则的附加条件里有该节点时规则不命中，返回 `APPETITE_NOT_SET`。
+   条件树里没有相关节点时不查询排除记录，也不返回 `CLIENT_EXCLUDED`。多处引用（全局条件、规则条件、函数绑定字段、集合字段）入参相同时复用请求级缓存，一次判定只查询一次。
+7. 排除记录查询失败（数据库异常）时：引用它的节点执行失败——全局条件返回 400（`C1 全局过滤条件执行失败: …`），规则条件返回 400（`C1 规则 #n 条件执行失败: …`），
+   不会按「未排除」放行；条件树里没有相关节点时不查询，判定不受影响。模拟请求 `variables` 里的 `clientProviderExcluded`：字段绑定了 `clientExcluded` 时不采用（取函数结果）；未绑定时按请求输入取值，
+   没有取值时引用它的规则按不命中处理。
 
 **试算与调用记录：**
 
@@ -286,6 +288,7 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 在独立端口与临时数据库上以无头 Chrome 完成 48 项检查：函数库接口与内置字段的启动自动绑定（旧字段 → 重启 → 已绑定）、C1 页面的三个操作按钮与只读的系统必检清单、选择器卡片内容、选择器里的函数试算、把 `clientExcluded`
 加入条件树并保存、无排除记录时的模拟校验（一次执行 + 一次复用）、加入有效排除记录后的 `CLIENT_EXCLUDED`、从条件树删除 `clientExcluded` 节点后保存仍返回 `CLIENT_EXCLUDED`（验收场景）、元数据中心的字段绑定 / 函数库使用策略 /
 表达式页拦截，以及页面没有脚本异常或控制台错误。未读写 8080 / 8081 实例的数据库。
+2026-11-26（客户排除改由条件树决定）：C1 执行器去掉写死的客户排除必检——不再直接调用 `clientExcluded`，不再返回 `CLIENT_EXCLUDED` / `CLIENT_EXCLUSION_CHECK_FAILED`，不再写 `C1_DECISION / EXCLUSION_HIT` 审计，步骤编号顺延（见上文第 5–7 条）。`clientExcluded` 由系统必检改为可选函数：没有被字段绑定或已保存条件引用时可以删除。全套 345 项测试通过：6 个测试文件里断言旧必检行为的用例按新口径改写，新增 1 项（未被引用的可选函数可以删除）。
 
 ## API
 
@@ -299,7 +302,7 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 - `DELETE /api/usage/{id}`：删除一条 MTD 记录
 - `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`，也可以是函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`（保存前按函数库和白名单校验，见「C1 条件接入函数库」）
 - `POST /api/appetites/compile`：提交 `{tree}`，只校验并返回 `{expression}`，不保存
-- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理；绑定了函数的字段不取 `variables` 里的值。响应新增 `functionCalls`（本次判定的函数调用记录）；命中有效排除记录返回 `CLIENT_EXCLUDED`，排除记录查询失败返回 `CLIENT_EXCLUSION_CHECK_FAILED`（不按「未排除」放行），条件树内的函数执行失败返回 400
+- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理；绑定了函数的字段不取 `variables` 里的值。响应新增 `functionCalls`（本次判定的函数调用记录）；条件树内的函数执行失败返回 400（不按「未排除」放行）
 - `POST /api/expression/preview`：元数据中心的表达式试算，提交 `{tree,variables}`，返回 `{matched,expression}`；条件含函数条件或函数绑定字段时返回 400（没有规则执行上下文，函数只在 C1 判定和函数试算中执行）
 - `GET /api/function-metadata`：函数库全量（按函数编码排序），每项带 `usagePolicy`（`REQUIRED` 系统必检 / `OPTIONAL` 可选，只读自执行器代码，不落库）和 `implemented`（后端实现是否已注册）；`POST` 新增、`PUT /{code}` 修改、`POST /{code}/toggle` 启用 / 停用、`DELETE /{code}` 删除（系统必检函数，以及被字段绑定或已保存 C1 条件引用的函数不能删除，返回 400）；`GET /api/function-metadata/handlers` 返回可绑定的 Java Handler 编码
 - `GET /api/function-metadata/available?ruleCode=C1`：「ƒ 添加函数」选择器的数据 `{ruleCode,paths,required,functions}`：`paths` 受控取值路径，`required` 系统必检清单，`functions` 当前可添加的函数（参数、默认绑定、可用运算符）；`ruleCode` 不是 C1 时返回 400
@@ -491,10 +494,10 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 `SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。模拟响应里的 C2 条件结构（`groups`）另由 `C2ServiceTest` 的 5 项（8 个规则组的顺序、叶子字段和原因码；只传合并国籍名单时两个国籍叶子结果一致；
 董事、UBO 国籍分别判断且响应不含国籍取值；同一规则组的两个叶子各命中一条限制记录；监管能力缺失使第 8 项不满足）和 `C2RegulatoryControllerTest` 的 1 项（`simulate` 的新入参与 `groups` 的 HTTP 契约）覆盖。
 
-函数库接入 C1 条件由 `C1FunctionTest`（13 项：无有效排除记录时 `clientExcluded` 为 false；从条件树删除节点后有效排除记录仍被拒绝；未到生效时间 / 已过失效时间 / 已解除的记录不算有效；可选函数只有在条件树里才执行；改函数库配置绕不过系统必检；
+函数库接入 C1 条件由 `C1FunctionTest`（13 项：无有效排除记录时 `clientExcluded` 为 false；客户排除只由条件树里的节点决定，没有节点时不检查；未到生效时间 / 已过失效时间 / 已解除的记录不算有效；可选函数只有在条件树里才执行；`clientExcluded` 是可选函数，被引用时不能删除、停用后引用它的条件失效；
 函数条件在 AND / OR 子条件组内可用；缺少或类型错误的入参被拒绝；DECIMAL 返回值按数字比较；旧版字段 / 条件组 JSON 照常执行；个案审批与 MTD 检查不受影响并记入调用记录；函数计算字段的取值来自函数；模拟结果报告入参、返回值和命中记录；
-内置字段只自动绑定一次且不覆盖运营的明确选择）、`C1FunctionFailureTest`（2 项：排除记录查询失败不按「未排除」处理；同一函数同一入参一次判定只查询一次）、`FunctionMetadataApiTest`（8 项：选择器数据；仅 C1 可用；试算结果；
-试算参数不合法返回 400；系统必检函数只能停用不能删除；被引用的可选函数不能删除；列表带使用策略和实现状态；字段绑定经接口保存且旧版请求体保留已有绑定）、`ConditionJsonCompatibilityTest`（4 项：旧版不带 `type` 的 JSON 照常读取；
+内置字段只自动绑定一次且不覆盖运营的明确选择）、`C1FunctionFailureTest`（3 项：排除记录查询失败不按「未排除」处理；条件树里的集合条件一次加载排除集合；同一函数同一入参一次判定只查询一次）、`FunctionMetadataApiTest`（9 项：选择器数据；仅 C1 可用；试算结果；
+试算参数不合法返回 400；系统必检函数只能停用不能删除；被引用的可选函数不能删除；未被引用的可选函数可以删除；列表带使用策略和实现状态；字段绑定经接口保存且旧版请求体保留已有绑定）、`ConditionJsonCompatibilityTest`（4 项：旧版不带 `type` 的 JSON 照常读取；
 函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。条件求值过程日志由 `ConditionTraceLogTest`（5 项：成功时输出上下文三组 / 函数调用 / 代入变量 / 逐项求值；没有取值的变量被点名；函数调用失败的过程与异常照常抛出；DEBUG 关闭时不输出；C1 全局准入条件与函数试算的标题带来源说明）覆盖。执行：
 
 ```bash

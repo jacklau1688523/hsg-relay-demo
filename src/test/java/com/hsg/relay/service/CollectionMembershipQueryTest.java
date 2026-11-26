@@ -133,13 +133,20 @@ class CollectionMembershipQueryTest {
         assertThat(handler.execute(Map.of("leftCollection", left, "rightCollection", loaded), context).value()).isEqualTo(true);
     }
 
+    // 执行器不再单独检查排除记录；C1 通过条件树里的集合条件使用成员查询模式，命中记录随函数调用返回
     @Test
-    void c1MandatoryCheckStillRejectsExcludedClients() {
+    void c1UsesMembershipQueriesThroughTheConfiguredCondition() {
         twoRecords("PROV-GD");
-        var result = c1.evaluate(new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100")));
-        assertThat(result.reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        var request = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
+        assertThat(c1.evaluate(request).reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(c1.evaluate(request).functionCalls()).isEmpty();
+
+        c1Conditions.save(new C1ConditionService.Input(true, contains(false), null));
+        var result = c1.evaluate(request);
+        assertThat(result.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
         assertThat(result.functionCalls()).singleElement().satisfies(call -> {
-            assertThat(call.functionCode()).isEqualTo("clientExcluded");
+            assertThat(call.functionCode()).isEqualTo("collectionContains");
+            assertThat(call.value()).isEqualTo(true);
             assertThat(call.recordId()).isNotBlank();
         });
     }

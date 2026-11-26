@@ -14,7 +14,7 @@ import java.util.*;
 
 /**
  * 客户排除查询：合作方详情「客户排除管理」里当前有效的「客户 + 合作方」记录。
- * 既是 C1 执行器的系统必检（CLIENT_EXCLUDED），也是函数库 clientExcluded 的后端实现，
+ * 是函数库 clientExcluded 的后端实现（C1 通过条件树里的函数节点或函数绑定字段使用它，执行器不单独强制检查），
  * 同时为元数据字段 providerExcludedClientIds 提供同一个 {@link ExclusionSet}（见 ProviderExclusionListResolver）。
  * <p>有效记录：已到生效时间，且未到失效时间。已过期或已解除的记录 effectiveTo 不晚于决策时间，不算有效。
  * 合作方、客户、决策时间全部来自入参；查询失败时异常向上抛出，不会被当成「未排除」。
@@ -61,7 +61,7 @@ public class ClientExclusionChecker implements BusinessFunction {
 
     /**
      * 合作方在决策时间的有效排除客户集合。cacheKey 为「来源 + 合作方 + 决策时间」，存进请求级缓存后，
-     * 系统必检（clientExcluded）、条件树里的函数节点、元数据字段 providerExcludedClientIds 拿到的是同一份，只查询一次数据库。
+     * clientExcluded 函数节点、绑定它的字段、元数据字段 providerExcludedClientIds 拿到的是同一份，只查询一次数据库。
      */
     public RuleCollection exclusionSet(String providerCode, LocalDateTime decisionTime, RuleExecutionContext context) {
         if (providerCode == null || providerCode.isBlank() || decisionTime == null)

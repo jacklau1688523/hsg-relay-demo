@@ -37,7 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 函数库接入 C1 规则条件：FUNCTION 节点、系统必检、函数绑定字段、参数解析和调用复用。
+ * 函数库接入 C1 规则条件：FUNCTION 节点、可选 / 必检使用策略、函数绑定字段、参数解析和调用复用。
+ * 客户排除（clientExcluded）是可选函数：只在条件树里有它的节点（或绑定它的字段）时才执行，执行器不再单独强制检查。
  */
 @SpringBootTest
 @TestPropertySource(properties = {
@@ -108,6 +109,8 @@ class C1FunctionTest {
     RuleAuditRepository audit;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    C1ConditionService globalConditions;
 
     private static ExpressionService.Node function(String code, Map<String, Object> arguments, String operator, Object value) {
         return new ExpressionService.Node("FUNCTION", null, null, null, operator, value, code, arguments);
@@ -154,47 +157,68 @@ class C1FunctionTest {
         });
     }
 
-    // 2. 验收场景：有有效排除记录时，即使运营从可选条件树里删除 clientExcluded 节点，C1 仍返回 CLIENT_EXCLUDED
+    // 2. 客户排除只由条件树里的 clientExcluded 节点决定：执行器不再单独必检，哪一层有节点就由哪一层过滤
     @Test
     @Transactional
-    void validExclusionStillRejectsAfterTheNodeIsRemovedFromTheOptionalConditionTree() {
-        ClientExclusion exclusion = exclusions.save(new ClientExclusion("C10001", "PROV-GD", "sanction", now().minusDays(1), null));
-        // PROV-GD 没有任何带 clientExcluded 节点的条件
+    void exclusionIsCheckedOnlyByNodesInTheConditionTree() {
+        exclusions.save(new ClientExclusion("C10001", "PROV-GD", "sanction", now().minusDays(1), null));
+        // 条件树里没有节点：有有效的排除记录也不会被过滤，也不查询排除记录；
+        // PROV-GD 没有带节点的条件，也没有准入规则，按默认拒绝返回
         var request = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
-        var result = c1.evaluate(request);
-        assertThat(result.passed()).isFalse();
-        assertThat(result.reasonCode()).isEqualTo("CLIENT_EXCLUDED");
-        assertThat(result.functionCalls()).singleElement().satisfies(call -> {
+        var untouched = c1.evaluate(request);
+        assertThat(untouched.reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(untouched.functionCalls()).isEmpty();
+        assertThat(untouched.steps()).extracting(C1Service.Trace::step).containsSubsequence("1. 客户档案", "失败原因");
+
+        // 全局准入条件里有 clientExcluded 节点：命中排除记录即不满足，由表达式过滤
+        var node = function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false);
+        globalConditions.save(new C1ConditionService.Input(true, group("AND", node), null));
+        var rejected = c1.evaluate(request);
+        assertThat(rejected.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(rejected.functionCalls()).singleElement().satisfies(call -> {
             assertThat(call.functionCode()).isEqualTo("clientExcluded");
             assertThat(call.value()).isEqualTo(true);
-            assertThat(call.recordId()).isEqualTo(exclusion.id.toString());
+            assertThat(call.cached()).isFalse();
         });
-        assertThat(result.steps()).anySatisfy(step -> {
-            assertThat(step.step()).isEqualTo("失败原因");
-            assertThat(step.detail()).contains("排除记录 #" + exclusion.id);
-        });
+        assertThat(rejected.steps()).extracting(C1Service.Trace::step).containsSubsequence("1. 客户档案", "2. C1 准入条件 PSP", "失败原因");
+        globalConditions.save(new C1ConditionService.Input(false, null, null));
 
-        // 规则条件里有 clientExcluded 节点（AND）：执行器的系统必检与节点共用一次查询
+        // 规则条件里有 clientExcluded 节点（AND）：未被排除时命中规则
         Appetite rule = rule("PROV-HO", "PSP");
-        saveCondition(rule.id, group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false)));
         var headOffice = new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100"));
+        saveCondition(rule.id, group("AND", node));
         var withNode = c1.evaluate(headOffice);
         assertThat(withNode.reasonCode()).isEqualTo("PASS");
-        assertThat(withNode.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "clientExcluded", "hasValidCaseApproval");
-        assertThat(withNode.functionCalls().get(1).cached()).isTrue();
-        assertThat(withNode.functionCalls().get(1).value()).isEqualTo(false);
+        assertThat(withNode.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
+        assertThat(withNode.functionCalls().get(0).value()).isEqualTo(false);
 
-        // 运营删除节点后保存：节点不再执行，系统必检不受影响
+        // 被排除：节点不满足，规则不命中（不是 SKIP），命中记录随函数调用返回
+        ClientExclusion active = exclusions.save(new ClientExclusion("C10001", "PROV-HO", "review", now().minusHours(1), null));
+        var excludedByNode = c1.evaluate(headOffice);
+        assertThat(excludedByNode.reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(excludedByNode.steps()).noneMatch(step -> step.status().equals("SKIP"));
+        assertThat(excludedByNode.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded");
+        assertThat(excludedByNode.functionCalls().get(0).recordId()).isEqualTo(active.id.toString());
+
+        // 运营删除节点后保存：节点不再执行，排除记录不再影响判定
         saveCondition(rule.id, group("AND", field("paymentCurrency", "EQ", "USD")));
         var withoutNode = c1.evaluate(headOffice);
         assertThat(withoutNode.reasonCode()).isEqualTo("PASS");
-        assertThat(withoutNode.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
+        assertThat(withoutNode.functionCalls()).extracting(Call::functionCode).containsExactly("hasValidCaseApproval");
 
-        exclusions.save(new ClientExclusion("C10001", "PROV-HO", "review", now().minusHours(1), null));
-        assertThat(c1.evaluate(headOffice).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        // 全局准入条件和规则条件里都有节点：入参相同，共用请求级缓存，整个判定只查询一次
+        relay.releaseExclusion(active.id);
+        globalConditions.save(new C1ConditionService.Input(true, group("AND", node), null));
+        saveCondition(rule.id, group("AND", node));
+        var twice = c1.evaluate(headOffice);
+        assertThat(twice.reasonCode()).isEqualTo("PASS");
+        assertThat(twice.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "clientExcluded", "hasValidCaseApproval");
+        assertThat(twice.functionCalls().get(0).cached()).isFalse();
+        assertThat(twice.functionCalls().get(1).cached()).isTrue();
+        assertThat(twice.functionCalls().get(1).value()).isEqualTo(false);
     }
 
-    // 3. 已过期、未生效、已解除的记录不算有效
+    // 3. 已过期、未生效、已解除的记录不算有效（按全局准入条件里的 clientExcluded 节点验证）
     @Test
     @Transactional
     void expiredFutureAndReleasedRecordsAreNotValid() {
@@ -203,14 +227,24 @@ class C1FunctionTest {
         exclusions.save(new ClientExclusion("C10001", "PROV-GD", "not yet effective", time.plusDays(1), null));
         exclusions.save(new ClientExclusion("C10002", "PROV-GD", "other client", time.minusDays(1), null));
         exclusions.save(new ClientExclusion("C10001", "PROV-T1", "other provider", time.minusDays(1), null));
+        globalConditions.save(new C1ConditionService.Input(true, group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false)), null));
         var request = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
-        // PROV-GD 没有准入规则：排除检查通过后才走到默认拒绝
+        // 没有有效的排除记录：准入条件满足，继续匹配准入规则；PROV-GD 没有准入规则 → 默认拒绝
         var result = c1.evaluate(request);
         assertThat(result.reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(result.steps()).anySatisfy(step -> {
+            assertThat(step.step()).isEqualTo("2. C1 准入条件 PSP");
+            assertThat(step.status()).isEqualTo("PASS");
+        });
         assertThat(result.functionCalls()).singleElement().satisfies(call -> assertThat(call.value()).isEqualTo(false));
 
         ClientExclusion active = exclusions.save(new ClientExclusion("C10001", "PROV-GD", "review", time.minusDays(1), null));
-        assertThat(c1.evaluate(request).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        var excluded = c1.evaluate(request);
+        assertThat(excluded.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(excluded.functionCalls()).singleElement().satisfies(call -> {
+            assertThat(call.value()).isEqualTo(true);
+            assertThat(call.recordId()).isEqualTo(active.id.toString());
+        });
         // 解除（补上失效时间）而不是删除历史
         relay.releaseExclusion(active.id);
         var released = c1.evaluate(request);
@@ -241,7 +275,7 @@ class C1FunctionTest {
         var result = c1.evaluate(request);
         assertThat(result.reasonCode()).isEqualTo("PASS");
         assertThat(OPTIONAL_CALLS.get()).isEqualTo(before + 1);
-        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "testHighRiskClient", "hasValidCaseApproval");
+        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("testHighRiskClient", "hasValidCaseApproval");
 
         // 运营从条件里删除这个可选函数节点：不再执行，判定不受影响
         saveCondition(rule.id, group("AND", field("paymentCurrency", "EQ", "USD")));
@@ -259,37 +293,39 @@ class C1FunctionTest {
         });
     }
 
-    // 6. 系统必检不能靠改函数库配置绕过
+    // 6. clientExcluded 是可选函数：执行器不再把它列为系统必检；被条件引用时不能删除、只能停用，停用后引用它的条件失效
     @Test
     @Transactional
-    void requiredFunctionCannotBeBypassedByChangingFunctionLibraryConfiguration() {
-        // 不能删除，只能停用
-        assertThatThrownBy(() -> functionsApi.delete("clientExcluded")).hasMessage("C1 正在使用该系统必检函数，请停用而非删除");
+    void clientExcludedIsOptionalAndControlledByTheFunctionLibrary() {
+        assertThat(functionMetadata.isRequired("clientExcluded")).isFalse();
+        assertThat(functionMetadata.usagePolicy("C1", "clientExcluded")).isEqualTo("OPTIONAL");
         Appetite rule = rule("PROV-HO", "PSP");
         saveCondition(rule.id, group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false)));
-        exclusions.save(new ClientExclusion("C10001", "PROV-GD", "review", now().minusDays(1), null));
-        var excluded = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
+        assertThat(functionMetadata.references("clientExcluded")).containsExactly("C1 准入规则 #" + rule.id);
+        // 已被条件引用：不能删除
+        assertThatThrownBy(() -> functionsApi.delete("clientExcluded")).hasMessage("函数已被引用，不能删除：C1 准入规则 #" + rule.id);
         var headOffice = new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100"));
-        assertThat(c1.evaluate(excluded).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        assertThat(c1.evaluate(headOffice).reasonCode()).isEqualTo("PASS");
 
-        // 停用：执行器直接调用 Java Handler，不读函数库元数据，系统必检照常生效
+        // 停用：节点不能执行，引用它的条件失效，规则按不命中处理并说明（执行器不再另行检查排除记录）
         functionsApi.toggle("clientExcluded");
         assertThat(functionMetadata.isExecutable("clientExcluded", "C1")).isFalse();
         assertThat(functionMetadata.available("C1").functions()).noneMatch(f -> f.functionCode().equals("clientExcluded"));
-        assertThat(c1.evaluate(excluded).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
-        // 但引用它的条件节点会失效，规则按不命中处理
         var skipped = c1.evaluate(headOffice);
         assertThat(skipped.reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(skipped.functionCalls()).isEmpty();
         assertThat(skipped.steps()).anySatisfy(step -> {
             assertThat(step.status()).isEqualTo("SKIP");
             assertThat(step.detail()).contains("函数 clientExcluded 已停用");
         });
 
-        // 改绑定（换成别的 Handler、改返回类型、改成只适用 C2）：系统必检同样不受影响
-        functionsApi.update("clientExcluded", new BusinessFunctionController.Input("clientExcluded", "客户是否被合作方排除", "客户与准入",
-                "STRING", "C2", "CANDIDATE", "NONE", "restrictionMatcher", "OTHER", "[]", "", false));
-        assertThat(c1.evaluate(excluded).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
-        assertThat(functionMetadata.isRequired("clientExcluded")).isTrue();
+        // 运营删掉节点：不再有引用，可以从函数库删除；判定里也不再出现排除检查
+        saveCondition(rule.id, group("AND", field("paymentCurrency", "EQ", "USD")));
+        assertThat(functionMetadata.references("clientExcluded")).isEmpty();
+        functionsApi.delete("clientExcluded");
+        var afterDelete = c1.evaluate(headOffice);
+        assertThat(afterDelete.reasonCode()).isEqualTo("PASS");
+        assertThat(afterDelete.functionCalls()).extracting(Call::functionCode).containsExactly("hasValidCaseApproval");
     }
 
     // 7. 函数节点可以放在 AND / OR 子条件组里
@@ -307,9 +343,10 @@ class C1FunctionTest {
         var pass = c1.evaluate(request);
         assertThat(pass.reasonCode()).isEqualTo("PASS");
         assertThat(pass.steps()).noneMatch(step -> step.status().equals("SKIP"));
-        // 条件节点里的 clientExcluded 与执行器系统必检的入参相同：复用同一次查询
-        assertThat(pass.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "clientExcluded", "hasValidCaseApproval");
-        assertThat(pass.functionCalls().get(1).cached()).isTrue();
+        // 条件里的 clientExcluded 节点只查询一次
+        assertThat(pass.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
+        assertThat(pass.functionCalls().get(0).cached()).isFalse();
+        assertThat(pass.functionCalls().get(0).value()).isEqualTo(false);
 
         // （clientExcluded == true 且 paymentCurrency == USD）或 paymentCurrency == CNY：函数返回 false，整个条件不命中（不是 SKIP）
         var notMatched = group("OR", group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", true), field("paymentCurrency", "EQ", "USD")),
@@ -318,7 +355,7 @@ class C1FunctionTest {
         var miss = c1.evaluate(request);
         assertThat(miss.reasonCode()).isEqualTo("APPETITE_NOT_SET");
         assertThat(miss.steps()).noneMatch(step -> step.status().equals("SKIP"));
-        assertThat(miss.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "clientExcluded");
+        assertThat(miss.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded");
     }
 
     // 8. 参数缺失、类型或来源不匹配、路径不受控：保存和编译时就报错
@@ -370,10 +407,10 @@ class C1FunctionTest {
         var pass = c1.evaluate(request);
         assertThat(pass.reasonCode()).isEqualTo("PASS");
         // 条件节点里的 getProviderMtd 与执行器的 MTD 校验入参相同：节点先查询，执行器复用结果，不再查第二次
-        assertThat(pass.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "getProviderMtd", "getProviderMtd");
-        assertThat(pass.functionCalls().get(1).cached()).isFalse();
-        assertThat(pass.functionCalls().get(2).cached()).isTrue();
-        assertThat((BigDecimal) pass.functionCalls().get(1).value()).isEqualByComparingTo("1800000");
+        assertThat(pass.functionCalls()).extracting(Call::functionCode).containsExactly("getProviderMtd", "getProviderMtd");
+        assertThat(pass.functionCalls().get(0).cached()).isFalse();
+        assertThat(pass.functionCalls().get(1).cached()).isTrue();
+        assertThat((BigDecimal) pass.functionCalls().get(0).value()).isEqualByComparingTo("1800000");
 
         saveCondition(rule.id, group("AND", function("getProviderMtd", arguments, "GT", 1800000)));
         var miss = c1.evaluate(request);
@@ -395,7 +432,7 @@ class C1FunctionTest {
         saveCondition(rule.id, tree);
         var result = c1.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100")));
         assertThat(result.reasonCode()).isEqualTo("PASS");
-        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
+        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("hasValidCaseApproval");
 
         String functionJson = "{\"type\":\"FUNCTION\",\"functionCode\":\"clientExcluded\",\"arguments\":{\"providerCode\":\"$candidate.providerCode\","
                 + "\"clientId\":\"$transaction.clientId\",\"decisionTime\":\"$context.decisionTime\"},\"operator\":\"EQ\",\"value\":false}";
@@ -413,15 +450,15 @@ class C1FunctionTest {
     void approvalAndMtdChecksAreUnaffectedAndRecordedAsFunctionCalls() {
         var approval = c1.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("150000")));
         assertThat(approval.reasonCode()).isEqualTo("PASS");
-        assertThat(approval.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
-        assertThat(approval.functionCalls().get(1).recordId()).isNotBlank();
-        assertThat(approval.functionCalls().get(1).arguments()).containsEntry("flowCategory", "PSP");
+        assertThat(approval.functionCalls()).extracting(Call::functionCode).containsExactly("hasValidCaseApproval");
+        assertThat(approval.functionCalls().get(0).recordId()).isNotBlank();
+        assertThat(approval.functionCalls().get(0).arguments()).containsEntry("flowCategory", "PSP");
 
         // 精确币种 + ALL 国家（PROV-W USD）与 ALL + ALL（PROV-T1 STANDARD）
         assertThat(c1.evaluate(new C1Service.Simulation("C10002", "PROV-W", "USD", "KG", new BigDecimal("150000"))).reasonCode()).isEqualTo("PASS");
         var mtd = c1.evaluate(new C1Service.Simulation("C10002", "PROV-T1", "USD", "KG", new BigDecimal("150000")));
         assertThat(mtd.reasonCode()).isEqualTo("PASS");
-        assertThat(mtd.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "getProviderMtd");
+        assertThat(mtd.functionCalls()).extracting(Call::functionCode).containsExactly("getProviderMtd");
         assertThat(c1.evaluate(new C1Service.Simulation("C10002", "PROV-T1", "USD", "KG", new BigDecimal("9000000"))).reasonCode()).isEqualTo("APPETITE_CAP_REACHED");
         assertThat(c1.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "USD", "KG", new BigDecimal("150000"))).reasonCode()).isEqualTo("APPETITE_EXCLUDED");
     }
@@ -450,10 +487,10 @@ class C1FunctionTest {
         var result = c1.evaluate(request);
         assertThat(result.reasonCode()).isEqualTo("PASS");
         assertThat(result.steps()).noneMatch(step -> step.status().equals("SKIP"));
-        // 绑定字段不需要请求提供取值；它与执行器的系统必检入参相同，复用同一次查询
-        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "clientExcluded", "hasValidCaseApproval");
-        assertThat(result.functionCalls().get(1).cached()).isTrue();
-        assertThat(result.functionCalls().get(1).value()).isEqualTo(false);
+        // 绑定字段不需要请求提供取值：取值来自 clientExcluded，本次判定只查询这一次
+        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded", "hasValidCaseApproval");
+        assertThat(result.functionCalls().get(0).cached()).isFalse();
+        assertThat(result.functionCalls().get(0).value()).isEqualTo(false);
 
         // 绑定校验：返回类型、适用规则、函数是否存在
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundAmount", "金额", "DECIMAL", "EQ", "C1", null, true, "FUNCTION", "clientExcluded", null)))

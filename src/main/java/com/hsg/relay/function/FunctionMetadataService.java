@@ -404,7 +404,7 @@ public class FunctionMetadataService {
     /**
      * 启动时为内置字段 clientProviderExcluded 补上函数绑定（升级前该字段由执行器直接赋值）。
      * 只在该字段存在、取值来源从未配置过、适用规则仅为 C1、且函数可用于 C1 时执行；幂等，不覆盖已有配置，写入审计。
-     * 自动绑定只是升级便利：任何一项不满足都跳过，字段照旧按请求输入取值（C1 执行器仍会注入系统必检的结果），不影响启动。
+     * 自动绑定只是升级便利：任何一项不满足都跳过，字段照旧按请求输入取值（引用它的历史准入条件在请求没有提供取值时按不命中处理），不影响启动。
      */
     @EventListener(ApplicationReadyEvent.class)
     @Transactional

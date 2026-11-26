@@ -58,7 +58,7 @@ public class C1ConditionService {
 
     /**
      * 当前保存的条件树引用了哪些函数、哪些数据解析字段（集合字段条件，以及函数实参里以 FIELD 方式绑定的字段）。
-     * 只看结构，不执行：客户排除必检先于条件树给出 CLIENT_EXCLUDED 时，审计里仍能记录条件树引用的函数与字段。
+     * 只看结构，不执行：不触发任何函数调用，也不需要执行上下文。
      */
     public Summary summary() {
         C1ConditionConfig config = get();

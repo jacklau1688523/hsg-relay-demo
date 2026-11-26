@@ -49,9 +49,11 @@ class C1ServiceTest {
 
     @Test
     @Transactional
-    void clientStatusAndProviderExclusionConditionsUseStoredDataWithoutSimulationInputs() {
+    void clientStatusAndProviderExclusionConditionsUseStoredDataWithoutSimulationInputs() throws Exception {
         metadata.create(new FieldMetadataController.Input("clientClassificationStatus", "客户分类状态", "ENUM", "EQ,NE", "C1", "COMPLETE,PENDING", true));
-        metadata.create(new FieldMetadataController.Input("clientProviderExcluded", "客户是否被合作方排除", "BOOLEAN", "EQ,NE", "C1", null, true));
+        // 执行器不再为 clientProviderExcluded 注入必检结果：字段绑定到 clientExcluded，取值来自规则执行，仍不需要模拟入参
+        metadata.create(new FieldMetadataController.Input("clientProviderExcluded", "客户是否被合作方排除", "BOOLEAN", "EQ,NE", "C1", null, true, "FUNCTION", "clientExcluded",
+                json.readTree("{\"providerCode\":\"$candidate.providerCode\",\"clientId\":\"$transaction.clientId\"}")));
         var rule = headOfficePspRule();
         var tree = new ExpressionService.Node("AND", List.of(
                 new ExpressionService.Node(null, null, "clientClassificationStatus", "EQ", "COMPLETE"),
@@ -247,14 +249,31 @@ class C1ServiceTest {
         assertThat(result.reasonCode()).isEqualTo("APPETITE_NOT_SET");
     }
 
+    // 客户排除不再由执行器强制检查：条件树里没有 clientExcluded 节点时不查询排除记录；有节点时由准入条件过滤，解除记录后恢复
     @Test
     @Transactional
-    void exclusionCanBeReleasedWithoutDeletingHistory() {
+    void exclusionIsAppliedByTheGlobalConditionAndCanBeReleasedWithoutDeletingHistory() {
         var exclusion = controller.addExclusion(new ClientExclusion("C10002", "PROV-T1", "review", java.time.LocalDateTime.now().minusDays(1), null));
         assertThat(controller.exclusions("PROV-T1")).anyMatch(x -> x.id.equals(exclusion.id));
         assertThat(controller.exclusions("PROV-HO")).noneMatch(x -> x.id.equals(exclusion.id));
         var request = new C1Service.Simulation("C10002", "PROV-T1", "USD", "KG", new BigDecimal("100"));
-        assertThat(service.evaluate(request).reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        // 全局准入条件里没有节点：排除记录不参与判定，也不查询
+        assertThat(service.evaluate(request).reasonCode()).isEqualTo("PASS");
+        assertThat(service.evaluate(request).functionCalls()).noneMatch(call -> call.functionCode().equals("clientExcluded"));
+
+        // 全局准入条件里有 clientExcluded 节点：命中排除记录即不满足
+        globalConditions.save(new C1ConditionService.Input(true, new ExpressionService.Node("AND", List.of(
+                new ExpressionService.Node("FUNCTION", null, null, null, "EQ", false, "clientExcluded",
+                        Map.of("providerCode", "$candidate.providerCode", "clientId", "$transaction.clientId"))), null, null, null), null));
+        var rejected = service.evaluate(request);
+        assertThat(rejected.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(rejected.functionCalls()).singleElement().satisfies(call -> {
+            assertThat(call.functionCode()).isEqualTo("clientExcluded");
+            assertThat(call.value()).isEqualTo(true);
+            assertThat(call.recordId()).isEqualTo(exclusion.id.toString());
+        });
+
+        // 解除（补上失效时间）而不是删除历史：条件恢复满足
         controller.releaseExclusion(exclusion.id);
         assertThat(service.evaluate(request).reasonCode()).isEqualTo("PASS");
     }
