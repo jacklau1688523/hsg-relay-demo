@@ -58,9 +58,10 @@ function c2LeafRows(group, tail, joinAfter = false) {
 }
 
 /** 「C2 校验顺序与配置来源」：按规则编辑器的条件结构逐组列出叶子条件、不满足时返回的原因码和配置来源。 */
+// 规则组默认收起（只显示根条件组和最终判定），点「展开规则组」再看各组明细
 function c2RenderStructure() {
     c2$('c2Structure').innerHTML = `<div class="c2-root">根条件组（${c2Groups.length} 项）<span class="badge pending">全部满足 AND</span></div>
- <div class="c2-groups" id="c2StructureGroups">${c2Groups.map((g, i) => `<div class="c2-group">
+ <div class="c2-groups collapsed" id="c2StructureGroups">${c2Groups.map((g, i) => `<div class="c2-group">
  <div class="c2-group-head"><span class="c2-order">${i + 1}</span><b>${c2Esc(g.title)}</b></div>
  <div class="c2-logic">${c2Esc(c2Logic[g.logic])}</div>
  ${c2LeafRows(g, null, true)}
