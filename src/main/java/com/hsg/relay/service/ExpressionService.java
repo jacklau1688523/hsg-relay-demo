@@ -337,10 +337,16 @@ public class ExpressionService {
             return raw.toString();
         }
         if ("DATE".equals(dataType)) {
+            String text = raw.toString().trim();
             try {
-                return "'" + LocalDateTime.parse(raw.toString().trim()).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "'";
+                return "'" + LocalDateTime.parse(text).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "'";
             } catch (DateTimeParseException ex) {
-                throw new IllegalArgumentException(owner + " 的条件值不是有效的日期时间（应为 ISO 格式，如 2026-11-25T10:15:30）：" + raw);
+                // 纯日期（起息日这类按日历日比较的取值）原样参与比较：日期时间值的写法是 YYYY-MM-DDTHH:mm:ss，纯日期排在同一天的零点之前
+                try {
+                    return "'" + java.time.LocalDate.parse(text) + "'";
+                } catch (DateTimeParseException dateError) {
+                    throw new IllegalArgumentException(owner + " 的条件值不是有效的日期（应为 ISO 格式，如 2026-11-25T10:15:30 或 2026-11-30）：" + raw);
+                }
             }
         }
         return "'" + raw.toString().replace("\\", "\\\\").replace("'", "\\'") + "'";

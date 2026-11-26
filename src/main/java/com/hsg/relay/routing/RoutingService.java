@@ -26,8 +26,10 @@ public class RoutingService {
     private final C1Service c1;
     private final C2Service c2;
     private final C3ConditionService c3Conditions;
+    private final C5ScoreService c5Scoring;
 
-    public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2, C3ConditionService c3Conditions) {
+    public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2, C3ConditionService c3Conditions,
+                          C5ScoreService c5Scoring) {
         docs = d;
         json = j;
         providers = p;
@@ -36,6 +38,7 @@ public class RoutingService {
         this.c1 = c1;
         this.c2 = c2;
         this.c3Conditions = c3Conditions;
+        this.c5Scoring = c5Scoring;
     }
 
     public record ConfigView(long revision, RoutingConfig config) {
@@ -67,6 +70,15 @@ public class RoutingService {
         public Integer rank;
         public ZonedDateTime nextFxWindow;
         public C5Calculator.Result c5;
+        // C3 最终选中的覆盖行（行号 + C3 条件版本）：C5 的截单时间、偏移、日历都出自这一行，C6 用同一条覆盖行
+        public Integer matchedReachRowId;
+        public Integer matchedReachRuleVersion;
+        // C5 评分结果。c5Score 只在 c5Status = SCORED 时有值；其余状态表示评分不可计算（候选保留、不参与排序），不是 C5 剔除
+        public String c5Status;
+        public Integer c5Score;
+        public String c5ScoreGroup;
+        public Integer c5RuleVersion;
+        public String c5Message;
         @com.fasterxml.jackson.annotation.JsonIgnore
         public BigDecimal rawCost, rawScore;
     }
@@ -287,7 +299,8 @@ public class RoutingService {
                 check(c, "C1", a.passed() ? List.of() : List.of(a.reasonCode()), a);
                 var b = c2.simulate(new C2Service.Simulation(p.code, r.paymentCurrency(), r.debitCurrency(), r.beneficiaryBankCountry(), r.beneficiaryAddressCountry(), r.beneficiaryRegion(), r.orderingCountry(), r.clientCountry(), r.intermediaryCountry(), r.purpose(), r.directorUboNationalities()), now.toLocalDateTime());
                 check(c, "C2", b.hits().stream().map(C2Service.RuleHit::reasonCode).distinct().toList(), b);
-                Reach reach = c3Conditions.select(cfg.reaches(), new C3Matcher.Input(p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), r.beneficiaryRegion(), r.beneficiaryBankBic(), r.chargeOption())).map(C3Matcher.Row::reach).orElse(null);
+                var c3Row = c3Conditions.select(cfg.reaches(), new C3Matcher.Input(p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), r.beneficiaryRegion(), r.beneficiaryBankBic(), r.chargeOption())).orElse(null);
+                Reach reach = c3Row == null ? null : c3Row.reach();
                 check(c, "C3", reach == null ? List.of("NO_REACH") : List.of(), reach);
                 var c4 = C4Calculator.check(p.code, p.fundingCheckEnabled, venue, r.paymentCurrency(), r.debitCurrency(), r.amount(), cfg.hkdRates(), cfg.balances());
                 check(c, "C4", c4.reasons(), c4);
@@ -298,9 +311,21 @@ public class RoutingService {
                 check(c, "C10", fx && !c10.passed() ? List.of(c10.reason()) : List.of(), c10.open() != null ? c10.open() : "NONE".equals(venue) ? "无需换汇" : "无可执行窗口");
                 c.passed = only(c).isEmpty();
                 if (reach != null) {
-                    c.c5 = C5Calculator.calculate(reach, now, r.requestedValueDate());
-                    c.valueDate = c.c5.candidateValueDate();
-                    c.scores.put("C5", n(c.c5.speedScore()));
+                    // C3 最终选中的覆盖行原样交给 C5 评分执行器：先算起息日（每个候选一次），再按已发布的评分规则取分
+                    var c5Outcome = c5Scoring.evaluate(ReachMatch.of(c3Row, c3Conditions.get().versionNo, cv.revision()), p.code, r.clientId(),
+                            r.paymentCurrency(), r.requestedValueDate(), now.toLocalDateTime());
+                    var c5Score = c5Outcome.score();
+                    c.c5 = c5Outcome.calculation();
+                    c.valueDate = c.c5 == null ? null : c.c5.candidateValueDate();
+                    c.matchedReachRowId = c3Row.index();
+                    c.matchedReachRuleVersion = c3Conditions.get().versionNo;
+                    c.c5Status = c5Score.status();
+                    c.c5Score = c5Score.score();
+                    c.c5ScoreGroup = c5Score.matchedGroupCode();
+                    c.c5RuleVersion = c5Score.ruleVersion();
+                    c.c5Message = c5Score.message();
+                    // 分数来自已发布的 C5 评分规则；不是 SCORED 就没有分数，不伪造 0 分或 100 分
+                    if (c5Outcome.scored()) c.scores.put("C5", n(c5Score.score()));
                 }
                 if (c.passed) {
                     Fee fee = C7Calculator.feeFor(cfg.fees(), p.code, r.paymentCurrency(), r.chargeOption());
@@ -314,7 +339,12 @@ public class RoutingService {
                 }
             }
         }
-        List<Candidate> valid = new ArrayList<>(all.stream().filter(c -> c.passed).toList());
+        // 通过全部过滤但 C5 评分不可计算的候选：保留在 candidates 里（passed = true），不参与加权排序，并在结果消息里逐个说明——这不是 C5 剔除
+        List<Candidate> unscored = all.stream().filter(c -> c.passed && c.c5Score == null).toList();
+        List<String> messages = new ArrayList<>(List.of("模拟结果不占用资金或限额；客户分类与流转类别读取本地客户档案；国籍、余额、汇率及累计量为演示输入。"));
+        for (Candidate c : unscored)
+            messages.add(c.providerCode + "：C5 评分不可计算（" + c.c5Status + " — " + c.c5Message + "），保留在候选清单但不参与排序；这不是 C5 剔除候选");
+        List<Candidate> valid = new ArrayList<>(all.stream().filter(c -> c.passed && c.c5Score != null).toList());
         BigDecimal min = valid.stream().map(c -> c.rawCost).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
         Weight weight = cfg.weights().stream().filter(w -> (w.paymentType().equals(r.paymentType()) && scope(w.segment(), r.clientSegment())) || (w.paymentType().equals("OTHER") && w.segment().equals("ALL"))).max(Comparator.comparingInt(w -> (w.paymentType().equals(r.paymentType()) ? 2 : 0) + (!w.segment().equals("ALL") ? 1 : 0))).orElseThrow();
         for (Candidate c : valid) {
@@ -328,6 +358,7 @@ public class RoutingService {
         String reason = null;
         if (valid.isEmpty()) {
             if (fx && all.isEmpty()) reason = "NO_FX_VENUE";
+            else if (!unscored.isEmpty()) reason = "C5_NOT_SCOREABLE";
             else if (!all.isEmpty() && all.stream().allMatch(c -> c.checks.stream().anyMatch(x -> Set.of("C1", "C2").contains(x.code()) && !x.passed())))
                 reason = "NO_PROVIDER_ACCEPTS";
             else if (all.stream().anyMatch(c -> only(c).equals(List.of("C10")))) reason = "FX_WINDOW_CLOSED";
@@ -335,7 +366,7 @@ public class RoutingService {
             else reason = "NO_ROUTE";
         }
         ZonedDateTime next = "FX_WINDOW_CLOSED".equals(reason) ? all.stream().filter(c -> only(c).equals(List.of("C10"))).map(c -> c.nextFxWindow).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null) : null;
-        return new Result(id, r.paymentId(), valid.isEmpty() ? "REFER" : "ROUTE", reason, valid.isEmpty() ? null : valid.get(0), valid.stream().skip(1).limit(2).toList(), all, next, cv.revision(), true, true, List.of("模拟结果不占用资金或限额；客户分类与流转类别读取本地客户档案；国籍、余额、汇率及累计量为演示输入。"));
+        return new Result(id, r.paymentId(), valid.isEmpty() ? "REFER" : "ROUTE", reason, valid.isEmpty() ? null : valid.get(0), valid.stream().skip(1).limit(2).toList(), all, next, cv.revision(), true, true, messages);
     }
 
     public Object decision(String id) {

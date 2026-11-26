@@ -354,7 +354,8 @@ class C1FunctionTest {
         var broken = group("AND", function("clientExcluded", Map.of(), "EQ", false));
         assertThatThrownBy(() -> saveCondition(rule.id, broken)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("缺少必填参数");
         var valid = group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false));
-        assertThatThrownBy(() -> expressions.compile(valid, "C2")).hasMessage("函数节点目前仅支持 C1 附加条件，不能用于 C2");
+        // 函数节点可用于 C1 附加条件和 C5 评分组条件；C2 仍不能使用
+        assertThatThrownBy(() -> expressions.compile(valid, "C2")).hasMessage("函数节点目前仅支持 C1 附加条件和 C5 评分组条件，不能用于 C2");
         assertThatThrownBy(() -> expressions.preview(new ExpressionService.Preview(valid, Map.of(), "C1"))).hasMessage("条件引用了业务函数，只能在规则执行中求值");
     }
 

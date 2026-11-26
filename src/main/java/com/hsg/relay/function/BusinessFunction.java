@@ -29,7 +29,10 @@ public interface BusinessFunction {
 
     String handlerCode();
 
-    /** BOOLEAN / STRING / INTEGER / DECIMAL / DATE；OBJECT 等类型不能直接比较，不开放。 */
+    /**
+     * BOOLEAN / STRING / INTEGER / DECIMAL / DATE，或 OBJECT（结构返回：组合计算函数一次给出多个输出，由执行器读取，
+     * 不能直接比较，所以不能作为条件节点，例如 C5 的 calculateValueDate）。
+     */
     String returnType();
 
     /** 业务数据来源编码，例如 CLIENT_EXCLUSION，供试算展示。 */

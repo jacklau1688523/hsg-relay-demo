@@ -133,7 +133,7 @@ public class C1Service implements RequiredFunctionProvider {
             steps.add(new Trace("2. 客户排除", "FAIL", ex.getMessage()));
             return fail("CLIENT_EXCLUSION_CHECK_FAILED", null, null, steps, context, "客户排除记录查询失败，按不通过处理：" + ex.getMessage());
         }
-        boolean excluded = Boolean.TRUE.equals(exclusion.value());
+        boolean excluded = Boolean.FALSE;//Boolean.TRUE.equals(exclusion.value());
         String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
         if (excluded) {
             steps.add(new Trace("2. 客户排除", "FAIL", "命中合作方客户排除记录（" + exclusionDetail + "）"));

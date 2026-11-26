@@ -129,9 +129,11 @@ class FunctionMetadataApiTest {
     }
 
     @Test
-    void pickerIsOnlyAvailableForC1() throws Exception {
+    void pickerIsOnlyAvailableForC1AndC5() throws Exception {
         assertThat(errorOf(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C2")))
-                .isEqualTo("目前只有 C1 的条件编辑器支持添加函数，不能用于 C2");
+                .isEqualTo("目前只有 C1 附加条件和 C5 评分组的条件编辑器支持添加函数，不能用于 C2");
+        // C5 评分组的条件编辑器可以选函数；OBJECT 返回类型（calculateValueDate）由执行器调用，不能作为条件节点
+        mvc.perform(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C5")).andExpect(status().isOk());
     }
 
     @Test

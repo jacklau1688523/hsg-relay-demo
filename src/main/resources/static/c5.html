@@ -170,6 +170,98 @@
             display: none
         }
 
+        /* 评分规则页签：评分组卡片。草稿区的分数与已发布版本分区展示，草稿不做成「已生效」的样子 */
+        .scorebar {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+            flex-wrap: wrap;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #e5eaf2
+        }
+
+        .scorebar .field {
+            min-width: 200px
+        }
+
+        .scorecard.draft {
+            border: 1px dashed #9dbbe3;
+            background: #fbfdff
+        }
+
+        .groupcard {
+            border: 1px solid #dae6f5;
+            border-left: 4px solid #7fb0ee;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 14px;
+            background: #fff
+        }
+
+        .groupcard.changed {
+            border-left-color: #d79a2b
+        }
+
+        .groupcard.off {
+            opacity: .62
+        }
+
+        .groupcard .ghead {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px
+        }
+
+        .groupcard .gprio {
+            min-width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #1265d7;
+            color: #fff;
+            font-weight: 700;
+            text-align: center;
+            line-height: 30px
+        }
+
+        .groupcard .ghead .field {
+            flex: 1
+        }
+
+        .groupcard .gscore input {
+            width: 92px;
+            font-size: 17px;
+            font-weight: 700;
+            color: #155fbc;
+            text-align: center
+        }
+
+        .groupcard .gtools {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap
+        }
+
+        .c5e-group{border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}
+        .c5e-group .c5e-group{margin-left:16px;background:#fff}
+        .c5e-head,.c5e-line{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
+        .c5e-head strong{flex:1}
+        .c5e-head select{width:190px}
+        .c5e-line select:first-child{flex:2;min-width:150px}
+        .c5e-line select:nth-child(2){flex:1;min-width:100px}
+        .c5e-line input,.c5e-line select:nth-child(3){flex:1.5;min-width:120px}
+        .c5e-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}
+        .c5e-fn{border:1px dashed #b9cde8;border-radius:8px;padding:10px;margin:8px 0;background:#fff}
+        .c5e-args{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin:8px 0}
+        .c5e-arg label{font-size:12px;font-weight:650;display:block;margin-bottom:4px}
+        .c5e-arg input{width:100%}
+        .c5e-note{min-height:16px;margin-bottom:4px}
+        .gcheck{font-size:13px;line-height:1.7;display:flex;align-items:center;gap:6px;white-space:nowrap}
+        .gcheck div{padding:2px 0}
+        .pubtable td.num{text-align:center;font-weight:700}
+
         .context {
             white-space: normal;
             line-height: 1.6
@@ -261,18 +353,13 @@
                     为打分项，0分也不会剔除候选。
                 </div>
             </div>
-            <div class="scorecards">
-                <div class="scorecard"><span>无延迟 · 满足请求日期</span><b>100
-                    分</b><span>最早起息日不晚于请求日</span></div>
-                <div class="scorecard"><span>延迟 1 个工作日</span><b>50
-                    分</b><span>计入速度评分，候选仍可参与排序</span></div>
-                <div class="scorecard"><span>延迟 ≥2 个工作日</span><b>0
-                    分</b><span>仅速度分为0，候选不会因此被剔除</span></div>
-            </div>
+            <div class="scorecards" id="scoreCards" aria-live="polite"></div>
             <div class="tabs">
-                <button class="tab sel">截单与工作日日历</button>
+                <button class="tab sel" data-tab="schedule">截单与工作日日历</button>
+                <button class="tab" data-tab="score">速度评分规则</button>
                 <span class="muted" id="revision" style="align-self:center"></span></div>
             <div id="pageError" class="err" role="alert"></div>
+            <div id="tabSchedule">
             <div class="c5-grid">
                 <section>
                     <div class="panel">
@@ -363,6 +450,103 @@
                     </div>
                 </aside>
             </div>
+            </div>
+            <div id="tabScore" class="hidden">
+                <div class="panel">
+                    <div class="rulebar">
+                        <div><h2 style="margin:0">速度评分规则 <span class="muted" id="scoreMeta"></span></h2>
+                            <div class="muted">按优先级逐个判断评分组，首个命中的组给出分数（FIRST_MATCH）。修改从草稿开始，发布后生成新的不可变版本；
+                                已发布版本不能覆盖。没有任何评分组命中属于配置错误，不默认给 100 分。</div></div>
+                        <span id="scoreState"></span></div>
+                    <div id="scoreGroups"></div>
+                    <div class="actions"><button type="button" class="btn secondary" id="scoreAdd">＋ 新增评分组</button></div>
+                    <div class="scorebar">
+                        <div class="field"><label for="scoreOperator">操作人 *</label><input id="scoreOperator" placeholder="保存草稿 / 发布必填"
+                                                                                               maxlength="64"
+                                                                                               autocomplete="off"></div>
+                        <button type="button" class="btn secondary" id="scoreValidate">校验规则</button>
+                        <button type="button" class="btn secondary" id="scoreSimulate">模拟试算</button>
+                        <button type="button" class="btn secondary" id="scoreSave">保存草稿</button>
+                        <button type="button" class="btn" id="scorePublish">发布</button>
+                    </div>
+                    <div id="scoreCheck" role="status"></div>
+                </div>
+                <div class="layout2">
+                    <div class="panel">
+                        <div class="ptitle">模拟试算 <span class="muted">用当前页面上的评分组逐组判断</span></div>
+                        <form id="scoreSimForm">
+                            <div class="layout2">
+                                <div class="field"><label for="scoreSimProvider">合作方 *</label><select
+                                        id="scoreSimProvider"></select></div>
+                                <div class="field"><label for="scoreSimCurrency">交易币种 *</label><select
+                                        id="scoreSimCurrency"></select></div>
+                                <div class="field"><label for="scoreSimCountry">受益行国家 *</label><input
+                                        id="scoreSimCountry" value="US" required maxlength="2"></div>
+                                <div class="field"><label for="scoreSimRegion">受益人地区（可为空）</label><input
+                                        id="scoreSimRegion" placeholder="CN-GD" maxlength="6"></div>
+                                <div class="field"><label for="scoreSimBic">受益行 BIC *</label><input
+                                        id="scoreSimBic" value="CHASUS33" required maxlength="11"></div>
+                                <div class="field"><label for="scoreSimCharge">扣费方式 *</label><select
+                                        id="scoreSimCharge">
+                                    <option>SHA</option>
+                                    <option>OUR</option>
+                                    <option>BEN</option>
+                                </select></div>
+                                <div class="field wide"><label for="scoreSimAt">模拟当前时间（HKT）</label><input
+                                        id="scoreSimAt" type="datetime-local" step="1"></div>
+                                <div class="field wide"><label for="scoreSimRequested">请求起息日</label><input
+                                        id="scoreSimRequested" type="date"></div>
+                            </div>
+                            <div class="notice">覆盖行由 C3 的最终选择给出（与实际路由一致），评分组条件里的 cutoff / 偏移取自该行。
+                            </div>
+                            <button class="btn" id="scoreSimRun" type="submit" style="width:100%;margin-top:12px">▶ 用当前评分组试算
+                            </button>
+                        </form>
+                    </div>
+                    <div class="panel">
+                        <div class="ptitle">试算结果</div>
+                        <div id="scoreSimResult" class="notice" role="status">
+                            草稿不需要先保存即可试算；试算不写任何数据，正式评分只认已发布的版本。
+                        </div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="rowbetween"><div class="ptitle" style="margin:0">当前生效的已发布版本</div><span class="muted"
+                                                                                            id="scoreEffective"></span></div>
+                    <div id="scorePublished"></div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">历史版本（不可变）与回放</div>
+                    <div class="tablewrap"><table>
+                        <thead>
+                        <tr>
+                            <th>版本</th>
+                            <th>生效时间</th>
+                            <th>发布时间 / 发布人</th>
+                            <th>评分组（按优先级）</th>
+                            <th>说明</th>
+                            <th>回放</th>
+                        </tr>
+                        </thead>
+                        <tbody id="scoreHistory"></tbody>
+                    </table></div>
+                    <div class="notice">回放用指定的已发布版本按左侧试算交易重新评分，只用于核对历史结果，不改变当前生效版本。</div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">操作审计</div>
+                    <div class="tablewrap"><table>
+                        <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>操作</th>
+                            <th>操作人</th>
+                            <th>版本</th>
+                        </tr>
+                        </thead>
+                        <tbody id="scoreAudits"></tbody>
+                    </table></div>
+                </div>
+            </div>
             <div class="footer">HSG RELAY · C5 起息日评分 · 演示环境</div>
         </div>
     </main>
@@ -374,5 +558,7 @@
     <option value="America/New_York">
 </datalist>
 <script src="/c5.js"></script>
+<script src="/c5-conditions.js"></script>
+<script src="/c5-score.js"></script>
 </body>
 </html>

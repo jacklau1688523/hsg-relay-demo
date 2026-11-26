@@ -3,13 +3,14 @@ package com.hsg.relay.function;
 import com.hsg.relay.function.field.FieldValueService;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
 import java.util.function.Supplier;
 
 /**
- * 一次规则求值的上下文（请求级）。每次 C1 判定新建一个，不跨交易、客户、合作方复用。
+ * 一次规则求值的上下文（请求级）。每次 C1 判定 / C5 评分新建一个，不跨交易、客户、合作方复用。
  * <p>函数参数和字段绑定只能从这里登记的受控路径按名称取值（candidate.* / transaction.* / context.*），不执行任何表达式。
  * 同时承载本次求值内只读函数的结果：相同 Handler + 相同有效参数只真正执行一次，见 {@link FunctionExecutionService}。
  */
@@ -34,7 +35,7 @@ public final class RuleExecutionContext {
         }
     }
 
-    /** 受控取值路径：name 形如 candidate.providerCode；type 为 STRING / DECIMAL / DATE；label 供页面展示。 */
+    /** 受控取值路径：name 形如 candidate.providerCode；type 为 STRING / DECIMAL / INTEGER / DATE；label 供页面展示。 */
     public record Path(String name, Group group, String type, String label) {
     }
 
@@ -48,6 +49,21 @@ public final class RuleExecutionContext {
             new Path("transaction.amountUsd", Group.TRANSACTION, "DECIMAL", "本笔金额 USD"),
             new Path("context.decisionTime", Group.CONTEXT, "DATE", "决策时间"),
             new Path("context.monthKey", Group.CONTEXT, "STRING", "决策月份 YYYY-MM"),
+            new Path("context.ruleCode", Group.CONTEXT, "STRING", "规则编码"));
+
+    /**
+     * C5 评分执行器登记的取值路径：候选合作方、与起息日有关的交易要素、决策时间，以及 C3 最终选中的覆盖行（行号 + C3 条件版本）。
+     * 评分组里的函数条件只能从这里取值；requestedValueDate / clientId 没有上送时为空。
+     */
+    public static final List<Path> C5_PATHS = List.of(
+            new Path("candidate.providerCode", Group.CANDIDATE, "STRING", "候选合作方编码"),
+            new Path("transaction.clientId", Group.TRANSACTION, "STRING", "客户编号"),
+            new Path("transaction.paymentCurrency", Group.TRANSACTION, "STRING", "交易币种"),
+            new Path("transaction.requestedValueDate", Group.TRANSACTION, "DATE", "请求起息日"),
+            new Path("context.decisionTime", Group.CONTEXT, "DATE", "决策时间"),
+            new Path("context.monthKey", Group.CONTEXT, "STRING", "决策月份 YYYY-MM"),
+            new Path("context.matchedReachRowId", Group.CONTEXT, "INTEGER", "C3 选中的覆盖行行号"),
+            new Path("context.matchedReachRuleVersion", Group.CONTEXT, "INTEGER", "C3 条件版本"),
             new Path("context.ruleCode", Group.CONTEXT, "STRING", "规则编码"));
 
     private final String ruleCode;
@@ -64,9 +80,30 @@ public final class RuleExecutionContext {
         this.paths = paths;
     }
 
+    /** 可在条件里使用函数节点的规则（有各自的受控路径和执行上下文）。 */
+    public static final Set<String> FUNCTION_RULES = Set.of("C1", "C5");
+
     /** 某条规则可用的受控路径；尚未接入函数的规则返回空清单。 */
     public static List<Path> paths(String ruleCode) {
-        return "C1".equals(ruleCode) ? C1_PATHS : List.of();
+        return "C1".equals(ruleCode) ? C1_PATHS : "C5".equals(ruleCode) ? C5_PATHS : List.of();
+    }
+
+    /**
+     * C5 评分上下文：候选合作方、交易要素和决策时间都来自本次路由请求。决策时间按业务时区（香港）的本地时间登记，
+     * 截单判断时再换算到覆盖行自己的时区。
+     */
+    public static RuleExecutionContext c5(String providerCode, String clientId, String paymentCurrency,
+                                          LocalDate requestedValueDate, LocalDateTime decisionTime) {
+        if (decisionTime == null) throw new IllegalArgumentException("决策时间不能为空");
+        RuleExecutionContext context = new RuleExecutionContext("C5", C5_PATHS);
+        context.values.put("candidate.providerCode", providerCode);
+        context.values.put("transaction.clientId", clientId);
+        context.values.put("transaction.paymentCurrency", paymentCurrency);
+        context.values.put("transaction.requestedValueDate", requestedValueDate);
+        context.values.put("context.decisionTime", decisionTime);
+        context.values.put("context.monthKey", YearMonth.from(decisionTime).toString());
+        context.values.put("context.ruleCode", "C5");
+        return context;
     }
 
     /** C1 判定上下文：候选合作方、交易要素和决策时间都来自本次模拟请求，不接受条件配置覆盖。 */
@@ -163,6 +200,16 @@ public final class RuleExecutionContext {
         if (value == null) throw new IllegalStateException("请求级数据缓存不接受空结果：" + key);
         Object earlier = data.putIfAbsent(key, value);
         return earlier != null ? earlier : value;
+    }
+
+    /**
+     * 执行器直接交给函数使用的数据（如 C3 选中的覆盖行及其日历）：放进请求级缓存，同一键只能提供一次。
+     * 与 {@link #data(String, Supplier)} 的区别是不查询任何数据源；函数按约定的键读取，读不到就报错，不自行挑选。
+     */
+    public RuleExecutionContext supply(String key, Object value) {
+        if (key == null || key.isBlank() || value == null) throw new IllegalArgumentException("执行器提供的数据不能为空：" + key);
+        if (data.putIfAbsent(key, value) != null) throw new IllegalStateException("执行器提供的数据重复：" + key);
+        return this;
     }
 
     /** 记录一次数据字段解析（字段编码、解析器、耗时、是否复用），供求值日志和审计使用。 */

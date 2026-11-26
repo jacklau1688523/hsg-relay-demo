@@ -65,7 +65,11 @@ class C5ServiceTest {
     @Test
     void zeroSpeedScoreDoesNotFilterCandidateAndRoutingReturnsCalculation() throws Exception {
         var sim = c5.simulate(input("2026-11-20T17:00:00+08:00", "2026-11-20"));
-        assertThat(sim.calculation().speedScore()).isZero();
+        // 分数来自已发布的 C5 评分规则（默认：延迟 0 → 100，1 → 50，≥2 → 0），不再由日期计算写死
+        assertThat(sim.scoreStatus()).isEqualTo("SCORED");
+        assertThat(sim.score()).isZero();
+        assertThat(sim.matchedScoreGroup()).isEqualTo("C5-TWO-PLUS");
+        assertThat(sim.calculation().delayBusinessDays()).isEqualTo(2);
         ObjectNode req = (ObjectNode) json.readTree("""
                  {"paymentId":"C5-TEST","clientId":"C10002","debitCurrency":"USD","paymentCurrency":"USD","amount":10000,
                  "beneficiaryBankCountry":"US","beneficiaryAddressCountry":"US","beneficiaryBankBic":"CHASUS33","chargeOption":"SHA",

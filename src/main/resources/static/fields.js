@@ -25,6 +25,8 @@ const allowedByType = {
     DECIMAL: ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE'],
     INTEGER: ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE'],
     BOOLEAN: ['EQ', 'NE'],
+    // 日期字段（如 C5 的 earliestValueDate / candidateValueDate）：条件值是 ISO 日期 yyyy-MM-dd
+    DATE: ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE'],
     // 集合字段：条件值是要判断的单个元素
     STRING_SET: ['CONTAINS', 'NOT_CONTAINS']
 };

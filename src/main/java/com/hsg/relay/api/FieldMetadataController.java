@@ -187,11 +187,11 @@ public class FieldMetadataController {
         if (!code.matches("[A-Za-z][A-Za-z0-9_]{0,63}"))
             throw new IllegalArgumentException("字段编码须以字母开头，仅含字母、数字、下划线，最多64位");
         if (name.isEmpty() || name.length() > 80) throw new IllegalArgumentException("字段名称为必填项，最多80位");
-        if (!List.of("STRING", "ENUM", "DECIMAL", "INTEGER", "BOOLEAN", FieldValueService.STRING_SET).contains(type))
+        if (!List.of("STRING", "ENUM", "DECIMAL", "INTEGER", "BOOLEAN", "DATE", FieldValueService.STRING_SET).contains(type))
             throw new IllegalArgumentException("不支持的数据类型");
         List<String> operators = csv(input.allowedOperators());
         List<String> rules = csv(input.allowedRules());
-        List<String> allowed = List.of("DECIMAL", "INTEGER").contains(type) ? List.of("EQ", "NE", "GT", "GTE", "LT", "LTE") :
+        List<String> allowed = List.of("DECIMAL", "INTEGER", "DATE").contains(type) ? List.of("EQ", "NE", "GT", "GTE", "LT", "LTE") :
                 "BOOLEAN".equals(type) ? List.of("EQ", "NE") : FieldValueService.isSet(type) ? List.of("CONTAINS", "NOT_CONTAINS") : List.of("EQ", "NE", "IN");
         if (operators.isEmpty() || !allowed.containsAll(operators))
             throw new IllegalArgumentException("运算符与数据类型不匹配");
@@ -199,8 +199,8 @@ public class FieldMetadataController {
             throw new IllegalArgumentException("适用规则须选择 C1–C10");
         String values = trim(input.valueOptions());
         if (values.length() > 1000) throw new IllegalArgumentException("可选值长度不可超过1000位");
-        if (!values.isEmpty() && List.of("DECIMAL", "INTEGER", "BOOLEAN", FieldValueService.STRING_SET).contains(type))
-            throw new IllegalArgumentException("数字、布尔和集合字段不使用枚举可选值");
+        if (!values.isEmpty() && List.of("DECIMAL", "INTEGER", "BOOLEAN", "DATE", FieldValueService.STRING_SET).contains(type))
+            throw new IllegalArgumentException("数字、布尔、日期和集合字段不使用枚举可选值");
         // 集合类型必须声明元素类型（目前只支持 STRING）；非集合类型不能带元素类型
         String elementType = trim(input.elementType()).toUpperCase(Locale.ROOT);
         if (FieldValueService.isSet(type)) {

@@ -35,7 +35,7 @@ import java.util.*;
  */
 @Service
 public class FunctionMetadataService {
-    /** 目前只有 C1 执行器提供受控取值路径：函数节点和函数绑定字段只能用于 C1。 */
+    /** 只有 C1 执行器和 C5 评分执行器提供受控取值路径：函数节点和函数绑定字段只能用于 C1 / C5。 */
     public static final String BINDING_RULE = "C1";
     public static final String SOURCE_REQUEST = "REQUEST";
     public static final String SOURCE_FUNCTION = "FUNCTION";
@@ -160,15 +160,16 @@ public class FunctionMetadataService {
 
     /** 「添加函数」选择器的数据：受控路径、系统必检清单、当前规则可添加的函数。 */
     public Catalog available(String ruleCode) {
-        if (!BINDING_RULE.equals(ruleCode))
-            throw new IllegalArgumentException("目前只有 " + BINDING_RULE + " 的条件编辑器支持添加函数，不能用于 " + ruleCode);
+        if (!RuleExecutionContext.FUNCTION_RULES.contains(ruleCode == null ? "" : ruleCode))
+            throw new IllegalArgumentException("目前只有 " + BINDING_RULE + " 附加条件和 C5 评分组的条件编辑器支持添加函数，不能用于 " + ruleCode);
         List<PathView> paths = RuleExecutionContext.paths(ruleCode).stream()
                 .map(p -> new PathView(p.name(), p.group().name(), p.type(), p.label())).toList();
         List<RequiredView> required = required(ruleCode).entrySet().stream()
                 .map(entry -> new RequiredView(entry.getKey(), functionName(entry.getKey()), entry.getValue(), isExecutable(entry.getKey(), ruleCode)))
                 .toList();
+        // 可添加的是「能直接比较」的函数；结构返回（OBJECT）的组合计算函数由执行器调用，只列在系统必检清单里
         List<FunctionView> functions = definitions.findAll().stream()
-                .filter(d -> isExecutable(d.functionCode, ruleCode))
+                .filter(d -> isExecutable(d.functionCode, ruleCode) && !operators(registry.find(d.handlerCode).map(BusinessFunction::returnType).orElse("")).isEmpty())
                 .sorted(Comparator.comparing(d -> d.functionCode))
                 .map(d -> view(d, ruleCode))
                 .toList();

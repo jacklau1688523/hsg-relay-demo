@@ -175,7 +175,8 @@ public class BusinessFunctionController {
         if (!code.matches("[A-Za-z][A-Za-z0-9_]{0,63}")) throw new IllegalArgumentException("函数编码格式不正确");
         if (blank(in.functionName()) || in.functionName().length() > 80) throw new IllegalArgumentException("函数名称为必填项，最多80位");
         if (blank(in.category()) || in.category().length() > 40) throw new IllegalArgumentException("函数分类为必填项，最多40位");
-        if (!List.of("BOOLEAN", "STRING", "INTEGER", "DECIMAL", "DATE").contains(in.returnType())) throw new IllegalArgumentException("返回类型无效");
+        // OBJECT：结构返回（组合计算函数，由执行器读取多个输出，不能作为条件节点）
+        if (!List.of("BOOLEAN", "STRING", "INTEGER", "DECIMAL", "DATE", "OBJECT").contains(in.returnType())) throw new IllegalArgumentException("返回类型无效");
         List<String> rules = Arrays.stream(trim(in.allowedRules()).split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
         if (rules.isEmpty() || rules.stream().anyMatch(s -> !s.matches("C([1-9]|10)"))) throw new IllegalArgumentException("请选择 C1–C10 适用规则");
         if (!List.of("CANDIDATE", "TRANSACTION", "GLOBAL").contains(in.executionScope())) throw new IllegalArgumentException("执行作用域无效");

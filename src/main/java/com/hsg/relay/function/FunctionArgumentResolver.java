@@ -151,7 +151,11 @@ public class FunctionArgumentResolver {
                 case "BOOLEAN" -> {
                     if (!"true".equals(text) && !"false".equals(text)) throw new NumberFormatException();
                 }
-                case "DATE" -> LocalDateTime.parse(text);
+                // 日期时间（2026-11-25T10:15:30）或纯日期（2026-11-30，起息日这类按日历日的取值）
+                case "DATE" -> {
+                    if (text.length() == 10) LocalDate.parse(text);
+                    else LocalDateTime.parse(text);
+                }
                 // 集合只能来自字段解析器：不接受手写的集合字面量
                 default -> throw new NumberFormatException();
             }
@@ -203,11 +207,14 @@ public class FunctionArgumentResolver {
                         : value instanceof Long whole ? BigDecimal.valueOf(whole) : null;
                 case "BOOLEAN" -> value instanceof Boolean flag ? flag : null;
                 case "DATE" -> value instanceof LocalDateTime time ? time
-                        : value instanceof LocalDate date ? date.atStartOfDay() : null;
+                        : value instanceof LocalDate date ? date.atStartOfDay()
+                        // 字面量：日期时间原样使用；纯日期（起息日）保持为当天零点
+                        : value instanceof String text ? (text.trim().length() == 10 ? LocalDate.parse(text.trim()).atStartOfDay()
+                        : LocalDateTime.parse(text.trim())) : null;
                 case "STRING_SET" -> value instanceof RuleCollection collection ? collection : null;
                 default -> null;
             };
-        } catch (ArithmeticException ex) {
+        } catch (ArithmeticException | DateTimeParseException ex) {
             typed = null;
         }
         if (typed == null)

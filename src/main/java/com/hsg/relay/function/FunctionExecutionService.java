@@ -83,7 +83,8 @@ public class FunctionExecutionService {
     }
 
     private Resolved resolve(String functionCode, String ruleCode) {
-        if (!"C1".equals(ruleCode)) throw new IllegalArgumentException("函数节点目前仅支持 C1 附加条件，不能用于 " + ruleCode);
+        if (!RuleExecutionContext.FUNCTION_RULES.contains(ruleCode == null ? "" : ruleCode))
+            throw new IllegalArgumentException("函数节点目前仅支持 C1 附加条件和 C5 评分组条件，不能用于 " + ruleCode);
         if (functionCode == null || functionCode.isBlank()) throw new IllegalArgumentException("函数节点缺少 functionCode");
         String owner = "函数 " + functionCode;
         BusinessFunctionDefinition definition = definitions.findById(functionCode)
@@ -202,6 +203,8 @@ public class FunctionExecutionService {
             case "DECIMAL" -> value instanceof BigDecimal;
             case "INTEGER" -> value instanceof Long || value instanceof Integer || value instanceof BigInteger;
             case "DATE" -> value instanceof LocalDateTime || value instanceof LocalDate;
+            // 结构返回（组合计算函数）：多个输出字段一次算出，不能直接比较，所以不能作为条件节点
+            case "OBJECT" -> value instanceof Map<?, ?> || value != null && value.getClass().isRecord();
             default -> false;
         };
     }
