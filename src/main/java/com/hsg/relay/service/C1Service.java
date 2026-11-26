@@ -36,13 +36,14 @@ public class C1Service implements RequiredFunctionProvider {
     private final FunctionExecutionService functions;
     private final ExpressionService expressions;
     private final C1ConditionService globalConditions;
+    private final RuleAuditRepository audit;
     private final ObjectMapper json;
 
     // 审批和 MTD 的查询在各自的 Handler 里（CaseApprovalChecker / ProviderMtdReader），执行器的系统必检与条件节点共用它们的调用结果
     public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ExpressionService expressions,
                      ObjectMapper json, ClientExclusionChecker exclusionChecker,
                      CaseApprovalChecker approvalChecker, ProviderMtdReader mtdReader, FunctionExecutionService functions,
-                     C1ConditionService globalConditions) {
+                     C1ConditionService globalConditions, RuleAuditRepository audit) {
         providers = p;
         appetites = a;
         clients = c;
@@ -52,6 +53,7 @@ public class C1Service implements RequiredFunctionProvider {
         this.functions = functions;
         this.expressions = expressions;
         this.globalConditions = globalConditions;
+        this.audit = audit;
         this.json = json;
     }
 
@@ -103,6 +105,7 @@ public class C1Service implements RequiredFunctionProvider {
     }
 
     public Result evaluate(Simulation req, LocalDateTime now) {
+        long start = System.nanoTime();
         List<Trace> steps = new ArrayList<>();
         if (req == null || req.amountUsd() == null || req.amountUsd().signum() < 0 || req.clientId() == null || req.providerCode() == null || req.paymentCurrency() == null || req.beneficiaryBankCountry() == null)
             throw new IllegalArgumentException("模拟请求字段缺失或金额无效");
@@ -120,8 +123,29 @@ public class C1Service implements RequiredFunctionProvider {
         List<String> flows = client.flowCategories == null ? List.of() : Arrays.stream(client.flowCategories.split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
         if (flows.isEmpty()) flows = List.of("STANDARD");
 
-        // 页面配置的是 C1 全局准入条件，不隶属于某一条合作方准入规则。
+        // 2. 客户排除：系统必检。直接调用 Java Handler，不经过函数库元数据，也不管条件树里有没有 clientExcluded /
+        //    collectionContains 节点——运营删除可选函数节点不能让被排除的客户通过 C1。查询失败按不通过处理（不返回「未排除」放行）。
+        //    排在全局准入条件之前：被排除的客户直接得到 CLIENT_EXCLUDED，不会被条件树的「未命中」盖住原因码。
+        Call exclusion;
+        try {
+            exclusion = functions.execute(exclusionChecker, "clientExcluded", EXCLUSION_ARGUMENTS, context);
+        } catch (RuntimeException ex) {
+            steps.add(new Trace("2. 客户排除", "FAIL", ex.getMessage()));
+            return fail("CLIENT_EXCLUSION_CHECK_FAILED", null, null, steps, context, "客户排除记录查询失败，按不通过处理：" + ex.getMessage());
+        }
+        boolean excluded = Boolean.TRUE.equals(exclusion.value());
+        String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
+        if (excluded) {
+            steps.add(new Trace("2. 客户排除", "FAIL", "命中合作方客户排除记录（" + exclusionDetail + "）"));
+            Result rejected = fail("CLIENT_EXCLUDED", null, null, steps, context, "命中合作方客户排除记录（" + exclusionDetail + "）");
+            auditExclusionHit(req, context, exclusion, rejected, start);
+            return rejected;
+        }
+        steps.add(new Trace("2. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
+
+        // 3. 页面配置的是 C1 全局准入条件，不隶属于某一条合作方准入规则。
         // 每个客户流转类别分别求值；任一类别不满足即过滤该合作方。
+        // 条件树里的集合字段 providerExcludedClientIds 与上面的必检共用同一份排除集合（请求级缓存），不会重复查询。
         for (String flow : flows) {
             context.set("candidate.flowCategory", flow);
             Map<String, Object> variables = new HashMap<>();
@@ -139,28 +163,13 @@ public class C1Service implements RequiredFunctionProvider {
                     && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry())));
             C1ConditionService.Outcome trigger = globalConditions.evaluate(variables, context);
             if (trigger.configured()) {
-                steps.add(new Trace("2. C1 准入条件 " + flow, trigger.matched() ? "PASS" : "FAIL",
+                steps.add(new Trace("3. C1 准入条件 " + flow, trigger.matched() ? "PASS" : "FAIL",
                         trigger.note() + "；表达式 " + trigger.expression()));
                 if (!trigger.matched())
                     return fail("C1_CONDITION_NOT_MATCHED", null, null, steps, context,
                             flow + " 不满足 C1 全局准入条件，候选合作方被过滤");
             }
         }
-        // 2. 客户排除：系统必检。直接调用 Java Handler，不经过函数库元数据，也不管条件树里有没有 clientExcluded 节点。
-        //    查询失败按不通过处理（不返回「未排除」放行）。
-        /*Call exclusion;
-        try {
-            exclusion = functions.execute(exclusionChecker, "clientExcluded", EXCLUSION_ARGUMENTS, context);
-        } catch (RuntimeException ex) {
-            steps.add(new Trace("3. 客户排除", "FAIL", ex.getMessage()));
-            return fail("CLIENT_EXCLUSION_CHECK_FAILED", null, null, steps, context, "客户排除记录查询失败，按不通过处理：" + ex.getMessage());
-        }*/
-
-        //boolean excluded = Boolean.TRUE.equals(exclusion.value());
-        boolean excluded = false;
-        //String exclusionDetail = "clientExcluded = " + excluded + "，来源 " + exclusion.dataSource() + (exclusion.recordId() == null ? "" : "，排除记录 #" + exclusion.recordId());
-        //if (excluded) return fail("CLIENT_EXCLUDED", null, null, steps, context, "命中合作方客户排除记录（" + exclusionDetail + "）");
-        //steps.add(new Trace("3. 客户排除", "PASS", "未命中排除记录（" + exclusionDetail + "）"));
         Long lastId = null;
         String lastAction = null;
         for (String flow : flows) {
@@ -196,6 +205,57 @@ public class C1Service implements RequiredFunctionProvider {
         return new Result(true, "PASS", lastId, lastAction, steps, context.calls());
     }
 
+    /**
+     * 客户排除命中的审计：合作方、客户编号、必检函数、排除记录 ID、条件树版本及条件树引用的函数与字段、判定结果和耗时。
+     * 只写摘要（函数编码、字段编码、命中记录 ID、耗时），不写完整的客户排除名单。
+     */
+    private void auditExclusionHit(Simulation req, RuleExecutionContext context, Call exclusion, Result result, long start) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("ruleCode", "C1");
+        entry.put("providerCode", req.providerCode());
+        entry.put("clientId", req.clientId());
+        entry.put("decisionTime", context.decisionTime().toString());
+        entry.put("result", result.reasonCode());
+        // 系统必检：Java Handler 直接调用，不经过函数库元数据
+        Map<String, Object> mandatory = new LinkedHashMap<>();
+        mandatory.put("functionCode", exclusion.functionCode());
+        mandatory.put("handlerCode", exclusion.handlerCode());
+        mandatory.put("exclusionRecordId", exclusion.recordId());
+        mandatory.put("durationMs", exclusion.durationMs());
+        entry.put("mandatoryCheck", mandatory);
+        // 本次判定里条件树用到的函数（编码、命中记录 ID、耗时）和数据字段（字段编码、解析器、耗时）
+        entry.put("conditionVersion", globalConditions.get().versionNo);
+        // 条件树引用的函数与数据解析字段（只看结构，不论本次判定是否求值到条件树）
+        C1ConditionService.Summary summary = globalConditions.summary();
+        entry.put("conditionFunctions", summary.functionCodes());
+        entry.put("conditionFields", summary.resolvedFields());
+        entry.put("functions", context.calls().stream().filter(call -> !call.functionCode().equals(exclusion.functionCode()))
+                .map(call -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("functionCode", call.functionCode());
+                    item.put("recordId", call.recordId());
+                    item.put("durationMs", call.durationMs());
+                    item.put("cached", call.cached());
+                    return item;
+                }).toList());
+        entry.put("fields", context.resolutions().stream().map(field -> {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("fieldCode", field.fieldCode());
+            item.put("resolverCode", field.resolverCode());
+            item.put("durationMs", field.durationMs());
+            item.put("cached", field.cached());
+            return item;
+        }).toList());
+        entry.put("elapsedMs", (System.nanoTime() - start) / 1_000_000);
+        String after;
+        try {
+            after = json.writeValueAsString(entry);
+        } catch (Exception ex) {
+            throw new IllegalStateException("审计序列化失败", ex);
+        }
+        audit.save(new RuleAudit("C1_DECISION", req.providerCode() + "/" + req.clientId(), "EXCLUSION_HIT", "system", null, after));
+    }
+
     private boolean active(LocalDateTime start, LocalDateTime end, LocalDateTime now) {
         return start != null && !now.isBefore(start) && (end == null || now.isBefore(end));
     }
@@ -228,7 +288,7 @@ public class C1Service implements RequiredFunctionProvider {
             variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
             variables.put("amountUsd", req.amountUsd());
             List<String> missing = expressions.referencedFields(tree).stream()
-                    .filter(field -> !expressions.isFunctionBound(field))
+                    .filter(expressions::requiresInput)
                     .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
             if (!missing.isEmpty()) {
                 skipped.add("规则 #" + rule.id + " 的附加条件引用了字段 " + String.join("、", missing) + "，本次没有提供取值，按不命中处理");

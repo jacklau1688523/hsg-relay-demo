@@ -10,7 +10,8 @@ import java.util.Map;
 
 /**
  * 字段取值：普通字段取请求提交的取值并按字段类型转换；绑定了函数的字段（valueSource = FUNCTION）由函数计算
- * （见 ExpressionService / FunctionExecutionService），请求里提交的同名字段取值不采用。
+ * （见 ExpressionService / FunctionExecutionService），数据解析字段（valueSource = DATA_RESOLVER）由字段解析器取数
+ * （见 FieldValueService）；后两种不采用请求里提交的同名字段取值。
  */
 @Component
 public class FieldResolver {
@@ -30,6 +31,11 @@ public class FieldResolver {
 
     public static boolean isFunctionBound(FieldDefinition field) {
         return "FUNCTION".equals(valueSource(field)) && field.functionCode != null && !field.functionCode.isBlank();
+    }
+
+    /** 取值来源为数据解析（DATA_RESOLVER）：由字段元数据的 resolverCode 对应的解析器在规则执行中取数，请求里提交的同名取值同样不采用。 */
+    public static boolean isDataResolved(FieldDefinition field) {
+        return field != null && "DATA_RESOLVER".equals(field.valueSource);
     }
 
     /** 字段上配置的参数绑定（参数编码 → 受控路径 "$candidate.providerCode" 或字面量）。 */

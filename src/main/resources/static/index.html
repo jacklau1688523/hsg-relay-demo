@@ -462,6 +462,8 @@
         .c1-fn .c1-args {margin-left:16px}
         .c1-arg label {display:block;font-size:12px;font-weight:650;color:#274369;margin-bottom:5px}
         .c1-arg .muted {font-weight:400}
+        .c1-mapping {display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+        .c1-summary {margin-left:16px;overflow-wrap:anywhere}
         .c1-badge {display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid #9cc0f0;background:#e7f0ff;color:#115bbf;white-space:nowrap}
         .c1-badge.optional {border-color:#85d5a1;background:#e9faef;color:#139447}
         .c1-required-mark {color:#c63a4b}
@@ -556,7 +558,7 @@
                 <div class="muted">准入规则、客户排除、个案审批和 MTD 使用情况在合作方详情页维护；这里配置全局准入条件并模拟 C1 判定。
                 </div>
             </div>
-            <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 全局准入表达式：读取客户档案、交易字段和函数结果；表达式不满足即过滤合作方。</div><div class="notice">② 客户排除：命中有效的「客户 + 合作方」记录立即拒绝；记录在合作方详情维护。</div><div class="notice">③ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
+            <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：读取客户分类状态。</div><div class="notice">② 客户排除（系统必检）：命中有效的「客户 + 合作方」记录立即拒绝并返回 CLIENT_EXCLUDED，先于全局准入表达式；记录在合作方详情维护。</div><div class="notice">③ 全局准入表达式：读取客户档案、交易字段、函数结果和元数据字段（如合作方有效排除客户集合）；表达式不满足即过滤合作方。</div><div class="notice">④ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">⑤ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
             <div class="grid c1-workspace">
             <section id="conditionView" class="panel">
                 <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
@@ -603,7 +605,7 @@
             <div class="modalback" id="c1FunctionPicker" role="dialog" aria-modal="true" aria-labelledby="c1FunctionPickerTitle" onclick="if(event.target===this)c1CloseFunctionPicker()">
                 <div class="modal" style="width:min(1100px,100%)">
                     <div class="rowbetween"><h2 id="c1FunctionPickerTitle">ƒ 添加函数</h2><button type="button" class="btn secondary tiny" onclick="c1CloseFunctionPicker()">✕ 关闭</button></div>
-                    <div class="muted">选择函数，配置参数绑定、比较方式和期望值，再加入当前条件组。参数可引用受控取值路径（$ 开头，输入框有候选）或填写字面量，保存时由服务端校验。</div>
+                    <div class="muted">选择函数，配置参数绑定、比较方式和期望值，再加入当前条件组。参数可引用受控取值路径（$ 开头，输入框有候选）或填写字面量；集合类函数（如 collectionContains）的参数按「来源 + 绑定」显式选择：集合字段取元数据字段（如合作方有效排除客户集合），比较元素取本笔交易 / 候选合作方 / 规则上下文。保存时由服务端校验。</div>
                     <div class="notice" id="c1FunctionSample"></div>
                     <div class="c1-cards" id="c1FunctionCards"></div>
                 </div>

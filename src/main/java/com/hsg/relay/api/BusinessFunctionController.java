@@ -190,8 +190,8 @@ public class BusinessFunctionController {
         for (JsonNode p : params) {
             String paramCode = p.path("code").asText();
             if (!paramCode.matches("[A-Za-z][A-Za-z0-9_]{0,63}") || !codes.add(paramCode)
-                    || !List.of("STRING", "INTEGER", "DECIMAL", "BOOLEAN", "DATE").contains(p.path("type").asText())
-                    || !List.of("CANDIDATE", "TRANSACTION", "CONTEXT").contains(p.path("source").asText()))
+                    || !List.of("STRING", "INTEGER", "DECIMAL", "BOOLEAN", "DATE", "STRING_SET").contains(p.path("type").asText())
+                    || !List.of("CANDIDATE", "TRANSACTION", "CONTEXT", "FIELD", "ANY").contains(p.path("source").asText()))
                 throw new IllegalArgumentException("参数编码、类型或来源无效，且编码不可重复");
         }
         if (trim(in.dataSource()).length() > 100 || trim(in.description()).length() > 2000) throw new IllegalArgumentException("数据来源或说明过长");

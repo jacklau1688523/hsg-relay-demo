@@ -11,6 +11,8 @@ import com.hsg.relay.function.FieldResolver;
 import com.hsg.relay.function.FunctionExecutionService;
 import com.hsg.relay.function.FunctionMetadataService;
 import com.hsg.relay.function.RuleExecutionContext;
+import com.hsg.relay.function.field.FieldValueService;
+import com.hsg.relay.function.field.RuleCollection;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,12 +36,15 @@ public class ExpressionService {
     private final FieldDefinitionRepository fields;
     private final FunctionExecutionService functions;
     private final FieldResolver fieldResolver;
+    private final FieldValueService fieldValues;
     private final AviatorEvaluatorInstance engine = AviatorEvaluator.newInstance();
 
-    public ExpressionService(FieldDefinitionRepository fields, FunctionExecutionService functions, FieldResolver fieldResolver) {
+    public ExpressionService(FieldDefinitionRepository fields, FunctionExecutionService functions, FieldResolver fieldResolver,
+                             FieldValueService fieldValues) {
         this.fields = fields;
         this.functions = functions;
         this.fieldResolver = fieldResolver;
+        this.fieldValues = fieldValues;
     }
 
     /**
@@ -75,13 +80,15 @@ public class ExpressionService {
     /**
      * 编译结果：expression 是可执行的受控表达式（函数返回值以 __fnN 变量承载）；readable 是页面展示用的可读形式；
      * functions 是待求值的函数节点；boundFields 是条件里引用到的函数绑定字段（已在编译期按函数库和白名单校验）；
-     * ruleCode 是编译时传入的规则编码；leaves 是按出现顺序排列的叶子条件，求值日志用它逐项给出真假。
+     * ruleCode 是编译时传入的规则编码；leaves 是按出现顺序排列的叶子条件，求值日志用它逐项给出真假；
+     * resolvedFields 是条件里引用到的数据解析字段（取值来自字段解析器）。
      */
     public record Compiled(String expression, String readable, List<FunctionSlot> functions,
-                           Map<String, FunctionExecutionService.Validated> boundFields, String ruleCode, List<Leaf> leaves) {
-        /** 是否需要 C1 执行上下文才能求值（含函数节点或函数绑定字段）。 */
+                           Map<String, FunctionExecutionService.Validated> boundFields, String ruleCode, List<Leaf> leaves,
+                           Set<String> resolvedFields) {
+        /** 是否需要 C1 执行上下文才能求值（含函数节点、函数绑定字段或数据解析字段）。 */
         public boolean needsContext() {
-            return !functions.isEmpty() || !boundFields.isEmpty();
+            return !functions.isEmpty() || !boundFields.isEmpty() || !resolvedFields.isEmpty();
         }
     }
 
@@ -104,10 +111,11 @@ public class ExpressionService {
         if (tree == null) throw new IllegalArgumentException("条件树不能为空");
         List<FunctionSlot> slots = new ArrayList<>();
         Map<String, FunctionExecutionService.Validated> boundFields = new LinkedHashMap<>();
+        Set<String> resolvedFields = new LinkedHashSet<>();
         List<Leaf> leaves = new ArrayList<>();
-        Text text = compile(tree, 0, ruleCode, slots, boundFields, leaves);
+        Text text = compile(tree, 0, ruleCode, slots, boundFields, resolvedFields, leaves);
         return new Compiled(text.expression(), text.readable(), List.copyOf(slots), Collections.unmodifiableMap(boundFields),
-                ruleCode, List.copyOf(leaves));
+                ruleCode, List.copyOf(leaves), Set.copyOf(resolvedFields));
     }
 
     /** 条件树里叶子条件引用的全部字段编码，按出现顺序去重（函数节点不计）。 */
@@ -117,9 +125,27 @@ public class ExpressionService {
         return result;
     }
 
+    /** 字段定义（不存在时为 null）。 */
+    public FieldDefinition field(String fieldCode) {
+        return fieldCode == null ? null : fields.findById(fieldCode).orElse(null);
+    }
+
     /** 字段是否绑定了业务函数（取值由函数计算，不需要请求提供）。 */
     public boolean isFunctionBound(String fieldCode) {
         return fieldResolver.isFunctionBound(fields.findById(fieldCode == null ? "" : fieldCode).orElse(null));
+    }
+
+    /** 字段是否由字段解析器取数（valueSource = DATA_RESOLVER，如集合字段）。 */
+    public boolean isDataResolved(String fieldCode) {
+        return FieldResolver.isDataResolved(fields.findById(fieldCode == null ? "" : fieldCode).orElse(null));
+    }
+
+    /**
+     * 字段是否需要请求提供取值：函数绑定字段和数据解析字段的取值来自规则执行，不算缺值；
+     * 执行器用它判断条件引用的字段在本次请求里是否齐全。
+     */
+    public boolean requiresInput(String fieldCode) {
+        return !isFunctionBound(fieldCode) && !isDataResolved(fieldCode);
     }
 
     private void collect(Node node, Set<String> result) {
@@ -133,8 +159,8 @@ public class ExpressionService {
     }
 
     /**
-     * 求值。带 RuleExecutionContext 时（C1 执行器）可以求值 FUNCTION 节点和函数绑定字段：
-     * 函数返回值先算好，再由同一个受控表达式完成比较。
+     * 求值。带 RuleExecutionContext 时（C1 执行器）可以求值 FUNCTION 节点、函数绑定字段和数据解析字段：
+     * 函数返回值和字段解析结果先算好，再由同一个受控表达式完成比较。
      */
     public PreviewResult preview(Preview req, RuleExecutionContext context) {
         if (req.tree() == null || req.variables() == null) throw new IllegalArgumentException("tree / variables 必填");
@@ -155,11 +181,17 @@ public class ExpressionService {
      * DEBUG 关闭时不创建记录，也不做任何额外计算。
      */
     public PreviewResult evaluate(Compiled compiled, Map<String, Object> variables, RuleExecutionContext context, String owner) {
-        if (compiled.needsContext() && context == null)
-            throw new IllegalArgumentException(compiled.boundFields().isEmpty()
-                    ? "条件引用了业务函数，只能在规则执行中求值"
-                    : "条件引用了函数绑定字段 " + String.join("、", compiled.boundFields().keySet()) + "，只能在规则执行中取值");
+        if (compiled.needsContext() && context == null) {
+            // 两类字段都有的条件按先查到的类型报错；消息与升级前一致
+            if (!compiled.boundFields().isEmpty())
+                throw new IllegalArgumentException("条件引用了函数绑定字段 " + String.join("、", compiled.boundFields().keySet()) + "，只能在规则执行中取值");
+            if (!compiled.resolvedFields().isEmpty())
+                throw new IllegalArgumentException("条件引用了数据解析字段 " + String.join("、", compiled.resolvedFields()) + "，只能在规则执行中取值");
+            throw new IllegalArgumentException("条件引用了业务函数，只能在规则执行中求值");
+        }
         Expression exp = engine.compile(compiled.expression(), false);
+        List<String> variableNames = exp.getVariableNames();
+        Set<String> referenced = new HashSet<>(variableNames == null ? List.of() : variableNames);
         Trace trace = log.isDebugEnabled() ? new Trace(compiled, owner, context) : null;
         long start = trace == null ? 0 : System.nanoTime();
         Map<String, Object> vars = new HashMap<>();
@@ -169,6 +201,11 @@ public class ExpressionService {
                 if (bound != null) {
                     // 绑定了函数的字段取值来自函数，请求里提交的同名字段取值不采用
                     vars.put(field.fieldCode, functionValue(invoke(bound, context, trace, field.fieldCode).value()));
+                } else if (FieldResolver.isDataResolved(field)) {
+                    // 数据解析字段：取值来自字段解析器（本次求值内同一字段只解析一次），请求里提交的同名字段取值不采用；
+                    // 只在表达式引用到时才解析
+                    if (referenced.contains(field.fieldCode))
+                        vars.put(field.fieldCode, setValue(fieldValues.value(field, context)));
                 } else if (variables.containsKey(field.fieldCode)) {
                     vars.put(field.fieldCode, fieldResolver.variable(field, variables.get(field.fieldCode)));
                 }
@@ -177,10 +214,10 @@ public class ExpressionService {
                 vars.put(slot.variable(), functionValue(invoke(slot.function(), context, trace, slot.variable()).value()));
             Object value = exp.execute(vars);
             PreviewResult result = new PreviewResult(compiled.readable(), Boolean.TRUE.equals(value));
-            if (trace != null) trace.finished(exp.getVariableNames(), vars, result.matched(), null);
+            if (trace != null) trace.finished(variableNames, vars, result.matched(), null);
             return result;
         } catch (RuntimeException ex) {
-            if (trace != null) trace.finished(exp.getVariableNames(), vars, null, ex);
+            if (trace != null) trace.finished(variableNames, vars, null, ex);
             throw ex;
         } finally {
             if (trace != null) trace.write(elapsedMillis(start));
@@ -192,8 +229,13 @@ public class ExpressionService {
         return value instanceof LocalDateTime time ? time.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : value;
     }
 
+    /** 集合字段条件代入表达式的值：Aviator 的 include 按元素判断；成员查询模式（未全量加载）的集合在这里报错，不会隐式全量加载。 */
+    private static Object setValue(Object value) {
+        return value instanceof RuleCollection collection ? collection.elements() : value;
+    }
+
     private Text compile(Node n, int depth, String ruleCode, List<FunctionSlot> slots,
-                         Map<String, FunctionExecutionService.Validated> boundFields, List<Leaf> leaves) {
+                         Map<String, FunctionExecutionService.Validated> boundFields, Set<String> resolvedFields, List<Leaf> leaves) {
         if (depth > 6) throw new IllegalArgumentException("最多允许 6 层条件组");
         if (n.isFunction()) {
             if (n.children() != null && !n.children().isEmpty()) throw new IllegalArgumentException("函数节点不能包含子条件");
@@ -204,7 +246,7 @@ public class ExpressionService {
             if (!"AND".equals(n.logic()) && !"OR".equals(n.logic()))
                 throw new IllegalArgumentException("条件组只允许 AND/OR");
             String delimiter = "AND".equals(n.logic()) ? " && " : " || ";
-            List<Text> parts = n.children().stream().map(x -> compile(x, depth + 1, ruleCode, slots, boundFields, leaves)).toList();
+            List<Text> parts = n.children().stream().map(x -> compile(x, depth + 1, ruleCode, slots, boundFields, resolvedFields, leaves)).toList();
             return new Text("(" + String.join(delimiter, parts.stream().map(Text::expression).toList()) + ")",
                     "(" + String.join(delimiter, parts.stream().map(Text::readable).toList()) + ")");
         }
@@ -214,6 +256,10 @@ public class ExpressionService {
         if (n.value() == null) throw new IllegalArgumentException("条件值不可为空");
         // 绑定了函数的字段：保存 / 编译时校验函数与参数绑定（函数停用、绑定失效都在这里报出），运行时取值来自函数
         if (fieldResolver.isFunctionBound(f)) boundFields.putIfAbsent(f.fieldCode, boundFunction(f, ruleCode));
+        // 数据解析字段：运行时取值来自字段解析器；集合类型字段的条件是「集合是否包含这个元素」（元素为条件值，写死在条件里；
+        // 元素来自交易或其它字段时用函数条件 collectionContains）
+        if (FieldResolver.isDataResolved(f)) resolvedFields.add(f.fieldCode);
+        if (FieldValueService.isSet(f.dataType)) return compileSetLeaf(n, f, leaves);
         String literal = literal("字段 " + f.fieldCode, f.dataType, n.value());
         if ("IN".equals(n.operator())) {
             if (List.of("DECIMAL", "INTEGER", "BOOLEAN").contains(f.dataType))
@@ -227,6 +273,16 @@ public class ExpressionService {
         checkOption(f, n.value().toString());
         String text = "(" + f.fieldCode + " " + symbol(n.operator()) + " " + literal + ")";
         return leaf(text, leaves);
+    }
+
+    /** 集合字段条件：CONTAINS / NOT_CONTAINS，条件值是要判断的单个元素；用 Aviator 的 include 做成员判断，与 collectionContains 语义一致。 */
+    private static Text compileSetLeaf(Node n, FieldDefinition f, List<Leaf> leaves) {
+        String owner = "字段 " + f.fieldCode;
+        String element = n.value() == null ? "" : n.value().toString().trim();
+        if (element.isEmpty() || element.length() > 80)
+            throw new IllegalArgumentException(owner + " 的条件值须为 1~80 位的集合元素");
+        String call = "include(" + f.fieldCode + ", '" + element.replace("\\", "\\\\").replace("'", "\\'") + "')";
+        return leaf("CONTAINS".equals(n.operator()) ? "(" + call + ")" : "(!" + call + ")", leaves);
     }
 
     /** 字段条件的两种写法相同；同时记入 leaves，供求值日志逐项给出真假。 */
@@ -378,6 +434,7 @@ public class ExpressionService {
                 out.append(TRACE_LINE).append("可执行表达式：").append(compiled.expression());
             appendContext(out);
             appendInvocations(out);
+            appendResolutions(out);
             appendVariables(out);
             appendLeaves(out);
             out.append(TRACE_LINE).append("结果：");
@@ -421,6 +478,15 @@ public class ExpressionService {
             }
         }
 
+        /** 本次求值解析过的数据字段（条件里用到、且取值来自字段解析器）：字段、解析器、耗时或复用。没有则为空。 */
+        private void appendResolutions(StringBuilder out) {
+            if (context == null || context.resolutions().isEmpty()) return;
+            out.append(TRACE_LINE).append("[数据字段]");
+            for (FieldValueService.Resolution resolution : context.resolutions())
+                out.append(TRACE_ITEM).append(resolution.fieldCode()).append(" ← 解析器 ").append(resolution.resolverCode())
+                        .append("｜").append(resolution.cached() ? "复用本次判定内的结果" : "耗时 " + resolution.durationMs() + "ms");
+        }
+
         /**
          * 表达式引用的每个变量：代入的取值和来源。没有取值的变量点名说明——Aviator 对它按 nil 比较（== 得 false、不报错），
          * 条件「莫名其妙」不命中时先看这里。
@@ -444,7 +510,7 @@ public class ExpressionService {
 
         /** 变量取值的来源：函数绑定字段由函数计算，函数节点的返回值以 __fnN 变量代入，其余是请求取值。 */
         private String source(String name, FunctionExecutionService.Validated function) {
-            if (function == null) return "请求取值";
+            if (function == null) return compiled.resolvedFields().contains(name) ? "字段解析器取值" : "请求取值";
             return "函数 " + function.functionCode() + (compiled.boundFields().containsKey(name) ? " 计算" : " 返回值");
         }
 
@@ -480,6 +546,9 @@ public class ExpressionService {
         if (value instanceof LocalDateTime time) return time.truncatedTo(ChronoUnit.MILLIS).format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
         if (value instanceof BigDecimal decimal) return decimal.toPlainString();
         if (value instanceof Map<?, ?> map) return map.entrySet().stream().map(entry -> entry.getKey() + "=" + display(entry.getValue())).collect(Collectors.joining(", ", "{", "}"));
+        // 集合只给出元素个数和前几个元素，不输出完整名单
+        if (value instanceof RuleCollection collection) return collection.summary();
+        if (value instanceof Set<?> set) return "集合（" + set.size() + " 个元素）" + (set.isEmpty() ? "" : "：" + set.stream().limit(5).map(String::valueOf).collect(Collectors.joining(", ")) + (set.size() > 5 ? " …" : ""));
         if (value instanceof String text) return text.isBlank() ? "''" : text;
         return String.valueOf(value);
     }

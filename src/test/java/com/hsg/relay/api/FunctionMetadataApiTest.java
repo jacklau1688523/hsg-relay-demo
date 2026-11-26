@@ -111,7 +111,8 @@ class FunctionMetadataApiTest {
         // findBestAppetiteRule 由执行器内部落实，没有独立的 Handler：清单里照常列出（只读），但不能添加为条件节点
         assertThat(catalog.path("required").get(1).path("implemented").asBoolean()).isFalse();
 
-        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("clientExcluded", "getProviderMtd", "hasValidCaseApproval");
+        // collectionContains / collectionIntersects 为启动时补齐的通用集合函数
+        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("clientExcluded", "collectionContains", "collectionIntersects", "getProviderMtd", "hasValidCaseApproval");
         JsonNode clientExcluded = catalog.path("functions").get(0);
         assertThat(clientExcluded.path("functionName").asText()).isEqualTo("客户是否被合作方排除");
         assertThat(clientExcluded.path("returnType").asText()).isEqualTo("BOOLEAN");
@@ -179,7 +180,7 @@ class FunctionMetadataApiTest {
         assertThat(disabled.path("usagePolicy").asText()).as("使用策略来自代码，停用后仍是系统必检").isEqualTo("REQUIRED");
         // 停用后不能再添加为条件节点；系统必检清单仍然列出它（只读）
         JsonNode catalog = ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C1"));
-        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("getProviderMtd", "hasValidCaseApproval");
+        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("collectionContains", "collectionIntersects", "getProviderMtd", "hasValidCaseApproval");
         assertThat(values(catalog.path("required"), "functionCode")).contains("clientExcluded");
         assertThat(entry(catalog.path("required"), "functionCode", "clientExcluded").path("implemented").asBoolean()).isFalse();
         // 引用它的条件不能再保存

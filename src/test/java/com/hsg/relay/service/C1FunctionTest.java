@@ -466,7 +466,7 @@ class C1FunctionTest {
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1", null, true, "REQUEST", "clientExcluded", null)))
                 .hasMessage("取值来源为请求输入时不能绑定函数");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1", null, true, "SCRIPT", "clientExcluded", null)))
-                .hasMessage("取值来源只能是 REQUEST（请求输入）或 FUNCTION（函数计算）");
+                .hasMessage("取值来源只能是 REQUEST（请求输入）、FUNCTION（函数计算）或 DATA_RESOLVER（数据解析）");
         // 页面的表达式预览没有执行上下文，不能求值函数绑定字段
         assertThatThrownBy(() -> expressions.preview(new ExpressionService.Preview(tree, Map.of("clientProviderExcluded", false), "C1")))
                 .hasMessage("条件引用了函数绑定字段 clientProviderExcluded，只能在规则执行中取值");

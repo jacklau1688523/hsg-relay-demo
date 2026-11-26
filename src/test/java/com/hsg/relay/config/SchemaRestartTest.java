@@ -117,6 +117,38 @@ class SchemaRestartTest {
         }
     }
 
+    @Test
+    void existingRuleFieldTableGainsCollectionResolverColumnsWithoutLosingData() throws Exception {
+        String url = "jdbc:h2:file:" + dir.resolve("rule_field_collection_upgrade")
+                + ";MODE=MySQL;DATABASE_TO_UPPER=false;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
+        // 上一版升级后的 relay_rule_field：有取值来源、函数编码、参数绑定三列，没有解析器、元素类型、执行作用域、缓存策略四列
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement()) {
+            stmt.execute("CREATE TABLE relay_rule_field (field_code VARCHAR(64) PRIMARY KEY,field_name VARCHAR(80) NOT NULL,"
+                    + "data_type VARCHAR(20) NOT NULL,allowed_operators VARCHAR(200) NOT NULL,allowed_rules VARCHAR(100) NOT NULL,"
+                    + "value_options VARCHAR(1000),enabled BOOLEAN NOT NULL,value_source VARCHAR(20),function_code VARCHAR(64),"
+                    + "argument_bindings VARCHAR(4000))");
+            stmt.execute("INSERT INTO relay_rule_field (field_code,field_name,data_type,allowed_operators,allowed_rules,enabled,value_source,function_code) "
+                    + "VALUES ('riskLevel','风险等级','STRING','EQ,NE','C1',TRUE,'FUNCTION','riskLevelOf')");
+        }
+        updateSchema(url, com.hsg.relay.domain.FieldDefinition.class);
+        // 再次启动：列已存在，不重复处理也不报错
+        updateSchema(url, com.hsg.relay.domain.FieldDefinition.class);
+        try (var c = DriverManager.getConnection(url, "sa", ""); var stmt = c.createStatement();
+             var rs = stmt.executeQuery("SELECT field_name,data_type,value_source,function_code,resolver_code,element_type,execution_scope,cache_policy "
+                     + "FROM relay_rule_field")) {
+            assertThat(rs.next()).isTrue();
+            assertThat(rs.getString("field_name")).isEqualTo("风险等级");
+            assertThat(rs.getString("data_type")).isEqualTo("STRING");
+            assertThat(rs.getString("value_source")).isEqualTo("FUNCTION");
+            assertThat(rs.getString("function_code")).isEqualTo("riskLevelOf");
+            assertThat(rs.getString("resolver_code")).as("升级前的字段没有解析器").isNull();
+            assertThat(rs.getString("element_type")).isNull();
+            assertThat(rs.getString("execution_scope")).isNull();
+            assertThat(rs.getString("cache_policy")).isNull();
+            assertThat(rs.next()).isFalse();
+        }
+    }
+
     private void updateSchema(String url) {
         updateSchema(url, ProviderRestriction.class);
     }

@@ -6,6 +6,7 @@ import com.hsg.relay.domain.Appetite;
 import com.hsg.relay.domain.BusinessFunctionDefinition;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
+import com.hsg.relay.function.field.FieldResolverRegistry;
 import com.hsg.relay.repo.AppetiteRepository;
 import com.hsg.relay.repo.BusinessFunctionRepository;
 import com.hsg.relay.repo.C1ConditionConfigRepository;
@@ -38,6 +39,8 @@ public class FunctionMetadataService {
     public static final String BINDING_RULE = "C1";
     public static final String SOURCE_REQUEST = "REQUEST";
     public static final String SOURCE_FUNCTION = "FUNCTION";
+    /** 取值来源为数据解析：由字段元数据的 resolverCode 对应的字段解析器取数（如集合字段 providerExcludedClientIds）。 */
+    public static final String SOURCE_DATA = "DATA_RESOLVER";
     /** 内置字段「合作方排除客户」及其绑定的函数：启动时若该字段存在且从未配置取值来源，自动补上绑定（幂等）。 */
     public static final String BUILT_IN_EXCLUSION_FIELD = "clientProviderExcluded";
     public static final String BUILT_IN_EXCLUSION_FUNCTION = "clientExcluded";
@@ -87,12 +90,13 @@ public class FunctionMetadataService {
     private final C1ConditionConfigRepository c1Conditions;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
+    private final FieldResolverRegistry resolvers;
 
     public FunctionMetadataService(BusinessFunctionRepository definitions, BusinessFunctionRegistry registry,
                                    List<RequiredFunctionProvider> executors, FunctionExecutionService execution,
                                    ExpressionService expressions, FieldDefinitionRepository fields,
                                    AppetiteRepository appetites, C1ConditionConfigRepository c1Conditions,
-                                   RuleAuditRepository audit, ObjectMapper json) {
+                                   RuleAuditRepository audit, ObjectMapper json, FieldResolverRegistry resolvers) {
         this.definitions = definitions;
         this.registry = registry;
         this.executors = executors;
@@ -103,6 +107,7 @@ public class FunctionMetadataService {
         this.c1Conditions = c1Conditions;
         this.audit = audit;
         this.json = json;
+        this.resolvers = resolvers;
     }
 
     // ---------- 使用策略 ----------
@@ -267,14 +272,37 @@ public class FunctionMetadataService {
      * 请求完全没有表达取值来源（升级前的页面 / 脚本）时返回 {@link #UNCHANGED}，由调用方保持字段已有的配置。
      */
     public FieldBinding binding(String fieldCode, String dataType, String allowedRules, String valueSource, String functionCode, JsonNode argumentBindings) {
-        if (blank(valueSource) && blank(functionCode) && argumentBindings == null) return UNCHANGED;
+        return binding(fieldCode, dataType, allowedRules, valueSource, functionCode, argumentBindings, null, null, null);
+    }
+
+    /**
+     * 同上，并处理取值来源为数据解析（DATA_RESOLVER）的字段：只能适用于 C1，须指定已注册的字段解析器 resolverCode，
+     * 不能同时绑定函数；executionScope / cachePolicy 须为受控取值。
+     */
+    public FieldBinding binding(String fieldCode, String dataType, String allowedRules, String valueSource, String functionCode, JsonNode argumentBindings,
+                                String resolverCode, String executionScope, String cachePolicy) {
+        if (blank(valueSource) && blank(functionCode) && argumentBindings == null && blank(resolverCode)) return UNCHANGED;
         String source = blank(valueSource) ? SOURCE_REQUEST : valueSource.trim().toUpperCase(Locale.ROOT);
         if (SOURCE_REQUEST.equals(source)) {
             if (!blank(functionCode)) throw new IllegalArgumentException("取值来源为请求输入时不能绑定函数");
+            if (!blank(resolverCode)) throw new IllegalArgumentException("取值来源为请求输入时不能配置字段解析器");
             return new FieldBinding(SOURCE_REQUEST, null, null);
         }
+        if (SOURCE_DATA.equals(source)) {
+            if (!blank(functionCode) || (argumentBindings != null && !argumentBindings.isNull()))
+                throw new IllegalArgumentException("取值来源为数据解析时不能绑定函数");
+            if (!rules(allowedRules).equals(List.of(BINDING_RULE)))
+                throw new IllegalArgumentException("数据解析字段目前只能适用于 " + BINDING_RULE + "，请先把适用规则改为 " + BINDING_RULE);
+            String resolver = resolverCode == null ? "" : resolverCode.trim();
+            if (resolver.isEmpty()) throw new IllegalArgumentException("请选择字段解析器（resolverCode）");
+            if (!resolvers.isRegistered(resolver)) throw new IllegalArgumentException("字段解析器 " + resolver + " 尚未注册");
+            if (!List.of("CANDIDATE", "TRANSACTION", "CONTEXT", "GLOBAL").contains(executionScope))
+                throw new IllegalArgumentException("执行作用域无效");
+            if (!List.of("REQUEST", "NONE").contains(cachePolicy)) throw new IllegalArgumentException("缓存策略无效");
+            return new FieldBinding(SOURCE_DATA, null, null);
+        }
         if (!SOURCE_FUNCTION.equals(source))
-            throw new IllegalArgumentException("取值来源只能是 REQUEST（请求输入）或 FUNCTION（函数计算）");
+            throw new IllegalArgumentException("取值来源只能是 REQUEST（请求输入）、FUNCTION（函数计算）或 DATA_RESOLVER（数据解析）");
         if (blank(functionCode)) throw new IllegalArgumentException("请选择字段要绑定的业务函数");
         List<String> rules = rules(allowedRules);
         if (!rules.equals(List.of(BINDING_RULE)))
@@ -295,7 +323,8 @@ public class FunctionMetadataService {
     }
 
     /**
-     * 请求没有表达取值来源时字段的取值配置：新增字段留空（按请求输入处理）；修改时保留已有配置，
+     * 请求没有表达取值来源时字段的取值配置：新增字段留空（按请求输入处理）；修改时保留已有配置
+     * （数据解析字段的解析器、执行作用域、缓存策略由调用方同样保留），
      * 其中已绑定函数的按本次提交的类型和适用规则复核一遍（例如把适用规则改成含 C2 就会被拦下）。
      */
     public FieldBinding unchanged(FieldDefinition existing, String dataType, String allowedRules) {
@@ -322,6 +351,7 @@ public class FunctionMetadataService {
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
+
 
     /** argumentBindings：JSON 对象（参数编码 → 受控路径或字面量）；兼容直接传 JSON 字符串的调用方。 */
     private Map<String, Object> arguments(String owner, JsonNode node) {

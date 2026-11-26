@@ -2,6 +2,7 @@ package com.hsg.relay.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.C1ConditionConfig;
+import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.repo.C1ConditionConfigRepository;
 import org.springframework.stereotype.Service;
@@ -50,6 +51,49 @@ public class C1ConditionService {
         return repository.save(row);
     }
 
+    /** 条件树的结构摘要（不取值、不执行）：函数编码、取值来自字段解析器的字段及其解析器。 */
+    public record Summary(List<String> functionCodes, Map<String, String> resolvedFields) {
+        public static final Summary EMPTY = new Summary(List.of(), Map.of());
+    }
+
+    /**
+     * 当前保存的条件树引用了哪些函数、哪些数据解析字段（集合字段条件，以及函数实参里以 FIELD 方式绑定的字段）。
+     * 只看结构，不执行：客户排除必检先于条件树给出 CLIENT_EXCLUDED 时，审计里仍能记录条件树引用的函数与字段。
+     */
+    public Summary summary() {
+        C1ConditionConfig config = get();
+        if (config.conditionJson == null || config.conditionJson.isBlank()) return Summary.EMPTY;
+        ExpressionService.Node tree;
+        try {
+            tree = json.readValue(config.conditionJson, ExpressionService.Node.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("C1 全局过滤条件已失效：" + ex.getMessage(), ex);
+        }
+        List<String> functionCodes = new ArrayList<>();
+        Map<String, String> resolvedFields = new LinkedHashMap<>();
+        summarize(tree, functionCodes, resolvedFields);
+        return new Summary(List.copyOf(functionCodes), Collections.unmodifiableMap(resolvedFields));
+    }
+
+    private void summarize(ExpressionService.Node node, List<String> functionCodes, Map<String, String> resolvedFields) {
+        if (node == null) return;
+        if (node.isFunction()) {
+            functionCodes.add(node.functionCode());
+            for (Object argument : node.arguments() == null ? List.of() : node.arguments().values())
+                    if (argument instanceof Map<?, ?> mapping && "FIELD".equalsIgnoreCase(String.valueOf(mapping.get("source"))))
+                        resolverOf(String.valueOf(mapping.get("fieldCode")), resolvedFields);
+            return;
+        }
+        if (node.children() != null)
+            for (ExpressionService.Node child : node.children()) summarize(child, functionCodes, resolvedFields);
+        if (node.field() != null && expressions.isDataResolved(node.field())) resolverOf(node.field(), resolvedFields);
+    }
+
+    private void resolverOf(String fieldCode, Map<String, String> resolvedFields) {
+        FieldDefinition field = expressions.field(fieldCode);
+        resolvedFields.put(fieldCode, field == null ? null : field.resolverCode);
+    }
+
     public Outcome evaluate(Map<String, Object> variables, RuleExecutionContext context) {
         C1ConditionConfig config = get();
         if (config.conditionJson == null || config.conditionJson.isBlank())
@@ -57,8 +101,9 @@ public class C1ConditionService {
         try {
             ExpressionService.Node tree = json.readValue(config.conditionJson, ExpressionService.Node.class);
             ExpressionService.Compiled compiled = expressions.compileDetailed(tree, "C1");
+            // 函数绑定字段、数据解析字段（如集合字段）的取值来自规则执行，不算缺值
             List<String> missing = expressions.referencedFields(tree).stream()
-                    .filter(field -> !expressions.isFunctionBound(field))
+                    .filter(expressions::requiresInput)
                     .filter(field -> variables.get(field) == null || variables.get(field).toString().isBlank()).toList();
             if (!missing.isEmpty())
                 return new Outcome(true, false, compiled.readable(), "字段 " + String.join("、", missing) + " 没有取值，准入条件不满足");

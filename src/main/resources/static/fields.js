@@ -15,20 +15,27 @@ const opNames = {
     GTE: '大于等于 ≥',
     LT: '小于 <',
     LTE: '小于等于 ≤',
-    IN: '属于 IN'
+    IN: '属于 IN',
+    CONTAINS: '包含 CONTAINS',
+    NOT_CONTAINS: '不包含 NOT_CONTAINS'
 };
 const allowedByType = {
     STRING: ['EQ', 'NE', 'IN'],
     ENUM: ['EQ', 'NE', 'IN'],
     DECIMAL: ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE'],
     INTEGER: ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE'],
-    BOOLEAN: ['EQ', 'NE']
+    BOOLEAN: ['EQ', 'NE'],
+    // 集合字段：条件值是要判断的单个元素
+    STRING_SET: ['CONTAINS', 'NOT_CONTAINS']
 };
 const split = value => String(value || '').split(',').map(x => x.trim()).filter(Boolean);
 let fields = [], editingCode = null, conditions = [], activeTab = 'catalog';
 // 字段绑定函数用的函数库数据（GET /function-metadata/available?ruleCode=C1）：可用于 C1 条件的函数与受控取值路径
 let functionCatalog = null, functionCatalogError = '', editFunctionCode = '', editBindings = {}, rulesBeforeLock = null;
-const sourceNames = {CANDIDATE: '候选合作方', TRANSACTION: '本笔交易', CONTEXT: '规则上下文'};
+const sourceNames = {CANDIDATE: '候选合作方', TRANSACTION: '本笔交易', CONTEXT: '规则上下文', FIELD: '元数据字段', ANY: '任意来源（显式绑定）'};
+// 字段解析器清单（GET /field-metadata/resolvers）：代码里已注册的 FieldValueResolver，数据解析字段只能从中选择
+let fieldResolvers = [], fieldResolversError = '';
+const isSetType = type => type === 'STRING_SET';
 
 async function api(path, opt = {}) {
     const response = await fetch('/api' + path, {
@@ -53,10 +60,23 @@ function showTab(tab) {
     if (tab === 'functions' && typeof refreshFunctions === 'function') refreshFunctions().catch(error => alert(error.message));
 }
 
-// 取值来源：请求输入（默认）或函数计算（标注绑定的函数）；没有配置过取值来源的旧字段按请求输入
+// 取值来源：请求输入（默认）、函数计算（标注绑定的函数）或数据解析（标注字段解析器）；没有配置过取值来源的旧字段按请求输入
 const sourceCell = f => f.valueSource === 'FUNCTION'
     ? `<span class="meta-tag">ƒ 函数计算</span><br><span class="meta-code mono">${esc(f.functionCode || '—')}</span>`
-    : '<span class="muted">请求输入</span>';
+    : f.valueSource === 'DATA_RESOLVER'
+        ? `<span class="meta-tag">⟐ 数据解析</span><br><span class="meta-code mono">${esc(f.resolverCode || '—')}</span>`
+        : '<span class="muted">请求输入</span>';
+async function loadResolvers() {
+    try {
+        fieldResolvers = await api('/field-metadata/resolvers');
+        fieldResolversError = '';
+    } catch (error) {
+        fieldResolvers = [];
+        fieldResolversError = error.message;
+    }
+    // 编辑器已打开时按刚读到的清单刷新解析器下拉
+    if ($('editorBackdrop').classList.contains('show') && $('editSource').value === 'DATA_RESOLVER') renderResolverOptions();
+}
 
 function renderCatalog() {
     const enabled = fields.filter(f => f.enabled).length;
@@ -106,10 +126,11 @@ const parseBindings = text => {
         return {};
     }
 };
-// 函数计算的字段目前只能适用于 C1（与保存接口的校验一致）：取值来源选「函数计算」时只保留 C1，其余规则不可勾选
+// 函数计算、数据解析的字段目前只能适用于 C1（与保存接口的校验一致）：取值来源选这两种时只保留 C1，其余规则不可勾选
 function lockRulesToC1() {
-    const bound = $('editSource').value === 'FUNCTION';
-    $('editFunctionBlock').classList.toggle('hidden', !bound);
+    const bound = ['FUNCTION', 'DATA_RESOLVER'].includes($('editSource').value);
+    $('editFunctionBlock').classList.toggle('hidden', $('editSource').value !== 'FUNCTION');
+    $('editResolverBlock').classList.toggle('hidden', $('editSource').value !== 'DATA_RESOLVER');
     const inputs = Array.from(document.querySelectorAll('#editRules input'));
     if (bound) {
         // 记住切换前的适用规则，改回「请求输入」时恢复
@@ -129,6 +150,21 @@ function lockRulesToC1() {
             rulesBeforeLock = null;
         }
     }
+}
+// 解析器下拉：只列后端已注册的字段解析器。已保存的解析器如果当前未注册，原样列出并标注，不悄悄换成别的
+let editResolverCode = '';
+function renderResolverOptions() {
+    const select = $('editResolver'), known = fieldResolvers.includes(editResolverCode);
+    const retained = !known && fieldResolvers.length && editResolverCode ? [editResolverCode] : [];
+    select.innerHTML = (fieldResolvers.length ? '' : `<option value="">${fieldResolversError ? '解析器清单加载失败：' + esc(fieldResolversError) : '没有已注册的字段解析器'}</option>`)
+        + [...fieldResolvers, ...retained].map(code => `<option value="${esc(code)}">${esc(code)}${retained.includes(code) ? '（当前未注册，保存会被拦下）' : ''}</option>`).join('');
+    select.disabled = !fieldResolvers.length;
+    if (fieldResolvers.length && !known && !retained.length) editResolverCode = fieldResolvers[0];
+    select.value = editResolverCode;
+    $('editResolverRetry').classList.toggle('hidden', !!fieldResolvers.length);
+    $('editResolverHint').textContent = isSetType($('editType').value)
+        ? `元素类型 elementType：STRING。集合在规则执行中由解析器读取，读取失败时报错，不按空集合处理。`
+        : '解析器的返回值类型须与字段的数据类型一致。';
 }
 // 函数下拉：只列返回类型与字段类型一致的函数。已保存的绑定如果当前不可用（停用、不再适用 C1、实现未注册），
 // 原样列出并标注，不悄悄换成别的函数；换了函数时参数绑定重新取新函数的默认值
@@ -176,12 +212,16 @@ function openEditor(code) {
     $('editEnabled').checked = f?.enabled ?? true;
     renderChecks('editRules', rules.map(r => [r, r]), split(f?.allowedRules || 'C2'));
     renderOperators(split(f?.allowedOperators || ''));
-    // 取值来源：没有配置过的旧字段按请求输入
-    $('editSource').value = f?.valueSource === 'FUNCTION' ? 'FUNCTION' : 'REQUEST';
+    // 取值来源：没有配置过的旧字段按请求输入；集合字段只能由字段解析器取数
+    $('editSource').value = isSetType($('editType').value) ? 'DATA_RESOLVER' : ['FUNCTION', 'DATA_RESOLVER'].includes(f?.valueSource) ? f.valueSource : 'REQUEST';
     editFunctionCode = f?.functionCode || '';
     editBindings = parseBindings(f?.argumentBindings);
+    editResolverCode = f?.resolverCode || '';
+    $('editScope').value = f?.executionScope || 'CANDIDATE';
+    $('editCache').value = f?.cachePolicy || 'REQUEST';
     rulesBeforeLock = null;
     lockRulesToC1();
+    renderResolverOptions();
     renderFunctionOptions();
     renderBindingInputs();
     $('editError').textContent = '';
@@ -197,7 +237,7 @@ function closeEditor() {
 async function saveField(event) {
     event.preventDefault();
     $('editError').textContent = '';
-    const bound = $('editSource').value === 'FUNCTION';
+    const source = $('editSource').value, bound = source === 'FUNCTION', resolved = source === 'DATA_RESOLVER';
     const payload = {
         fieldCode: $('editCode').value.trim(),
         fieldName: $('editName').value.trim(),
@@ -206,9 +246,14 @@ async function saveField(event) {
         allowedRules: checked('editRules').join(','),
         valueOptions: $('editOptions').disabled ? '' : $('editOptions').value.trim(),
         enabled: $('editEnabled').checked,
-        // 取值来源随每次保存显式提交：REQUEST 请求输入 / FUNCTION 函数计算（须指定函数）
-        valueSource: bound ? 'FUNCTION' : 'REQUEST',
+        // 取值来源随每次保存显式提交：REQUEST 请求输入 / FUNCTION 函数计算（须指定函数）/ DATA_RESOLVER 数据解析（须指定解析器）
+        valueSource: source,
         functionCode: bound ? $('editFunction').value : null,
+        // 数据解析字段：字段解析器、元素类型（集合目前只支持 STRING）、执行作用域、缓存策略
+        resolverCode: resolved ? $('editResolver').value : null,
+        elementType: resolved && isSetType(payload.dataType) ? 'STRING' : null,
+        executionScope: resolved ? $('editScope').value : null,
+        cachePolicy: resolved ? $('editCache').value : null,
         // 参数绑定取输入框里填写的值（输入框默认带出函数库的默认绑定）
         argumentBindings: bound ? Object.fromEntries(Array.from($('editBindings').querySelectorAll('[data-binding]'))
             .filter(input => input.value.trim()).map(input => [input.dataset.binding, input.value.trim()])) : null
@@ -219,6 +264,10 @@ async function saveField(event) {
     }
     if (bound && !payload.functionCode) {
         $('editError').textContent = '请选择字段要绑定的业务函数';
+        return;
+    }
+    if (resolved && !payload.resolverCode) {
+        $('editError').textContent = '请选择字段解析器（resolverCode）';
         return;
     }
     $('saveField').disabled = true;
@@ -271,13 +320,13 @@ function renderConditions() {
     $('exprLibrary').textContent = `${$('exprRule').value} · ${available.length} 个已启用字段可用于表达式`;
     if (!conditions.length && available.length) conditions = [defaultCondition()];
     conditions = conditions.map(c => available.some(f => f.fieldCode === c.field) ? c : defaultCondition());
-    // 由函数计算取值的字段在名称后标注 ƒ：它只能在规则执行中取值，不能在这里手工试算
-    const bound = f => f.valueSource === 'FUNCTION' ? ' ƒ' : '';
+    // 由函数计算取值的字段在名称后标注 ƒ，由字段解析器取数的字段标注 ⟐：它们只能在规则执行中取值，不能在这里手工试算
+    const bound = f => f.valueSource === 'FUNCTION' ? ' ƒ' : f.valueSource === 'DATA_RESOLVER' ? ' ⟐' : '';
     $('conditionNodes').innerHTML = available.length ? conditions.map((c, i) => {
         const f = selectedField(c.field), operators = split(f.allowedOperators), values = split(f.valueOptions);
         if (!operators.includes(c.operator)) c.operator = operators[0];
-        const valueControl = f.dataType === 'BOOLEAN' ? `<select class="meta-value" data-index="${i}" data-part="value"><option value="true" ${c.value === 'true' ? 'selected' : ''}>true</option><option value="false" ${c.value === 'false' ? 'selected' : ''}>false</option></select>` : values.length && c.operator !== 'IN' ? `<select class="meta-value" data-index="${i}" data-part="value">${values.map(v => `<option value="${esc(v)}" ${c.value === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : `<input class="meta-value" data-index="${i}" data-part="value" value="${esc(c.value)}" placeholder="${c.operator === 'IN' ? '逗号分隔多个值' : '请输入比较值'}" ${['DECIMAL', 'INTEGER'].includes(f.dataType) ? 'type="number" step="any"' : ''}>`;
-        return `<div class="meta-cond"><select aria-label="字段 ${i + 1}" data-index="${i}" data-part="field">${available.map(x => `<option value="${esc(x.fieldCode)}" ${x.fieldCode === c.field ? 'selected' : ''}>${esc(x.fieldName)}${bound(x)} · ${esc(x.fieldCode)}</option>`).join('')}</select><select aria-label="运算符 ${i + 1}" data-index="${i}" data-part="operator">${operators.map(op => `<option value="${esc(op)}" ${op === c.operator ? 'selected' : ''}>${esc(opNames[op] || op)}</option>`).join('')}</select>${valueControl}<button type="button" class="btn secondary tiny" data-remove="${i}" ${conditions.length === 1 ? 'disabled' : ''}>✕</button><span class="meta-cond-hint">${esc(f.dataType)}${bound(f) ? ' · 由函数计算取值' : ''}${values.length ? ' · 可选值：' + esc(values.join(', ')) : ''}</span></div>`;
+        const valueControl = f.dataType === 'BOOLEAN' ? `<select class="meta-value" data-index="${i}" data-part="value"><option value="true" ${c.value === 'true' ? 'selected' : ''}>true</option><option value="false" ${c.value === 'false' ? 'selected' : ''}>false</option></select>` : values.length && c.operator !== 'IN' ? `<select class="meta-value" data-index="${i}" data-part="value">${values.map(v => `<option value="${esc(v)}" ${c.value === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>` : `<input class="meta-value" data-index="${i}" data-part="value" value="${esc(c.value)}" placeholder="${c.operator === 'IN' ? '逗号分隔多个值' : isSetType(f.dataType) ? '输入要判断的单个元素' : '请输入比较值'}" ${['DECIMAL', 'INTEGER'].includes(f.dataType) ? 'type="number" step="any"' : ''}>`;
+        return `<div class="meta-cond"><select aria-label="字段 ${i + 1}" data-index="${i}" data-part="field">${available.map(x => `<option value="${esc(x.fieldCode)}" ${x.fieldCode === c.field ? 'selected' : ''}>${esc(x.fieldName)}${bound(x)} · ${esc(x.fieldCode)}</option>`).join('')}</select><select aria-label="运算符 ${i + 1}" data-index="${i}" data-part="operator">${operators.map(op => `<option value="${esc(op)}" ${op === c.operator ? 'selected' : ''}>${esc(opNames[op] || op)}</option>`).join('')}</select>${valueControl}<button type="button" class="btn secondary tiny" data-remove="${i}" ${conditions.length === 1 ? 'disabled' : ''}>✕</button><span class="meta-cond-hint">${esc(f.dataType)}${f.valueSource === 'FUNCTION' ? ' · 由函数计算取值' : f.valueSource === 'DATA_RESOLVER' ? ' · 由字段解析器取数' : ''}${values.length ? ' · 可选值：' + esc(values.join(', ')) : ''}</span></div>`;
     }).join('') : '<div class="meta-empty">当前规则没有可用字段。请先在字段库中启用并配置适用规则。</div>';
     $('addCondition').disabled = !available.length || conditions.length >= 20;
     $('runExpression').disabled = !available.length;
@@ -300,9 +349,9 @@ function changeCondition(index, part, value) {
 async function runExpression() {
     try {
         if (!conditions.length) throw Error('请先添加条件');
-        // 函数计算的字段只能在规则执行中取值（如 C1 页的模拟校验），这里没有调用函数所需的上下文
-        const computed = conditions.filter(c => selectedField(c.field)?.valueSource === 'FUNCTION');
-        if (computed.length) throw Error(`字段 ${computed.map(c => '「' + selectedField(c.field).fieldName + '」').join('、')} 由业务函数计算取值，只能在规则执行（如 C1 页的模拟校验）中求值，不能在这里手工试算。`);
+        // 函数计算、数据解析的字段只能在规则执行中取值（如 C1 页的模拟校验），这里没有调用函数 / 字段解析器所需的上下文
+        const computed = conditions.filter(c => ['FUNCTION', 'DATA_RESOLVER'].includes(selectedField(c.field)?.valueSource));
+        if (computed.length) throw Error(`字段 ${computed.map(c => '「' + selectedField(c.field).fieldName + '」').join('、')} 由业务函数或字段解析器取值，只能在规则执行（如 C1 页的模拟校验）中求值，不能在这里手工试算。`);
         const variables = JSON.parse($('exprVars').value);
         const tree = {
             logic: $('groupLogic').value,
@@ -319,8 +368,9 @@ async function runExpression() {
 }
 
 async function refresh() {
-    // 函数库数据与字段列表并行读取；读取失败不影响字段管理，只在绑定函数时提示
+    // 函数库数据、解析器清单与字段列表并行读取；读取失败不影响字段管理，只在绑定函数 / 选择解析器时提示
     loadFunctionCatalog();
+    loadResolvers();
     fields = await api('/field-metadata');
     renderCatalog();
     renderConditions();
@@ -340,15 +390,25 @@ $('fieldRows').onclick = event => {
     if (remove) deleteField(remove.dataset.delete);
 };
 $('newField').onclick = () => openEditor();
-// 数据类型决定可绑定的函数（返回类型须一致）：类型变化后重新确定函数，函数变了参数绑定随之重取默认值
+// 数据类型决定可绑定的函数（返回类型须一致）：类型变化后重新确定函数，函数变了参数绑定随之重取默认值。
+// 集合类型（STRING_SET）只能由字段解析器取数：选它时取值来源自动切到「数据解析」；改回其它类型时回到「请求输入」
 $('editType').onchange = () => {
+    if (isSetType($('editType').value)) $('editSource').value = 'DATA_RESOLVER';
+    else if ($('editSource').value === 'DATA_RESOLVER') $('editSource').value = 'REQUEST';
     renderOperators();
+    renderResolverOptions();
+    lockRulesToC1();
     renderFunctionOptions();
 };
 $('editSource').onchange = () => {
     lockRulesToC1();
+    renderResolverOptions();
     renderFunctionOptions();
 };
+$('editResolver').onchange = () => {
+    editResolverCode = $('editResolver').value;
+};
+$('editResolverRetry').onclick = loadResolvers;
 $('editFunction').onchange = () => {
     editFunctionCode = $('editFunction').value;
     editBindings = {};

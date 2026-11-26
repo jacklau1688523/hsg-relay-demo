@@ -307,6 +307,7 @@
         .function-editor { width:min(760px,100%) }
         .function-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 18px }
         .function-form-grid .span-all { grid-column:1/-1 }
+        .meta-resolver-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px }
         .function-param { display:grid; grid-template-columns:1.15fr .8fr 1fr auto; gap:7px; margin-top:8px }
         .function-param .btn { padding:6px 10px }
         .function-name { font-weight:700 }
@@ -415,6 +416,8 @@
                 <div class="notice meta-help">字段编码保存后不可更改。停用字段会从试算菜单、C1 触发条件和 C2
                     模拟页的下拉可选值中移除；已保存规则仍保留原条件，重新编译时会检查字段状态。配置变更记录在审计日志中。
                     取值来源为「函数计算」的字段只能适用于 C1：请求里提交的同名取值不采用，条件值来自绑定的函数库业务函数；绑定的函数停用后，引用该字段的条件不能执行。
+                    取值来源为「数据解析」的字段（数据类型 STRING_SET，元素类型 STRING）同样只能适用于 C1：取值由字段解析器（如 providerExclusionListResolver：当前候选合作方在决策时间的有效排除客户集合）在规则执行中读取，
+                    可用运算符为 CONTAINS / NOT_CONTAINS（条件值是要判断的单个元素）；条件树里要拿交易或候选路由里的值做成员判断时，用函数库的通用函数 collectionContains（集合是否包含指定值）。
                 </div>
             </section>
             <section id="functionsTab" class="hidden">
@@ -448,7 +451,7 @@
                         </div>
                         <div class="notice meta-help">
                             菜单按所选规则只展示已启用字段。字段类型决定可用运算符；枚举可选值来自元数据中心。
-                            取值来源为「函数计算」的字段（名称后有 ƒ）只能在规则执行中取值，不能在这里手工试算。
+                            取值来源为「函数计算」的字段（名称后有 ƒ）和「数据解析」的字段（名称后有 ⟐）只能在规则执行中取值，不能在这里手工试算。
                         </div>
                         <a class="meta-link" href="/c2-regulatory.html">前往 C2 全局监管路由规则 →</a></div>
                     <aside class="panel"><h2>表达式试算</h2>
@@ -491,6 +494,7 @@
                 <option value="DECIMAL">小数 DECIMAL</option>
                 <option value="INTEGER">整数 INTEGER</option>
                 <option value="BOOLEAN">布尔 BOOLEAN</option>
+                <option value="STRING_SET">文本集合 STRING_SET</option>
             </select></div>
             <div class="field"><label>适用规则 *</label>
                 <div id="editRules" class="meta-checks"></div>
@@ -502,14 +506,33 @@
             <div class="field"><label for="editSource">取值来源</label><select id="editSource">
                 <option value="REQUEST">请求输入 REQUEST · 由调用方在请求中提供</option>
                 <option value="FUNCTION">函数计算 FUNCTION · 由函数库的业务函数计算</option>
+                <option value="DATA_RESOLVER">数据解析 DATA_RESOLVER · 由字段解析器取数（集合字段）</option>
             </select>
-                <div class="muted">函数计算的字段只能适用于 C1：请求里提交的同名取值不采用，条件值来自绑定的函数。</div>
+                <div class="muted">函数计算、数据解析的字段只能适用于 C1：请求里提交的同名取值不采用，条件值来自绑定的函数或字段解析器。</div>
             </div>
             <div class="field" id="editFunctionBlock">
                 <label for="editFunction">绑定函数 *</label><select id="editFunction"></select>
                 <div id="editFunctionHint" class="muted"></div>
                 <button type="button" class="btn secondary tiny hidden" id="editFunctionRetry">重新加载函数库</button>
                 <div id="editBindings" class="meta-bindings"></div>
+            </div>
+            <div class="field hidden" id="editResolverBlock">
+                <div class="meta-resolver-grid">
+                <div class="field"><label for="editResolver">字段解析器 resolverCode *</label><select id="editResolver"></select>
+                <div class="muted">只能选择后端已注册的字段解析器（白名单）。元数据不会生成代码；集合的取值在规则执行中由解析器读取。</div></div>
+                <div class="field"><label for="editScope">执行作用域 executionScope *</label><select id="editScope">
+                    <option value="CANDIDATE">候选合作方 CANDIDATE · 随当前候选路由取数</option>
+                    <option value="TRANSACTION">本笔交易 TRANSACTION</option>
+                    <option value="CONTEXT">规则上下文 CONTEXT</option>
+                    <option value="GLOBAL">全局 GLOBAL</option>
+                </select></div>
+                <div class="field"><label for="editCache">缓存策略 cachePolicy *</label><select id="editCache">
+                    <option value="REQUEST">REQUEST · 本次求值内复用</option>
+                    <option value="NONE">NONE · 每次重新解析</option>
+                </select></div>
+                </div>
+                <div class="muted" id="editResolverHint"></div>
+                <button type="button" class="btn secondary tiny hidden" id="editResolverRetry">重新加载解析器清单</button>
             </div>
             <div class="field"><label for="editOptions">可选值（逗号分隔）</label><textarea id="editOptions"
                                                                                           class="meta-json"

@@ -1,9 +1,12 @@
 package com.hsg.relay.function;
 
+import com.hsg.relay.function.field.FieldValueService;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
+import java.util.function.Supplier;
 
 /**
  * 一次规则求值的上下文（请求级）。每次 C1 判定新建一个，不跨交易、客户、合作方复用。
@@ -52,6 +55,9 @@ public final class RuleExecutionContext {
     private final Map<String, Object> values = new HashMap<>();
     private final Map<String, FunctionExecutionService.Call> memo = new HashMap<>();
     private final List<FunctionExecutionService.Call> calls = new ArrayList<>();
+    // 请求级数据缓存：元数据字段取值、业务集合，按含上下文的 key 只加载一次
+    private final Map<String, Object> data = new HashMap<>();
+    private final List<FieldValueService.Resolution> resolutions = new ArrayList<>();
 
     private RuleExecutionContext(String ruleCode, List<Path> paths) {
         this.ruleCode = ruleCode;
@@ -134,5 +140,38 @@ public final class RuleExecutionContext {
     /** 本次求值内的全部函数调用记录（含复用结果的调用），顺序与执行顺序一致。 */
     public List<FunctionExecutionService.Call> calls() {
         return List.copyOf(calls);
+    }
+
+    /** 请求级缓存里是否已有该键的数据。 */
+    public boolean hasData(String key) {
+        return data.containsKey(key);
+    }
+
+    /** 读取请求级缓存里的数据；没有时返回 null（加载请走 {@link #data(String, Supplier)}）。 */
+    public Object data(String key) {
+        return data.get(key);
+    }
+
+    /**
+     * 请求级数据缓存：相同 key 只加载一次，之后在本次求值内复用。key 须包含隔离业务数据所需的上下文
+     * （合作方、字段、决策时间等）。加载失败（抛异常）不缓存；loader 返回 null 视为未加载，直接报错。
+     */
+    public Object data(String key, Supplier<Object> loader) {
+        Object cached = data.get(key);
+        if (cached != null) return cached;
+        Object value = loader.get();
+        if (value == null) throw new IllegalStateException("请求级数据缓存不接受空结果：" + key);
+        Object earlier = data.putIfAbsent(key, value);
+        return earlier != null ? earlier : value;
+    }
+
+    /** 记录一次数据字段解析（字段编码、解析器、耗时、是否复用），供求值日志和审计使用。 */
+    public void resolved(FieldValueService.Resolution resolution) {
+        resolutions.add(resolution);
+    }
+
+    /** 本次求值内的数据字段解析记录，顺序与解析顺序一致（复用的也在其中）。 */
+    public List<FieldValueService.Resolution> resolutions() {
+        return List.copyOf(resolutions);
     }
 }

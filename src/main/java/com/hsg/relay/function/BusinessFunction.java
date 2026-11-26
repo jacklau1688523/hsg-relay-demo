@@ -10,8 +10,9 @@ import java.util.Map;
  */
 public interface BusinessFunction {
     /**
-     * 参数声明：code / type（STRING、INTEGER、DECIMAL、BOOLEAN、DATE）/ source（CANDIDATE、TRANSACTION、CONTEXT）/
+     * 参数声明：code / type（STRING、INTEGER、DECIMAL、BOOLEAN、DATE、STRING_SET 集合）/ source（CANDIDATE、TRANSACTION、CONTEXT、FIELD、ANY）/
      * 是否必填 / 未绑定时取默认值的受控路径。
+     * source 为 FIELD 的参数只能绑定数据解析字段；ANY 表示四种来源都可以，但必须显式绑定，不按参数名推断取值路径。
      */
     record Parameter(String code, String type, String source, boolean required, String defaultPath) {
         public Parameter(String code, String type, String source, boolean required) {

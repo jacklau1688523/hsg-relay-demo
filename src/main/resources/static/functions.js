@@ -22,7 +22,7 @@ function previewFunction() { $('fnPreview').textContent = JSON.stringify(functio
 function addFunctionParam(param = {}) {
     const row = document.createElement('div');
     row.className = 'function-param';
-    row.innerHTML = `<input data-fn-param="code" placeholder="参数编码" maxlength="64" value="${esc(param.code || '')}" aria-label="参数编码"><select data-fn-param="type" aria-label="参数类型">${['STRING','INTEGER','DECIMAL','BOOLEAN','DATE'].map(t => `<option ${t === param.type ? 'selected' : ''}>${t}</option>`).join('')}</select><select data-fn-param="source" aria-label="参数来源">${['CANDIDATE','TRANSACTION','CONTEXT'].map(t => `<option ${t === param.source ? 'selected' : ''}>${t}</option>`).join('')}</select><button type="button" class="btn secondary tiny" data-remove-fn-param aria-label="删除参数">✕</button>`;
+    row.innerHTML = `<input data-fn-param="code" placeholder="参数编码" maxlength="64" value="${esc(param.code || '')}" aria-label="参数编码"><select data-fn-param="type" aria-label="参数类型">${['STRING','INTEGER','DECIMAL','BOOLEAN','DATE','STRING_SET'].map(t => `<option ${t === param.type ? 'selected' : ''}>${t}</option>`).join('')}</select><select data-fn-param="source" aria-label="参数来源">${['CANDIDATE','TRANSACTION','CONTEXT','FIELD','ANY'].map(t => `<option ${t === param.source ? 'selected' : ''}>${t}</option>`).join('')}</select><button type="button" class="btn secondary tiny" data-remove-fn-param aria-label="删除参数">✕</button>`;
     $('fnParams').append(row);
     previewFunction();
 }

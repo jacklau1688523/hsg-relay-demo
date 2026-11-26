@@ -4,8 +4,8 @@ let c1ConditionConfig = null;
 // 函数库数据（GET /function-metadata/available?ruleCode=C1）：受控取值路径、系统必检清单、可添加到条件的函数。
 // 打开页面和打开「添加函数」时读取；读取失败不影响字段条件的配置，函数条件显示为不可用并说明原因。
 let c1FunctionCatalog = null, c1FunctionCatalogError = '', c1FunctionTarget = null, c1FunctionDrafts = {}, c1FunctionResults = {};
-const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 >',GTE:'大于等于 ≥',LT:'小于 <',LTE:'小于等于 ≤'};
-const c1Sources = {CANDIDATE:'候选合作方',TRANSACTION:'本笔交易',CONTEXT:'规则上下文'};
+const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 >',GTE:'大于等于 ≥',LT:'小于 <',LTE:'小于等于 ≤',CONTAINS:'包含 CONTAINS',NOT_CONTAINS:'不包含 NOT_CONTAINS'};
+const c1Sources = {CANDIDATE:'候选合作方',TRANSACTION:'本笔交易',CONTEXT:'规则上下文',FIELD:'元数据字段'};
 const c1Split = value => String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
 // 节点类型与服务端一致：有子条件的是条件组 GROUP；带 functionCode 的是函数条件 FUNCTION；其余是字段条件 FIELD。
 // 旧版保存的 JSON 不带 type，按同样的规则识别。
@@ -20,9 +20,16 @@ function c1FunctionName(code){
   if(!c1FunctionCatalog)return code||'（未指定函数）';
   return c1FunctionCatalog.functions.find(f=>f.functionCode===code)?.functionName||c1FunctionCatalog.required.find(r=>r.functionCode===code)?.functionName||code||'（未指定函数）';
 }
-// 字段下拉里的名称：绑定了函数的字段标注取值来源，操作员能看出这个条件不需要请求提供取值
-function c1FieldLabel(f){return f.valueSource==='FUNCTION'&&f.functionCode?`${f.fieldName}（ƒ ${c1FunctionName(f.functionCode)}）`:f.fieldName;}
-const c1Show = value => value===undefined||value===null?'—':typeof value==='object'?JSON.stringify(value):String(value);
+// 字段下拉里的名称：绑定了函数的字段标注取值来源，操作员能看出这个条件不需要请求提供取值；
+// 数据解析字段（集合）同样标注：取值来自字段解析器，条件是「集合是否包含条件值」
+function c1FieldLabel(f){
+  if(f.valueSource==='FUNCTION'&&f.functionCode)return `${f.fieldName}（ƒ ${c1FunctionName(f.functionCode)}）`;
+  if(f.valueSource==='DATA_RESOLVER')return `${f.fieldName}（集合 · 解析器取值）`;
+  return f.fieldName;
+}
+// 集合实参的展示形态（服务端返回 source / materialized / size / sample）：来源、元素个数、前几个元素，不含完整名单
+const c1CollectionView=v=>`集合 ${v.source||'—'}（${v.materialized?`${v.size} 个元素`:'未全量加载 · 成员查询'}）${Array.isArray(v.sample)&&v.sample.length?`：${v.sample.map(String).join(', ')}${v.size>v.sample.length?' …':''}`:''}`;
+const c1Show = value => value===undefined||value===null?'—':typeof value==='object'?(c1IsCollection(value)?c1CollectionView(value):JSON.stringify(value)):String(value);
 // 读取已保存的条件树：补上节点类型（旧 JSON 不带 type），函数条件的参数补成对象，页面内部统一使用同一种形态
 function c1Normalize(node){
   if(c1IsGroup(node)){node.type='GROUP';node.children.forEach(c1Normalize);}
@@ -58,7 +65,18 @@ function c1Add(path,kind){
 let c1Notices=[],c1Shown=[];
 function c1HasOptions(node){const f=c1Fields().find(x=>x.fieldCode===node.field);return node.operator!=='IN'&&(f?.dataType==='BOOLEAN'||c1Split(f?.valueOptions).length>0);}
 function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();}
-function c1SetArgument(path,code,value){const node=c1Node(path);node.arguments={...(node.arguments||{}),[code]:value};}
+// 参数绑定：使用「来源 + 绑定」控件的参数保存为对象（{source, fieldCode}），其余沿用字符串（受控路径 / 字面量）
+function c1SetArgument(path,code,value){
+  const node=c1Node(path),p=c1Function(node.functionCode)?.parameters.find(x=>x.code===code);
+  const mapping=c1Mapping(p,node.arguments?.[code])||(c1UnboundMapping(p,node.arguments?.[code])?c1DefaultMapping(p):null);
+  node.arguments={...(node.arguments||{}),[code]:mapping?{...mapping,fieldCode:value}:value};
+}
+// 改来源：可绑定项随来源变化（字段 ↔ 受控路径），取该来源下第一个类型一致的项
+function c1SetArgumentSource(path,code,source){
+  const node=c1Node(path),p=c1Function(node.functionCode)?.parameters.find(x=>x.code===code);
+  node.arguments={...(node.arguments||{}),[code]:{source,fieldCode:c1BindingOptions(p,source)[0]?.value||''}};
+  c1RenderTree();
+}
 function c1RemoveArgument(path,code){const node=c1Node(path);delete node.arguments[code];c1RenderTree();}
 function c1RenderLeaf(node,path){
   const fields=c1Fields(),f=fields.find(x=>x.fieldCode===node.field)||fields[0];if(!f)return '<div class="err">请先在元数据中心启用 C1 字段</div>';
@@ -73,7 +91,7 @@ function c1RenderLeaf(node,path){
   const stale=values.length&&!values.includes(current);
   if(stale)c1Notices.push(`字段 ${f.fieldName} 的条件值「${current}」不在元数据中心当前可选值中，请重新选择`);
   const listed=stale?[current,...values]:values;
-  const control=values.length?`<select aria-label="条件值" onchange="c1Change('${path}','value',this.value)">${listed.map(v=>`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(v)}${stale&&v===current?'（已不在可选值中）':''}</option>`).join('')}</select>`:`<input aria-label="条件值" value="${esc(node.value)}" placeholder="${node.operator==='IN'?'多个值用逗号分隔':'输入条件值'}" oninput="c1Change('${path}','value',this.value)" ${['DECIMAL','INTEGER'].includes(f.dataType)?'type="number" step="any"':''}>`;
+  const control=values.length?`<select aria-label="条件值" onchange="c1Change('${path}','value',this.value)">${listed.map(v=>`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(v)}${stale&&v===current?'（已不在可选值中）':''}</option>`).join('')}</select>`:`<input aria-label="条件值" value="${esc(node.value)}" placeholder="${node.operator==='IN'?'多个值用逗号分隔':f.dataType==='STRING_SET'?'输入要判断的单个元素，如客户编号':'输入条件值'}" oninput="c1Change('${path}','value',this.value)" ${['DECIMAL','INTEGER'].includes(f.dataType)?'type="number" step="any"':''}>`;
   return `<div class="c1-line"><select aria-label="条件字段" onchange="c1Change('${path}','field',this.value)">${fields.map(x=>`<option value="${esc(x.fieldCode)}" ${x.fieldCode===node.field?'selected':''}>${esc(c1FieldLabel(x))}</option>`).join('')}</select><select aria-label="比较方式" onchange="c1Change('${path}','operator',this.value)">${ops.map(op=>`<option value="${esc(op)}" ${op===node.operator?'selected':''}>${esc(c1Operators[op]||op)}</option>`).join('')}</select>${control}<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')" aria-label="删除条件">✕</button></div>`;
 }
 
@@ -91,14 +109,61 @@ function c1ValueControl(fn,value,action){
   const numeric=['INTEGER','DECIMAL'].includes(fn.returnType);
   return `<input aria-label="期望值" type="${numeric?'number':'text'}" step="any" value="${esc(current)}" placeholder="${fn.returnType==='DATE'?'2026-11-25T10:15:30':numeric?'数值':'输入期望值'}" oninput="${action}">`;
 }
-// 每个参数一个绑定输入框：下拉候选是受控取值路径（$candidate.providerCode），也可以填字面量；合法性由服务端校验。
-// handler(code) 返回输入框的事件属性；remover(code) 用于移除不在函数参数中的多余绑定（选择器里没有多余绑定，不传）。
-function c1ArgumentControls(fn,bindings,handler,remover){
+// ---------- 参数的显式来源映射（集合类函数） ----------
+// 参数声明 source 为 ANY / FIELD 时，绑定写成对象：{"source":"FIELD","fieldCode":"providerExcludedClientIds"} 取元数据字段的解析结果，
+// {"source":"TRANSACTION","fieldCode":"clientId"} 取受控路径 transaction.clientId。来源和绑定项都由操作员显式选择，
+// 不按参数名去猜取值路径；已保存的字符串绑定（受控路径 / 字面量）原样兼容。其余参数沿用字符串写法。
+const c1ArgumentSources=['FIELD','CANDIDATE','TRANSACTION','CONTEXT'];
+// 参数的中文名：已知角色给出名称（集合字段 / 比较元素），其余用参数编码
+const c1ParamLabels={collection:'集合字段',element:'比较元素',leftCollection:'左侧集合',rightCollection:'右侧集合',providerCode:'合作方编码',clientId:'客户编号',decisionTime:'决策时间'};
+const c1ParamLabel=p=>c1ParamLabels[p.code]||p.code;
+// 可绑定为 FIELD 实参的字段：已启用、适用 C1、取值来源为数据解析（如集合字段，由字段解析器取数）
+const c1DataFields=()=>fieldDefs.filter(f=>f.enabled&&f.valueSource==='DATA_RESOLVER'&&c1Split(f.allowedRules).includes('C1'));
+// 参数允许的来源；标量参数默认先看本笔交易（如比较元素 ← 客户编号），集合参数先看元数据字段
+const c1SourcesFor=p=>p.source==='ANY'?c1ArgumentSources:p.source==='FIELD'?['FIELD']:[p.source].filter(Boolean);
+const c1SourceOrder=p=>p.type==='STRING_SET'?c1SourcesFor(p):['TRANSACTION','CANDIDATE','CONTEXT','FIELD'].filter(s=>c1SourcesFor(p).includes(s));
+const c1IsCollection=v=>v&&typeof v==='object'&&'source' in v&&'materialized' in v;
+const c1IsMapping=value=>value!==null&&typeof value==='object';
+// 参数是否使用「来源 + 绑定」控件：声明为 ANY / FIELD 且尚未按字符串绑定，或已保存的绑定是对象
+const c1UnboundMapping=(p,value)=>(p.source==='ANY'||p.source==='FIELD')&&!(typeof value==='string'&&value.trim());
+const c1Explicit=(p,value)=>c1IsMapping(value)||c1UnboundMapping(p,value);
+// 某个来源下类型匹配的可绑定项：FIELD 为数据解析字段，其余为该分组的受控取值路径（值为路径的最后一段，如 clientId）
+function c1BindingOptions(p,source){
+  if(source==='FIELD')return c1DataFields().filter(f=>f.dataType===p.type).map(f=>({value:f.fieldCode,label:`${f.fieldName}（${f.fieldCode}）`}));
+  const prefix=String(source||'').toLowerCase()+'.';
+  return (c1FunctionCatalog?.paths||[]).filter(x=>x.path.startsWith(prefix)&&x.type===p.type).map(x=>({value:x.path.slice(prefix.length),label:`${x.label}（${x.path}）`}));
+}
+// 尚未绑定时按来源顺序取第一个类型一致的项：集合 ← 合作方有效排除客户集合，比较元素 ← 本笔交易 客户编号
+function c1DefaultMapping(p){
+  for(const source of c1SourceOrder(p)){
+    const first=c1BindingOptions(p,source)[0];
+    if(first)return {source,fieldCode:first.value};
+  }
+  return {source:c1SourceOrder(p)[0]||'FIELD',fieldCode:''};
+}
+function c1Mapping(p,value){return c1IsMapping(value)?{source:String(value.source||'').toUpperCase(),fieldCode:String(value.fieldCode??value.path??'')}:null;}
+const c1SourceOption=s=>s==='FIELD'?'元数据字段 FIELD':`${c1Sources[s]||s} ${s}`;
+// 每个参数一个绑定控件：字符串写法是输入框（候选为受控取值路径 $candidate.providerCode，也可填字面量）；
+// 显式映射是「来源 + 绑定」两个下拉。合法性由服务端校验。
+// handlers.change(code) 返回绑定项变化的事件属性；handlers.source(code) 返回来源变化的事件属性；
+// remover(code) 用于移除不在函数参数中的多余绑定（选择器里没有多余绑定，不传）。
+function c1ArgumentControls(fn,bindings,handler,remover,handlers={}){
   const parameters=fn.parameters||[], known=parameters.map(p=>p.code);
   const extra=remover?Object.keys(bindings||{}).filter(code=>!known.includes(code)):[];
   return parameters.map(p=>{
+    const value=bindings?.[p.code];
     const hint=[p.type,c1Sources[p.source]||p.source||''].filter(Boolean).join(' · ')+(p.defaultBinding?` · 默认 ${p.defaultBinding}`:'');
-    return `<div class="c1-arg"><label>${esc(p.code)}${p.required?' <span class="c1-required-mark">*</span>':''} <span class="muted">${esc(hint)}</span></label><input list="c1PathOptions" aria-label="参数 ${esc(p.code)}" value="${esc(bindings?.[p.code]??p.defaultBinding??'')}" placeholder="${p.required?'必填：选择受控路径或填写字面量':'可留空'}" ${handler(p.code)}></div>`;
+    const label=`${esc(c1ParamLabel(p))}${p.required?' <span class="c1-required-mark">*</span>':''} <span class="muted">${esc(p.code)} · ${esc(hint)}</span>`;
+    if(c1Explicit(p,value)){
+      const mapping=c1Mapping(p,value)||c1DefaultMapping(p),sources=c1SourcesFor(p);
+      const knownSource=sources.includes(mapping.source),options=knownSource?c1BindingOptions(p,mapping.source):[];
+      // 已保存的绑定不在当前可选项里（字段停用、类型改了、来源不适用）时原样列出并标注，由操作员重新选择，不悄悄换成别的
+      const stale=mapping.fieldCode&&!options.some(o=>o.value===mapping.fieldCode);
+      const listed=[...(stale?[{value:mapping.fieldCode,label:`${mapping.fieldCode}（当前不可用，请重新选择）`}]:[]),...options];
+      const select=(name,action,disabled,items,current)=>`<select aria-label="参数 ${esc(p.code)} ${name}" onchange="${action||''}" ${disabled?'disabled':''}>${items.length?items.map(o=>`<option value="${esc(o.value)}" ${o.value===current?'selected':''}>${esc(o.label)}</option>`).join(''):'<option value="">（没有可绑定的项）</option>'}</select>`;
+      return `<div class="c1-arg c1-arg-mapping"><label>${label}</label><div class="c1-mapping">${select('来源',handlers.source?.(p.code),sources.length<2,sources.map(s=>({value:s,label:c1SourceOption(s)})),mapping.source)}<span class="muted">‹</span>${select('绑定',handler(p.code).replace(/^oninput=/,'onchange='),!listed.length&&!stale,listed,mapping.fieldCode)}${stale||!knownSource?'<span class="err" style="padding:0">绑定已不可用</span>':''}</div></div>`;
+    }
+    return `<div class="c1-arg"><label>${label}</label><input list="c1PathOptions" aria-label="参数 ${esc(p.code)}" value="${esc(value??p.defaultBinding??'')}" placeholder="${p.required?'必填：选择受控路径或填写字面量':'可留空'}" ${handler(p.code)}></div>`;
   }).join('')+extra.map(code=>`<div class="c1-arg"><label>${esc(code)} <span class="err" style="padding:0">不在函数参数中</span></label><div style="display:flex;gap:6px"><input aria-label="参数 ${esc(code)}" value="${esc(bindings[code]??'')}" ${handler(code)}><button type="button" class="btn secondary tiny" onclick="${remover(code)}" aria-label="移除参数">✕</button></div></div>`).join('');
 }
 // 函数不可用（已停用 / 不再适用 C1 / 后端实现未注册 / 函数库数据未加载）：保留节点原样展示并提示，不悄悄换成别的函数
@@ -109,12 +174,21 @@ function c1RenderStaleFunction(node,path){
     :'函数库数据未加载，函数条件暂不能编辑；请点击「↻ 刷新规则 / 字段库」重试');
   return `<div class="c1-fn stale"><div class="c1-line"><span class="c1-fnname">ƒ <b>${esc(c1FunctionName(code))}</b> <span class="muted">${esc(code)}</span><span class="badge fail">不可用</span></span><span>${esc(c1Operators[node.operator]||node.operator||'')} ${esc(String(node.value??''))}</span><button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')" aria-label="删除函数条件">✕</button></div></div>`;
 }
+// 函数节点的条件摘要：集合字段 ← … ｜ 比较元素 ← … ｜ 函数 … ｜ 比较条件 …
+function c1FunctionSummary(fn,node){
+  const item=p=>{
+    const raw=node.arguments?.[p.code],mapping=c1Mapping(p,raw);
+    const bound=mapping?c1BindingOptions(p,mapping.source).find(o=>o.value===mapping.fieldCode)?.label||(mapping.fieldCode?`${mapping.fieldCode}（当前不可用）`:'（未选择）'):String(raw??p.defaultBinding??'（未绑定）');
+    return `${esc(c1ParamLabel(p))} ← ${esc(mapping&&c1SourcesFor(p).includes(mapping.source)?c1Sources[mapping.source]+' · ':'')}${esc(bound)}`;
+  };
+  return `函数 ${esc(fn.functionName)}（${esc(fn.functionCode)}）｜${(fn.parameters||[]).map(item).join('｜')}｜比较条件 ${esc(c1Operators[node.operator]||node.operator||'')} ${esc(String(node.value??''))}`;
+}
 function c1RenderFunction(node,path){
   const fn=c1Function(node.functionCode);
   if(!fn)return c1RenderStaleFunction(node,path);
   const operators=fn.operators.length?fn.operators:['EQ','NE'];
   if(!operators.includes(node.operator))node.operator=operators[0];
-  return `<div class="c1-fn"><div class="c1-line"><span class="c1-fnname">ƒ <b>${esc(fn.functionName)}</b> <span class="muted">${esc(fn.functionCode)}</span>${c1UsageBadge(fn.usagePolicy)}</span>${c1OperatorControl({operators},node.operator,`c1Change('${path}','operator',this.value)`)}${c1ValueControl(fn,node.value,`c1Change('${path}','value',this.value)`)}<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')" aria-label="删除函数条件">✕</button></div><div class="c1-args">${c1ArgumentControls(fn,node.arguments,code=>`oninput="c1SetArgument('${path}','${esc(code)}',this.value)"`,code=>`c1RemoveArgument('${path}','${esc(code)}')`)}</div><div class="muted">返回 ${esc(fn.returnType)} · 数据来源 ${esc(fn.dataSource||'—')}</div></div>`;
+  return `<div class="c1-fn"><div class="c1-line"><span class="c1-fnname">ƒ <b>${esc(fn.functionName)}</b> <span class="muted">${esc(fn.functionCode)}</span>${c1UsageBadge(fn.usagePolicy)}</span>${c1OperatorControl({operators},node.operator,`c1Change('${path}','operator',this.value)`)}${c1ValueControl(fn,node.value,`c1Change('${path}','value',this.value)`)}<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')" aria-label="删除函数条件">✕</button></div><div class="c1-args">${c1ArgumentControls(fn,node.arguments,code=>`oninput="c1SetArgument('${path}','${esc(code)}',this.value)"`,code=>`c1RemoveArgument('${path}','${esc(code)}')`,{source:code=>`c1SetArgumentSource('${path}','${esc(code)}',this.value)`})}</div><div class="muted">返回 ${esc(fn.returnType)} · 数据来源 ${esc(fn.dataSource||'—')}</div><div class="muted c1-summary">${c1FunctionSummary(fn,node)}</div></div>`;
 }
 
 // ---------- 条件树 ----------
@@ -174,8 +248,11 @@ async function c1SaveCondition(){
 // ---------- 「添加函数」选择器 ----------
 
 // 新加入条件的默认形态：参数取函数库给出的默认绑定，运算符取第一个可用项，期望值取该返回类型的默认值
+// 集合类函数的参数没有默认路径：按来源顺序带出默认绑定（集合 ← 合作方有效排除客户集合，比较元素 ← 本笔交易 客户编号）
 function c1FunctionDraft(fn){
-  return {operator:fn.operators[0],value:fn.defaultValue===undefined||fn.defaultValue===null?'':String(fn.defaultValue),arguments:{...(fn.defaultArguments||{})}};
+  const bindings={...(fn.defaultArguments||{})};
+  (fn.parameters||[]).forEach(p=>{if(c1UnboundMapping(p,bindings[p.code])&&!c1IsMapping(bindings[p.code]))bindings[p.code]=c1DefaultMapping(p);});
+  return {operator:fn.operators[0],value:fn.defaultValue===undefined||fn.defaultValue===null?'':String(fn.defaultValue),arguments:bindings};
 }
 // 每个函数一份草稿（参数绑定 / 比较方式 / 期望值），打开选择器时按默认形态初始化
 function c1InitFunctionDrafts(){c1FunctionCatalog?.functions.forEach(fn=>{c1FunctionDrafts[fn.functionCode]||=c1FunctionDraft(fn);});}
@@ -192,7 +269,16 @@ function c1OpenFunctionPicker(path){
 }
 function c1CloseFunctionPicker(){$('c1FunctionPicker').classList.remove('show');c1FunctionTarget=null;}
 function c1Draft(code,key,value){if(c1FunctionDrafts[code])c1FunctionDrafts[code][key]=value;}
-function c1DraftArgument(code,argument,value){c1FunctionDrafts[code].arguments={...c1FunctionDrafts[code].arguments,[argument]:value};}
+function c1DraftArgument(code,argument,value){
+  const draft=c1FunctionDrafts[code],p=c1Function(code)?.parameters.find(x=>x.code===argument);
+  const mapping=c1Mapping(p,draft.arguments[argument])||(c1UnboundMapping(p,draft.arguments[argument])?c1DefaultMapping(p):null);
+  draft.arguments={...draft.arguments,[argument]:mapping?{...mapping,fieldCode:value}:value};
+}
+function c1DraftArgumentSource(code,argument,source){
+  const draft=c1FunctionDrafts[code],p=c1Function(code)?.parameters.find(x=>x.code===argument);
+  draft.arguments={...draft.arguments,[argument]:{source,fieldCode:c1BindingOptions(p,source)[0]?.value||''}};
+  c1RenderFunctionPicker();
+}
 function c1FunctionCard(fn){
   const code=fn.functionCode, draft=c1FunctionDrafts[code];
   return `<div class="c1-card" data-function="${esc(code)}">
@@ -200,7 +286,7 @@ function c1FunctionCard(fn){
     <div class="muted">返回类型 ${esc(fn.returnType)} · 数据来源 ${esc(fn.dataSource||'—')}${fn.category?` · ${esc(fn.category)}`:''}</div>
     ${fn.description?`<p class="c1-desc">${esc(fn.description)}</p>`:''}
     ${fn.usagePolicy==='REQUIRED'?`<div class="notice">系统必检：${esc(fn.requiredNote||'')} C1 执行器每次判定都会执行这项检查，与是否加入条件树无关；加入后只是把它的返回值作为一个可选条件参与比较。</div>`:''}
-    <div class="c1-args">${c1ArgumentControls(fn,draft.arguments,argument=>`oninput="c1DraftArgument('${esc(code)}','${esc(argument)}',this.value)"`)}</div>
+    <div class="c1-args">${c1ArgumentControls(fn,draft.arguments,argument=>`oninput="c1DraftArgument('${esc(code)}','${esc(argument)}',this.value)"`,null,{source:argument=>`c1DraftArgumentSource('${esc(code)}','${esc(argument)}',this.value)`})}</div>
     <div class="c1-args"><div class="c1-arg"><label>比较方式</label>${c1OperatorControl(fn,draft.operator,`c1Draft('${esc(code)}','operator',this.value)`)}</div><div class="c1-arg"><label>期望值</label>${c1ValueControl(fn,draft.value,`c1Draft('${esc(code)}','value',this.value)`)}</div></div>
     <div class="actions"><button type="button" class="btn tiny" onclick="c1AddFunction('${esc(code)}')">＋ 添加到条件</button><button type="button" class="btn secondary tiny" onclick="c1SimulateFunction('${esc(code)}')">▶ 用右侧模拟数据试算</button></div>
     <div class="c1-sim" id="c1Sim-${esc(code)}">${c1SimulationState(code)}</div>
