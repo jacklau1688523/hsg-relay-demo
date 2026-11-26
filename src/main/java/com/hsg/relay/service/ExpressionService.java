@@ -2,17 +2,23 @@ package com.hsg.relay.service;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.googlecode.aviator.AviatorEvaluator;
 import com.googlecode.aviator.AviatorEvaluatorInstance;
 import com.googlecode.aviator.Expression;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.function.BusinessFunction;
 import com.hsg.relay.function.FieldResolver;
+import com.hsg.relay.function.FunctionArgumentResolver;
+import com.hsg.relay.function.FunctionArgumentResolver.Binding;
 import com.hsg.relay.function.FunctionExecutionService;
 import com.hsg.relay.function.FunctionMetadataService;
+import com.hsg.relay.function.FunctionTypes;
 import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.function.field.FieldValueService;
 import com.hsg.relay.function.field.RuleCollection;
+import com.hsg.relay.function.field.RuleList;
+import com.hsg.relay.function.field.RuleList;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +36,11 @@ import java.util.stream.Collectors;
 public class ExpressionService {
     /** FUNCTION 节点的返回值在表达式里用这个前缀的变量承载；字段编码必须以字母开头，所以不会与字段重名。 */
     private static final String FUNCTION_VARIABLE = "__fn";
-    /** 求值过程日志：DEBUG 级别，每次 {@link #evaluate(Compiled, Map, RuleExecutionContext, String)} 输出一个多行块；开关见 application.yml 的 logging.level。 */
+    /** 一棵条件树里函数节点（含只被引用、不直接比较的节点）的数量上限。 */
+    public static final int MAX_FUNCTION_NODES = 20;
+    /** 编译期给函数返回值变量的临时名；拓扑排序后换成 __fnN。两侧的双下划线保证替换时不会前缀误伤。 */
+    private static final String TEMP_VARIABLE = "__t";
+/** 求值过程日志：DEBUG 级别，每次 {@link #evaluate(Compiled, Map, RuleExecutionContext, String)} 输出一个多行块；开关见 application.yml 的 logging.level。 */
     private static final Logger log = LoggerFactory.getLogger(ExpressionService.class);
 
     private final FieldDefinitionRepository fields;
@@ -53,7 +63,8 @@ public class ExpressionService {
      * 旧版保存的 JSON 没有 type：有 children 的是条件组，否则是字段条件，照常执行。
      */
     public record Node(String type, String logic, List<Node> children, String field, String operator, Object value,
-                       String functionCode, Map<String, Object> arguments) {
+                       String functionCode, Map<String, Object> arguments,
+                       @JsonInclude(JsonInclude.Include.NON_NULL) String id) {
         @JsonCreator
         public Node {
             if (type == null) type = children != null && !children.isEmpty() ? "GROUP" : functionCode == null ? "FIELD" : "FUNCTION";
@@ -61,7 +72,13 @@ public class ExpressionService {
 
         /** 旧版五参构造（字段条件 / 条件组），已有调用方和测试继续使用。 */
         public Node(String logic, List<Node> children, String field, String operator, Object value) {
-            this(null, logic, children, field, operator, value, null, null);
+            this(null, logic, children, field, operator, value, null, null, null);
+        }
+
+        /** 旧版八参构造（函数条件）：不带节点 id；需要被后置函数引用的函数节点须带 id。 */
+        public Node(String type, String logic, List<Node> children, String field, String operator, Object value,
+                    String functionCode, Map<String, Object> arguments) {
+            this(type, logic, children, field, operator, value, functionCode, arguments, null);
         }
 
         /** 仅代码判断用，不作为 JSON 属性输出（条件树 JSON 只含节点自身的字段）。 */
@@ -81,12 +98,19 @@ public class ExpressionService {
      * 编译结果：expression 是可执行的受控表达式（函数返回值以 __fnN 变量承载）；readable 是页面展示用的可读形式；
      * functions 是待求值的函数节点；boundFields 是条件里引用到的函数绑定字段（已在编译期按函数库和白名单校验）；
      * ruleCode 是编译时传入的规则编码；leaves 是按出现顺序排列的叶子条件，求值日志用它逐项给出真假；
-     * resolvedFields 是条件里引用到的数据解析字段（取值来自字段解析器）。
+     * resolvedFields 是条件里引用到的数据解析字段（取值来自字段解析器）；nodes 是全部函数节点（含只被引用、不直接比较的节点），
+     * 按执行顺序排列（被引用的前置函数在前）。
      */
     public record Compiled(String expression, String readable, List<FunctionSlot> functions,
                            Map<String, FunctionExecutionService.Validated> boundFields, String ruleCode, List<Leaf> leaves,
-                           Set<String> resolvedFields) {
-        /** 是否需要 C1 执行上下文才能求值（含函数节点、函数绑定字段或数据解析字段）。 */
+                           Set<String> resolvedFields, List<FunctionExecutionService.Validated> nodes) {
+        public Compiled(String expression, String readable, List<FunctionSlot> functions,
+                        Map<String, FunctionExecutionService.Validated> boundFields, String ruleCode, List<Leaf> leaves,
+                        Set<String> resolvedFields) {
+            this(expression, readable, functions, boundFields, ruleCode, leaves, resolvedFields,
+                    functions.stream().map(FunctionSlot::function).toList());
+        }
+/** 是否需要 C1 执行上下文才能求值（含函数节点、函数绑定字段或数据解析字段）。 */
         public boolean needsContext() {
             return !functions.isEmpty() || !boundFields.isEmpty() || !resolvedFields.isEmpty();
         }
@@ -109,13 +133,129 @@ public class ExpressionService {
 
     public Compiled compileDetailed(Node tree, String ruleCode) {
         if (tree == null) throw new IllegalArgumentException("条件树不能为空");
-        List<FunctionSlot> slots = new ArrayList<>();
+        Graph graph = new Graph(ruleCode);
+        graph.index(tree);
+        List<Pending> pending = new ArrayList<>();
         Map<String, FunctionExecutionService.Validated> boundFields = new LinkedHashMap<>();
         Set<String> resolvedFields = new LinkedHashSet<>();
         List<Leaf> leaves = new ArrayList<>();
-        Text text = compile(tree, 0, ruleCode, slots, boundFields, resolvedFields, leaves);
-        return new Compiled(text.expression(), text.readable(), List.copyOf(slots), Collections.unmodifiableMap(boundFields),
-                ruleCode, List.copyOf(leaves), Set.copyOf(resolvedFields));
+        Text text = compile(tree, 0, ruleCode, pending, boundFields, resolvedFields, leaves, graph);
+        return graph.finish(text, pending, leaves, boundFields, resolvedFields);
+    }
+
+    /** 编译途中登记的函数叶子：节点 id、临时变量名（拓扑排序后换成正式变量名）与校验结果。 */
+    private record Pending(String nodeId, String variable, FunctionExecutionService.Validated function) {
+    }
+
+    /**
+     * 条件树里的函数节点依赖图：给节点补 id、按需校验（被 FUNCTION_OUTPUT 引用的前置函数先校验）、检测循环引用，
+     * 最后按拓扑顺序（被引用的在前）排出执行顺序。校验结果按节点缓存，同一个节点只校验一次。
+     */
+    private final class Graph implements FunctionArgumentResolver.NodeContext {
+        private final String ruleCode;
+        /** 节点 id → 节点，按出现顺序。 */
+        private final Map<String, Node> nodes = new LinkedHashMap<>();
+        /** 树里的节点对象 → 节点 id（未写 id 的节点编译时补号）。 */
+        private final Map<Node, String> ids = new IdentityHashMap<>();
+        /** 已校验的函数节点，按校验完成顺序（被引用的前置函数先完成）。 */
+        private final Map<String, FunctionExecutionService.Validated> validated = new LinkedHashMap<>();
+        /** 正在校验中的节点（循环引用检测）。 */
+        private final Set<String> inProgress = new LinkedHashSet<>();
+        /** 被后置函数引用过的节点 id。 */
+        private final Set<String> referenced = new HashSet<>();
+        private int counter;
+
+        private Graph(String ruleCode) {
+            this.ruleCode = ruleCode;
+        }
+
+        /** 登记全部函数节点并补 id；id 重复或节点过多时报错。 */
+        private void index(Node node) {
+            if (node == null) return;
+            if (node.isFunction()) {
+                counter++;
+                String id = node.id() == null || node.id().isBlank() ? "fn-" + counter : node.id().trim();
+                if (nodes.putIfAbsent(id, node) != null) throw new IllegalArgumentException("函数节点 id 重复：" + id);
+                ids.put(node, id);
+                if (nodes.size() > MAX_FUNCTION_NODES) throw new IllegalArgumentException("一棵条件树里最多允许 " + MAX_FUNCTION_NODES + " 个函数节点");
+            }
+            if (node.children() != null) node.children().forEach(this::index);
+        }
+
+        private String idOf(Node node) {
+            String id = ids.get(node);
+            if (id == null) throw new IllegalStateException("函数节点未登记");
+            return id;
+        }
+
+        /** 树里正在编译的函数节点：已作为前置函数校验过的直接复用，否则在这里校验。 */
+        private FunctionExecutionService.Validated function(Node node) {
+            FunctionExecutionService.Validated done = validated.get(idOf(node));
+            return done != null ? done : producer(idOf(node));
+        }
+
+        @Override
+        public FunctionExecutionService.Validated producer(String nodeId) {
+            FunctionExecutionService.Validated done = validated.get(nodeId);
+            if (done != null) return done;
+            Node node = nodes.get(nodeId);
+            if (node == null)
+                throw new IllegalArgumentException("引用的前置函数节点不存在：条件树里没有 id 为 " + nodeId + " 的函数节点");
+            if (!inProgress.add(nodeId))
+                throw new IllegalArgumentException("函数节点循环引用：" + String.join(" → ", inProgress) + " → " + nodeId);
+            try {
+                FunctionExecutionService.Validated validated = functions.validate(node.functionCode(), node.arguments(), ruleCode, this);
+                // 可读的调用文本：参数=取值来源，前置函数写成它的调用
+                String call = validated.functionCode() + "(" + validated.handler().parameters().stream()
+                        .map(parameter -> {
+                            Binding binding = validated.bindings().get(parameter.code());
+                            if (binding == null) return null;
+                            if (!binding.isOutput()) return parameter.label() + "=" + binding.text();
+                            FunctionExecutionService.Validated producer = this.validated.get(binding.outputNodeId());
+                            return parameter.label() + "=" + (producer == null ? binding.text() : producer.call());
+                        }).filter(Objects::nonNull).collect(Collectors.joining(", ")) + ")";
+                for (Binding binding : validated.bindings().values()) if (binding.isOutput()) referenced.add(binding.outputNodeId());
+                FunctionExecutionService.Validated ready = validated.at(nodeId, call);
+                this.validated.put(nodeId, ready);
+                return ready;
+            } finally {
+                inProgress.remove(nodeId);
+            }
+        }
+
+        /** 编译收尾：不可直接比较的节点必须被引用；函数叶子按拓扑顺序换成正式变量名。 */
+        private Compiled finish(Text root, List<Pending> pending, List<Leaf> leaves,
+                                Map<String, FunctionExecutionService.Validated> boundFields, Set<String> resolvedFields) {
+            if (root == null || root.expression() == null)
+                throw new IllegalArgumentException("条件树的根不能只是被引用的函数节点，须有可判断的条件");
+            Map<String, Pending> byNode = new HashMap<>();
+            for (Pending item : pending) byNode.put(item.nodeId(), item);
+            for (FunctionExecutionService.Validated node : validated.values()) {
+                Node source = nodes.get(node.nodeId());
+                boolean leaf = source.operator() != null || source.value() != null;
+                if ((!FunctionTypes.isComparable(node.staticType()) || !leaf) && !referenced.contains(node.nodeId()))
+                    throw new IllegalArgumentException("函数节点 " + node.nodeId() + "（" + node.functionCode() + "）的输出没有被任何条件或后置函数引用，请删除该节点或引用它的输出");
+            }
+            // 执行清单收全部函数节点（validated 已按拓扑顺序：被引用的前置函数在前）。只被引用的节点没有变量参与表达式，
+            // 但必须先执行，后置函数才能引用它的输出。
+            List<FunctionSlot> slots = new ArrayList<>();
+            Map<String, String> names = new HashMap<>();
+            for (FunctionExecutionService.Validated node : validated.values()) {
+                Pending item = byNode.get(node.nodeId());
+                String variable = FUNCTION_VARIABLE + slots.size();
+                if (item != null) names.put(item.variable(), variable);
+                slots.add(new FunctionSlot(variable, node));
+            }
+            List<Leaf> ordered = leaves.stream().map(leaf -> new Leaf(rename(leaf.expression(), names), leaf.readable())).toList();
+            return new Compiled(rename(root.expression(), names), root.readable(), List.copyOf(slots), Collections.unmodifiableMap(boundFields),
+                    ruleCode, ordered, Set.copyOf(resolvedFields), List.copyOf(validated.values()));
+        }
+
+        private String rename(String expression, Map<String, String> names) {
+            String result = expression;
+            for (Map.Entry<String, String> name : names.entrySet()) result = result.replace(name.getKey(), name.getValue());
+            return result;
+        }
     }
 
     /** 条件树里叶子条件引用的全部字段编码，按出现顺序去重（函数节点不计）。 */
@@ -229,28 +369,40 @@ public class ExpressionService {
         return value instanceof LocalDateTime time ? time.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : value;
     }
 
-    /** 集合字段条件代入表达式的值：Aviator 的 include 按元素判断；成员查询模式（未全量加载）的集合在这里报错，不会隐式全量加载。 */
+    /**
+     * 集合字段条件代入表达式的值：Aviator 的 include 按元素判断；成员查询模式（未全量加载）的集合在这里报错，不会隐式全量加载。
+     * 已加载的集合（RuleCollection / RuleList）代入元素清单。
+     */
     private static Object setValue(Object value) {
-        return value instanceof RuleCollection collection ? collection.elements() : value;
+        if (value instanceof RuleCollection collection) return collection.elements();
+        return value instanceof RuleList list ? list.elements() : value;
     }
 
-    private Text compile(Node n, int depth, String ruleCode, List<FunctionSlot> slots,
-                         Map<String, FunctionExecutionService.Validated> boundFields, Set<String> resolvedFields, List<Leaf> leaves) {
+    private Text compile(Node n, int depth, String ruleCode, List<Pending> pending,
+                         Map<String, FunctionExecutionService.Validated> boundFields, Set<String> resolvedFields, List<Leaf> leaves,
+                         Graph graph) {
         if (depth > 6) throw new IllegalArgumentException("最多允许 6 层条件组");
         if (n.isFunction()) {
             if (n.children() != null && !n.children().isEmpty()) throw new IllegalArgumentException("函数节点不能包含子条件");
-            return compileFunction(n, ruleCode, slots, leaves);
+            return compileFunction(n, ruleCode, pending, leaves, graph);
         }
-        if (n.children() != null && !n.children().isEmpty()) {
+if (n.children() != null && !n.children().isEmpty()) {
             if (n.children().size() > 20) throw new IllegalArgumentException("单组条件数不可超过20");
             if (!"AND".equals(n.logic()) && !"OR".equals(n.logic()))
                 throw new IllegalArgumentException("条件组只允许 AND/OR");
             String delimiter = "AND".equals(n.logic()) ? " && " : " || ";
-            List<Text> parts = n.children().stream().map(x -> compile(x, depth + 1, ruleCode, slots, boundFields, resolvedFields, leaves)).toList();
+            List<Text> parts = n.children().stream().map(x -> compile(x, depth + 1, ruleCode, pending, boundFields, resolvedFields, leaves, graph))
+                    .filter(x -> x.expression() != null).toList();
+            // 只被引用的函数节点不参与判断；一组条件里全是这种节点时没有可判断的条件
+            if (parts.isEmpty()) throw new IllegalArgumentException("条件组里只有被后置函数引用的函数节点，须至少有一个可判断的条件");
             return new Text("(" + String.join(delimiter, parts.stream().map(Text::expression).toList()) + ")",
                     "(" + String.join(delimiter, parts.stream().map(Text::readable).toList()) + ")");
         }
         FieldDefinition f = fields.findById(n.field() == null ? "" : n.field()).orElseThrow(() -> new IllegalArgumentException("非法字段: " + n.field()));
+        // 字符串集合 / 字符串清单可以做「是否包含这个元素」的条件；其它集合、分组和对象类型只能作为函数的参数，不能直接比较
+        boolean stringCollection = FieldValueService.STRING_SET.equals(f.dataType) || RuleList.STRING_LIST.equals(f.dataType);
+        if (!stringCollection && (FunctionTypes.isCollection(f.dataType) || FunctionTypes.MAP.equals(f.dataType) || FunctionTypes.OBJECT.equals(f.dataType)))
+            throw new IllegalArgumentException("字段 " + f.fieldCode + " 的类型为 " + f.dataType + "，不能直接作为条件字段比较；请添加集合函数，并把它绑定为函数的集合参数");
         if (!f.enabled || !Arrays.asList(f.allowedOperators.split(",")).contains(n.operator()) || (ruleCode != null && !Arrays.asList(f.allowedRules.split(",")).contains(ruleCode)))
             throw new IllegalArgumentException("字段 " + f.fieldCode + " 不适用于当前规则或不支持该操作符");
         if (n.value() == null) throw new IllegalArgumentException("条件值不可为空");
@@ -302,21 +454,27 @@ public class ExpressionService {
         return functions.validate(field.functionCode, fieldResolver.bindings(field), ruleCode);
     }
 
-    /** FUNCTION 叶子：按函数库 + 白名单校验，编译成「函数返回值变量 比较 期望值」。 */
-    private Text compileFunction(Node n, String ruleCode, List<FunctionSlot> slots, List<Leaf> leaves) {
-        FunctionExecutionService.Validated validated = functions.validate(n.functionCode(), n.arguments(), ruleCode);
-        String owner = "函数 " + n.functionCode();
-        List<String> operators = FunctionMetadataService.operators(validated.returnType());
+    /**
+     * FUNCTION 节点：按函数库 + 白名单校验（被 FUNCTION_OUTPUT 引用的前置函数在这里一并校验）。
+     * 带运算符的节点编译成「函数返回值变量 比较 期望值」；不带运算符和期望值的节点只产出结果供后置函数引用，不参与判断
+     * （返回类型不能直接比较的节点只能这样用）。
+     */
+    private Text compileFunction(Node n, String ruleCode, List<Pending> pending, List<Leaf> leaves, Graph graph) {
+        FunctionExecutionService.Validated validated = graph.function(n);
+        String owner = "函数 " + validated.functionCode();
+        boolean dependencyOnly = n.operator() == null && n.value() == null;
+        boolean comparable = FunctionTypes.isComparable(validated.staticType());
+        if (!comparable && !dependencyOnly)
+            throw new IllegalArgumentException(owner + " 返回类型为 " + validated.staticType() + "，不能直接比较；该节点只能被后置函数引用，不能带运算符和期望值");
+        if (dependencyOnly) return new Text(null, null);
+        List<String> operators = FunctionMetadataService.operators(validated.staticType());
         if (n.operator() == null || !operators.contains(n.operator()))
-            throw new IllegalArgumentException(owner + " 返回类型为 " + validated.returnType() + "，不支持运算符 " + n.operator() + "，可用：" + String.join("、", operators));
-        String comparison = " " + symbol(n.operator()) + " " + literal(owner, validated.returnType(), n.value()) + ")";
-        String variable = FUNCTION_VARIABLE + slots.size();
-        slots.add(new FunctionSlot(variable, validated));
-        String call = validated.functionCode() + "(" + validated.handler().parameters().stream()
-                .map(p -> validated.bindings().get(p.code())).filter(Objects::nonNull)
-                .map(b -> b.parameter() + "=" + b.text()).collect(Collectors.joining(", ")) + ")";
-        Text text = new Text("(" + variable + comparison, "(" + call + comparison);
-        leaves.add(new Leaf(text.expression(), text.readable()));
+            throw new IllegalArgumentException(owner + " 返回类型为 " + validated.staticType() + "，不支持运算符 " + n.operator() + "，可用：" + String.join("、", operators));
+        String comparison = " " + symbol(n.operator()) + " " + literal(owner, validated.staticType(), n.value()) + ")";
+        String variable = TEMP_VARIABLE + pending.size() + "__";
+        pending.add(new Pending(validated.nodeId(), variable, validated));
+        Text text = new Text("(" + variable + comparison, "(" + validated.call() + comparison);
+leaves.add(new Leaf(text.expression(), text.readable()));
         return text;
     }
 
@@ -554,7 +712,8 @@ public class ExpressionService {
         if (value instanceof Map<?, ?> map) return map.entrySet().stream().map(entry -> entry.getKey() + "=" + display(entry.getValue())).collect(Collectors.joining(", ", "{", "}"));
         // 集合只给出元素个数和前几个元素，不输出完整名单
         if (value instanceof RuleCollection collection) return collection.summary();
-        if (value instanceof Set<?> set) return "集合（" + set.size() + " 个元素）" + (set.isEmpty() ? "" : "：" + set.stream().limit(5).map(String::valueOf).collect(Collectors.joining(", ")) + (set.size() > 5 ? " …" : ""));
+        if (value instanceof RuleList list) return list.summary();
+if (value instanceof Set<?> set) return "集合（" + set.size() + " 个元素）" + (set.isEmpty() ? "" : "：" + set.stream().limit(5).map(String::valueOf).collect(Collectors.joining(", ")) + (set.size() > 5 ? " …" : ""));
         if (value instanceof String text) return text.isBlank() ? "''" : text;
         return String.valueOf(value);
     }

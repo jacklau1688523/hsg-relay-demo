@@ -156,16 +156,16 @@ class CollectionFunctionTest {
         var valid = new FieldMetadataController.Input("providerBlockedCurrencies", "合作方屏蔽币种集合", "STRING_SET", "CONTAINS,NOT_CONTAINS",
                 "C1", null, true, "DATA_RESOLVER", null, null, "providerExclusionListResolver", "STRING", "CANDIDATE", "REQUEST");
         assertThat(fieldsApi.create(valid).dataType).isEqualTo("STRING_SET");
-        // 元素类型只能是 STRING；解析器必须已注册；只能适用于 C1；不能同时绑定函数
+        // 元素类型只能是 STRING；解析器必须已注册；只能适用于已接入函数节点的规则（C1 / C2 / C3 / C5 / C7 / C8）；不能同时绑定函数
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("badElement", "坏", "STRING_SET", "CONTAINS", "C1", null, true,
                 "DATA_RESOLVER", null, null, "providerExclusionListResolver", "INTEGER", "CANDIDATE", "REQUEST")))
                 .hasMessageContaining("元素类型");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("badResolver", "坏", "STRING_SET", "CONTAINS", "C1", null, true,
                 "DATA_RESOLVER", null, null, "noSuchResolver", "STRING", "CANDIDATE", "REQUEST")))
                 .hasMessageContaining("尚未注册");
-        assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("badRules", "坏", "STRING_SET", "CONTAINS", "C1,C2", null, true,
+        assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("badRules", "坏", "STRING_SET", "CONTAINS", "C1,C4", null, true,
                 "DATA_RESOLVER", null, null, "providerExclusionListResolver", "STRING", "CANDIDATE", "REQUEST")))
-                .hasMessageContaining("只能适用于 C1");
+                .hasMessage("数据解析字段只能适用于 C1 / C2 / C3 / C5 / C7 / C8，不能用于 C1,C4");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("badOperator", "坏", "STRING_SET", "EQ", "C1", null, true,
                 "DATA_RESOLVER", null, null, "providerExclusionListResolver", "STRING", "CANDIDATE", "REQUEST")))
                 .hasMessageContaining("运算符与数据类型不匹配");
@@ -322,12 +322,16 @@ class CollectionFunctionTest {
         assertThatThrownBy(() -> expressions.compileDetailed(literalSet, "C1")).hasMessageContaining("类型应为 STRING_SET，字面量无效：C10001");
         var noSuchField = function("collectionContains", Map.of("collection", Map.of("source", "FIELD", "fieldCode", "noSuchSet"), "element", CLIENT), "EQ", true);
         assertThatThrownBy(() -> expressions.compileDetailed(noSuchField, "C1")).hasMessageContaining("字段 noSuchSet 不存在");
-        var future = function("collectionContains", Map.of("collection", Map.of("source", "FUNCTION_OUTPUT", "fieldCode", "x"), "element", CLIENT), "EQ", true);
-        assertThatThrownBy(() -> expressions.compileDetailed(future, "C1")).hasMessageContaining("FUNCTION_OUTPUT").hasMessageContaining("暂不支持");
-        // 数据解析字段只能用于 C1
-        assertThatThrownBy(() -> functionMetadata.binding("c2Set", "STRING_SET", "C2", "DATA_RESOLVER", null, null, "providerExclusionListResolver", "CANDIDATE", "REQUEST"))
-                .hasMessageContaining("只能适用于 C1");
-        assertThatThrownBy(() -> expressions.compileDetailed(contains("EQ", true), "C2")).hasMessageContaining("仅支持 C1");
+        // 前置函数输出：必须写明 nodeId；引用的函数节点须在同一棵条件树里
+        var noNode = function("collectionContains", Map.of("collection", Map.of("source", "FUNCTION_OUTPUT", "fieldCode", "x"), "element", CLIENT), "EQ", true);
+        assertThatThrownBy(() -> expressions.compileDetailed(noNode, "C1")).hasMessage("函数 collectionContains 的参数 collection 的来源 FUNCTION_OUTPUT 缺少 nodeId");
+        var future = function("collectionContains", Map.of("collection", Map.of("source", "FUNCTION_OUTPUT", "nodeId", "node-missing"), "element", CLIENT), "EQ", true);
+        assertThatThrownBy(() -> expressions.compileDetailed(future, "C1")).hasMessage("引用的前置函数节点不存在：条件树里没有 id 为 node-missing 的函数节点");
+        // 数据解析字段只能用于已接入函数节点的规则
+        assertThatThrownBy(() -> functionMetadata.binding("c4Set", "STRING_SET", "C4", "DATA_RESOLVER", null, null, "providerExclusionListResolver", "CANDIDATE", "REQUEST"))
+                .hasMessageContaining("C1 / C2 / C3 / C5 / C7 / C8").hasMessageContaining("C4");
+        // C2 已接入函数节点；但这个函数和这个数据字段都只适用于 C1
+        assertThatThrownBy(() -> expressions.compileDetailed(contains("EQ", false), "C2")).hasMessageContaining("不适用于当前规则 C2");
         // Handler 层的第二道检查：运行时实参类型不对时直接报错，不返回 false
         var handler = new com.hsg.relay.function.CollectionContainsFunction();
         assertThatThrownBy(() -> handler.execute(Map.of("collection", RuleCollection.of("T", List.of("A")), "element", 42), null))
@@ -457,9 +461,9 @@ class CollectionFunctionTest {
         var c2 = expressions.compileDetailed(tree, "C2");
         assertThat(c2.needsContext()).isFalse();
         assertThat(c2.resolvedFields()).isEmpty();
-        // 数据解析字段 / 函数节点不能进入 C2、C3 的条件
-        assertThatThrownBy(() -> expressions.compileDetailed(field(SET, "CONTAINS", "C10001"), "C2")).hasMessageContaining("不适用于当前规则");
-        assertThatThrownBy(() -> expressions.compileDetailed(contains("EQ", false), "C3")).hasMessageContaining("仅支持 C1");
+        // 这个数据字段 / 函数只适用于 C1：不能进入 C2、C3 的条件（C2 / C3 自己的函数与数据字段另见集合函数测试）
+        assertThatThrownBy(() -> expressions.compileDetailed(field(SET, "CONTAINS", "C10001"), "C2")).hasMessage("字段 providerExcludedClientIds 不适用于当前规则或不支持该操作符");
+        assertThatThrownBy(() -> expressions.compileDetailed(contains("EQ", false), "C3")).hasMessageContaining("不适用于当前规则 C3");
     }
 
     // ---------- 求交集（Handler 只做计算） ----------

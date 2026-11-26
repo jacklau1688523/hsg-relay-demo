@@ -242,7 +242,8 @@ class ScoreRuleEngineTest {
         when(handler.returnType()).thenReturn("BOOLEAN");
         when(handler.dataSource()).thenReturn("CLIENT_EXCLUSION");
         when(handler.parameters()).thenReturn(List.of());
-        when(functions.validate(eq("clientExcluded"), any(), eq("C5")))
+        // 条件树编译按依赖图校验函数节点（带 NodeContext，供 FUNCTION_OUTPUT 引用前置函数）
+        when(functions.validate(eq("clientExcluded"), any(), eq("C5"), any()))
                 .thenReturn(new FunctionExecutionService.Validated("clientExcluded", "客户是否被排除", handler, Map.of()));
         when(functions.invoke(any(), any())).thenAnswer(inv -> new FunctionExecutionService.Call("clientExcluded", "clientExclusionChecker",
                 Map.of(), true, "EX-1", "CLIENT_EXCLUSION", 0, false, null));

@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.*;
 import com.hsg.relay.function.FunctionMetadataService;
+import com.hsg.relay.function.FunctionTypes;
+import com.hsg.relay.function.RuleExecutionContext;
+import com.hsg.relay.service.ExpressionService;
 import com.hsg.relay.repo.*;
 import com.hsg.relay.service.ClientExclusionChecker;
 import jakarta.annotation.PostConstruct;
@@ -43,7 +46,8 @@ public class BusinessFunctionController {
     public record ExclusionCheck(String providerCode, String clientId) {}
 
     /** 函数试算入参：arguments 参数绑定（同条件节点），operator / value 为比较方式和期望值，sample 为右侧模拟面板的要素。 */
-    public record SimulationInput(Map<String, Object> arguments, String operator, Object value, Map<String, Object> sample) {}
+    public record SimulationInput(Map<String, Object> arguments, String operator, Object value, Map<String, Object> sample,
+                                  String ruleCode) {}
 
     @PostConstruct
     @Transactional
@@ -75,6 +79,15 @@ public class BusinessFunctionController {
         return functions.findAll().stream().sorted(Comparator.comparing(f -> f.functionCode)).map(metadata::decorate).toList();
     }
 
+    /** 整棵条件树的试算：ruleCode 不传时按 C1；tree 为条件树，sample 为试算要素。 */
+    public record EvaluateInput(String ruleCode, ExpressionService.Node tree, Map<String, Object> sample) {}
+
+    /** 函数参数可以使用的取值来源（页面下拉用）。 */
+    @GetMapping("/argument-sources")
+    public List<Map<String, String>> argumentSources() {
+        return FunctionMetadataService.ARGUMENT_SOURCES;
+    }
+
     /** 可绑定的 Java Handler：已规划的一批，加上代码里已注册的。 */
     @GetMapping("/handlers")
     public List<String> handlers() {
@@ -83,17 +96,27 @@ public class BusinessFunctionController {
         return result;
     }
 
-    /** 「添加函数」选择器：受控取值路径、系统必检清单、该规则可添加的函数。目前仅 C1。 */
+    /** 「添加函数」选择器：受控路径、系统必检清单、该规则可添加的函数、可绑定为参数的数据字段、元素结构。C1 / C2 / C3 / C5 / C7 / C8。 */
     @GetMapping("/available")
     public FunctionMetadataService.Catalog available(@RequestParam String ruleCode) {
         return metadata.available(ruleCode);
     }
 
-    /** 函数试算：解析入参并调用函数，返回入参、返回值、条件结果、数据来源、耗时、异常和命中记录 ID。 */
+    /**
+     * 函数试算：解析入参并调用函数，返回入参、返回值、条件结果、数据来源、耗时、异常、命中记录 ID 和逐项明细
+     * （实参来源、类型、输入规模、返回类型、状态）。
+     */
     @PostMapping("/{code}/simulate")
     public FunctionMetadataService.FunctionSimulation simulate(@PathVariable String code, @RequestBody SimulationInput input) {
         if (input == null) throw new IllegalArgumentException("试算参数不能为空");
-        return metadata.simulate(code, input.arguments(), input.operator(), input.value(), input.sample());
+        return metadata.simulate(code, input.arguments(), input.operator(), input.value(), input.sample(), input.ruleCode());
+    }
+
+    /** 整棵条件树试算：校验并执行树里的全部函数节点（含前置函数输出的引用），返回条件结果和每个函数节点的调用明细。 */
+    @PostMapping("/evaluate")
+    public FunctionMetadataService.Evaluation evaluate(@RequestBody EvaluateInput input) {
+        if (input == null) throw new IllegalArgumentException("试算参数不能为空");
+        return metadata.evaluate(input.ruleCode(), input.tree(), input.sample());
     }
 
     @PostMapping
@@ -175,10 +198,14 @@ public class BusinessFunctionController {
         if (!code.matches("[A-Za-z][A-Za-z0-9_]{0,63}")) throw new IllegalArgumentException("函数编码格式不正确");
         if (blank(in.functionName()) || in.functionName().length() > 80) throw new IllegalArgumentException("函数名称为必填项，最多80位");
         if (blank(in.category()) || in.category().length() > 40) throw new IllegalArgumentException("函数分类为必填项，最多40位");
-        // OBJECT：结构返回（组合计算函数，由执行器读取多个输出，不能作为条件节点）
-        if (!List.of("BOOLEAN", "STRING", "INTEGER", "DECIMAL", "DATE", "OBJECT").contains(in.returnType())) throw new IllegalArgumentException("返回类型无效");
+        // 返回类型：标量、OBJECT，加上集合 / 分组类型（COLLECTION、STRING_SET、STRING_LIST、NUMBER_LIST、DATE_LIST、OBJECT_LIST、MAP），白名单见 FunctionTypes
+        if (!FunctionTypes.RETURN_TYPES.contains(in.returnType() == null ? "" : in.returnType())) throw new IllegalArgumentException("返回类型无效");
         List<String> rules = Arrays.stream(trim(in.allowedRules()).split(",")).map(String::trim).filter(s -> !s.isEmpty()).distinct().toList();
         if (rules.isEmpty() || rules.stream().anyMatch(s -> !s.matches("C([1-9]|10)"))) throw new IllegalArgumentException("请选择 C1–C10 适用规则");
+        // 集合函数的分类：只能适用于已接入函数节点的规则（有受控路径和执行上下文）
+        if (trim(in.category()).startsWith("COLLECTION_") && !RuleExecutionContext.FUNCTION_RULES.containsAll(rules))
+            throw new IllegalArgumentException("集合类函数只能适用于 " + String.join(" / ", RuleExecutionContext.FUNCTION_RULES.stream().sorted().toList())
+                    + "，实际适用规则：" + String.join(",", rules));
         if (!List.of("CANDIDATE", "TRANSACTION", "GLOBAL").contains(in.executionScope())) throw new IllegalArgumentException("执行作用域无效");
         if (!List.of("REQUEST", "NONE").contains(in.cacheStrategy())) throw new IllegalArgumentException("缓存策略无效");
         if (!HANDLERS.contains(in.handlerCode()) && !metadata.registeredHandlers().contains(in.handlerCode()))
@@ -191,7 +218,7 @@ public class BusinessFunctionController {
         for (JsonNode p : params) {
             String paramCode = p.path("code").asText();
             if (!paramCode.matches("[A-Za-z][A-Za-z0-9_]{0,63}") || !codes.add(paramCode)
-                    || !List.of("STRING", "INTEGER", "DECIMAL", "BOOLEAN", "DATE", "STRING_SET").contains(p.path("type").asText())
+                    || !FunctionTypes.PARAMETER_TYPES.contains(p.path("type").asText())
                     || !List.of("CANDIDATE", "TRANSACTION", "CONTEXT", "FIELD", "ANY").contains(p.path("source").asText()))
                 throw new IllegalArgumentException("参数编码、类型或来源无效，且编码不可重复");
         }

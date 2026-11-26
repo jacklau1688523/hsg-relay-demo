@@ -2,6 +2,7 @@ package com.hsg.relay.function.field;
 
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.function.FieldResolver;
+import com.hsg.relay.function.FunctionArgumentResolver;
 import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import org.springframework.stereotype.Service;
@@ -25,14 +26,29 @@ public class FieldValueService {
 
     private final FieldDefinitionRepository fields;
     private final FieldResolverRegistry registry;
+    private final ElementSchemaRegistry schemas;
 
-    public FieldValueService(FieldDefinitionRepository fields, FieldResolverRegistry registry) {
+    public FieldValueService(FieldDefinitionRepository fields, FieldResolverRegistry registry, ElementSchemaRegistry schemas) {
         this.fields = fields;
         this.registry = registry;
+        this.schemas = schemas;
     }
 
     public static boolean isSet(String dataType) {
         return STRING_SET.equals(dataType);
+    }
+
+    /** 集合类型字段的元素结构（OBJECT_LIST 必填且须已登记；其它类型为 null）。 */
+    public ElementSchema schema(FieldDefinition field) {
+        if (field == null || field.elementSchema == null || field.elementSchema.isBlank()) return null;
+        return schemas.require(field.elementSchema.trim());
+    }
+
+    /** OBJECT_LIST 字段必须配置已登记的元素结构；没有配置时报参数错误并说明原因。 */
+    public static ElementSchema requireSchema(ElementSchemaRegistry schemas, FieldDefinition field) {
+        if (field.elementSchema == null || field.elementSchema.isBlank())
+            throw new IllegalArgumentException("字段 " + field.fieldCode + " 为 OBJECT_LIST，须配置元素结构 elementSchema");
+        return schemas.require(field.elementSchema.trim());
     }
 
     /**
@@ -41,8 +57,9 @@ public class FieldValueService {
      */
     public FieldDefinition check(String fieldCode, String parameterType, String ruleCode) {
         String owner = "字段 " + (fieldCode == null || fieldCode.isBlank() ? "（空）" : fieldCode);
-        if (RuleExecutionContext.paths(ruleCode).isEmpty())
-            throw new IllegalArgumentException(owner + "：数据解析字段目前只能用于 C1 的条件，不能用于 " + ruleCode);
+        if (!RuleExecutionContext.FUNCTION_RULES.contains(ruleCode == null ? "" : ruleCode))
+            throw new IllegalArgumentException(owner + "：数据解析字段只能用于已接入函数节点的规则（"
+                    + String.join(" / ", RuleExecutionContext.FUNCTION_RULES.stream().sorted().toList()) + "），不能用于 " + ruleCode);
         FieldDefinition field = fieldCode == null ? null : fields.findById(fieldCode).orElse(null);
         if (field == null) throw new IllegalArgumentException(owner + " 不存在");
         if (!field.enabled) throw new IllegalArgumentException(owner + " 已停用，不能用于条件");
@@ -53,8 +70,9 @@ public class FieldValueService {
             throw new IllegalArgumentException(owner + " 没有配置字段解析器 resolverCode");
         if (!registry.isRegistered(field.resolverCode))
             throw new IllegalArgumentException(owner + " 的字段解析器 " + field.resolverCode + " 尚未注册");
-        if (!field.dataType.equals(parameterType))
+        if (!FunctionArgumentResolver.compatible(parameterType, field.dataType))
             throw new IllegalArgumentException(owner + " 类型为 " + field.dataType + "，与参数要求的 " + parameterType + " 不一致");
+        if (RuleList.OBJECT_LIST.equals(field.dataType)) requireSchema(schemas, field);
         return field;
     }
 
@@ -93,8 +111,7 @@ public class FieldValueService {
         long elapsed = (System.nanoTime() - start) / 1_000_000;
         if (value == null)
             throw new IllegalStateException(owner + " 的解析器 " + field.resolverCode + " 没有返回结果（数据未加载），不能按空集合处理");
-        if (isSet(field.dataType) && !(value instanceof RuleCollection))
-            throw new IllegalStateException(owner + " 为集合类型，但解析器返回了 " + value.getClass().getSimpleName());
+        checkShape(field, value);
         // 解析失败（抛异常）不会走到这里，所以失败的结果不会被缓存
         if (reuse) {
             Object resolved = value;
@@ -105,12 +122,37 @@ public class FieldValueService {
     }
 
     /**
+     * 解析器返回值的形态须与字段类型一致：STRING_SET 为可按成员查询的集合（或已加载的字符串清单）；
+     * 其它集合类型为同类型的 {@link RuleList}，OBJECT_LIST 的元素结构须与字段配置一致。不一致按读取失败报错。
+     */
+    private void checkShape(FieldDefinition field, Object value) {
+        String owner = "字段 " + field.fieldCode;
+        String type = field.dataType;
+        if (STRING_SET.equals(type)) {
+            if (value instanceof RuleCollection || value instanceof RuleList list && list.elementType().equals("STRING")) return;
+        } else if (RuleList.isCollection(type)) {
+            if (value instanceof RuleList list && list.dataType().equals(type)) {
+                String configured = field.elementSchema == null || field.elementSchema.isBlank() ? null : field.elementSchema.trim();
+                if (!RuleList.OBJECT_LIST.equals(type) || configured != null && configured.equals(list.elementSchema())) return;
+                throw new IllegalStateException(owner + " 为 OBJECT_LIST，解析器返回的元素结构 " + list.elementSchema() + " 与字段配置的 " + configured + " 不一致");
+            }
+        } else if (!RuleList.isCollection(type)) {
+            // 非集合类型：标量取值不在这里做形态检查，由使用方按参数类型校验
+            return;
+        }
+        throw new IllegalStateException(owner + " 为集合类型 " + type + "，但解析器返回了 " + value.getClass().getSimpleName());
+    }
+
+    /**
      * 请求级缓存键：规则、字段、解析器，加上上下文里的候选合作方、当前客户、决策时间。
      * 上下文本身一次判定一个，键里再带上这些取值，保证不同合作方 / 客户 / 决策时间的同名字段不会互相串用。
      */
     private static String cacheKey(FieldDefinition field, RuleExecutionContext context) {
         return "FIELD|" + context.ruleCode() + "|" + field.fieldCode + "|" + field.resolverCode
-                + "|" + context.value("candidate.providerCode") + "|" + context.value("transaction.clientId")
+                + "|" + (context.has("candidate.providerCode") ? context.value("candidate.providerCode") : null)
+                + "|" + (context.has("transaction.clientId") ? context.value("transaction.clientId") : null)
+                // C2 逐条监管规则求值时复用同一个上下文：按正在判断的监管规则隔离（如「监管规则要求的能力标签」）；其它规则没有这条路径
+                + "|" + (context.has("context.regulatoryRuleId") ? context.value("context.regulatoryRuleId") : null)
                 + "|" + context.decisionTime();
     }
 

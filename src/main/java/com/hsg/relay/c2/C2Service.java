@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.Provider;
 import com.hsg.relay.domain.RuleAudit;
+import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.ProviderRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
@@ -426,11 +427,13 @@ public class C2Service {
         return providerCapabilities(code);
     }
 
-    private static boolean active(boolean enabled, LocalDateTime start, LocalDateTime end, LocalDateTime now) {
+    /** 限制 / 监管规则在 now 时点是否生效（C2 判定与 C2 集合字段解析器共用）。 */
+    static boolean active(boolean enabled, LocalDateTime start, LocalDateTime end, LocalDateTime now) {
         return enabled && start != null && !now.isBefore(start) && (end == null || now.isBefore(end));
     }
 
-    private static String normalize(String value) {
+    /** 取值归一化：去首尾空白、转大写（C2 判定与 C2 集合字段解析器共用）。 */
+    static String normalize(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
@@ -462,6 +465,20 @@ public class C2Service {
 
     private static List<String> single(String value) {
         return value == null ? List.of() : List.of(value);
+    }
+
+    /** 国籍清单归一化（去首尾空白、转大写、去空项），与限制取值的归一化一致；没有上送时保持 null。 */
+    static List<String> normalized(List<String> values) {
+        return values == null ? null : values.stream().map(C2Service::normalize).filter(v -> !v.isEmpty()).distinct().toList();
+    }
+
+    /**
+     * 函数上下文里的国籍清单：没有上送（两个入参都为空）时保持为空值 null，引用它的集合函数会报「没有取值」，
+     * 不会当成空清单；上送了空清单才是确认的空集合。
+     */
+    private static List<String> sent(List<String> own, List<String> merged) {
+        List<String> values = own != null ? own : merged;
+        return values == null ? null : normalized(values);
     }
 
     private static List<String> orMerged(List<String> own, List<String> merged) {
@@ -535,6 +552,21 @@ public class C2Service {
         variables.put("clientCountry", req.clientCountry());
         variables.put("intermediaryCountry", req.intermediaryCountry());
         variables.put("purpose", req.purpose());
+        // 附加触发条件里函数节点 / 数据解析字段的执行上下文：九个固定交易要素以模拟请求为准（与 variables 同源，不接受 variables 覆盖），
+        // 国籍清单与限制取值同样归一化（去首尾空白、转大写），没有上送时保持为空（引用它的集合函数会报「没有取值」，不会当成空清单）
+        Map<String, Object> transaction = new LinkedHashMap<>();
+        transaction.put("transaction.paymentCurrency", req.paymentCurrency());
+        transaction.put("transaction.debitCurrency", req.debitCurrency());
+        transaction.put("transaction.beneficiaryBankCountry", req.beneficiaryBankCountry());
+        transaction.put("transaction.beneficiaryAddressCountry", req.beneficiaryAddressCountry());
+        transaction.put("transaction.beneficiaryRegion", req.beneficiaryRegion());
+        transaction.put("transaction.orderingCountry", req.orderingCountry());
+        transaction.put("transaction.clientCountry", req.clientCountry());
+        transaction.put("transaction.intermediaryCountry", req.intermediaryCountry());
+        transaction.put("transaction.purpose", req.purpose());
+        RuleExecutionContext functionContext = RuleExecutionContext.c2(req.providerCode(),
+                sent(req.directorNationalities(), req.directorUboNationalities()),
+                sent(req.uboNationalities(), req.directorUboNationalities()), transaction, null, now);
         List<RegulatoryCheck> checks = new ArrayList<>();
         // 触发后缺少能力标签的监管规则：第 8 个规则组的叶子「监管能力要求不满足」为 true
         List<String> unmetRules = new ArrayList<>();
@@ -552,8 +584,10 @@ public class C2Service {
             // 范围命中后，配置了附加触发条件的规则还须附加条件命中才触发
             String triggerExpression = null, note = null;
             if (triggered && view.triggerCondition() != null) {
+                // 正在判断的监管规则写入上下文：「监管规则要求的能力标签」按它取值，结果不跨规则串用
+                functionContext.set("context.regulatoryRuleId", rule.ruleId);
                 RegulatoryTrigger.Outcome outcome = RegulatoryTrigger.evaluate(
-                        RegulatoryTrigger.parse(rule.triggerConditionJson, mapper), variables, expressions);
+                        RegulatoryTrigger.parse(rule.triggerConditionJson, mapper), variables, expressions, functionContext);
                 triggered = outcome.matched();
                 triggerExpression = outcome.expression();
                 note = outcome.note();
@@ -590,7 +624,9 @@ public class C2Service {
         boolean globalPassed = true;
         if (configured != null && configured.conditionJson != null) {
             var tree = RegulatoryTrigger.parse(configured.conditionJson, mapper);
-            var outcome = RegulatoryTrigger.evaluate(tree, variables, expressions);
+            // C2 全局附加条件不属于某条监管规则：上下文里没有「正在判断的监管规则」，引用它的字段会报错（按未通过处理）
+            functionContext.set("context.regulatoryRuleId", null);
+            var outcome = RegulatoryTrigger.evaluate(tree, variables, expressions, functionContext);
             globalPassed = outcome.matched() && outcome.note() == null;
             if (!globalPassed) hits.add(new RuleHit(9, "C2-GLOBAL-CONDITION", "GLOBAL_CONDITION",
                     "C2_CONDITION_NOT_MET", "globalCondition", outcome.note() == null ? "C2 全局附加条件未满足" : outcome.note()));

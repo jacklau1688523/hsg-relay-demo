@@ -36,6 +36,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Transactional
 class FunctionMetadataApiTest {
     private static final Map<String, Object> EXCLUSION_ARGUMENTS = Map.of("providerCode", "$candidate.providerCode", "clientId", "$transaction.clientId");
+    /** 已接入函数节点的规则（报错文字里的清单，按编码排序）。 */
+    private static final String RULES = "C1 / C2 / C3 / C5 / C7 / C8";
+    /** 启动时补齐的 26 个通用函数：27 个集合函数里去掉返回 OBJECT / MAP 的两个（没有后置函数接收，不进选择器），加上封顶函数 numberMin。 */
+    private static final List<String> SEEDED = List.of("collectionAllMatch", "collectionAnyMatch", "collectionAvg", "collectionContains",
+            "collectionContainsAll", "collectionContainsAny", "collectionCount", "collectionCountMatch", "collectionCountWhere",
+            "collectionDifference", "collectionDistinct", "collectionFilter", "collectionFilterRecords", "collectionIntersects",
+            "collectionIntersection", "collectionIsEmpty", "collectionMax", "collectionMin", "collectionNoneMatch", "collectionNotContains",
+            "collectionSize", "collectionSort", "collectionSum", "collectionSumWhere", "collectionUnion", "numberMin");
     private static final Map<String, Object> SAMPLE = Map.of("providerCode", "PROV-GD", "clientId", "API-CLIENT", "amountUsd", "100");
     private static final String SIMULATE = "/api/function-metadata/clientExcluded/simulate";
 
@@ -71,6 +79,12 @@ class FunctionMetadataApiTest {
         List<String> values = new ArrayList<>();
         array.forEach(node -> values.add(field == null ? node.asText() : node.path(field).asText()));
         return values;
+    }
+
+    private static List<String> plus(List<String> seeded, String... others) {
+        List<String> all = new ArrayList<>(seeded);
+        all.addAll(List.of(others));
+        return all;
     }
 
     private static JsonNode entry(JsonNode array, String field, String code) {
@@ -112,8 +126,28 @@ class FunctionMetadataApiTest {
         // findBestAppetiteRule 由执行器内部落实，没有独立的 Handler：清单里照常列出（只读），但不能添加为条件节点
         assertThat(catalog.path("required").get(0).path("implemented").asBoolean()).isFalse();
 
-        // collectionContains / collectionIntersects 为启动时补齐的通用集合函数
-        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("clientExcluded", "collectionContains", "collectionIntersects", "getProviderMtd", "hasValidCaseApproval");
+        // collectionContains / collectionIntersects 等通用函数为启动时补齐；返回 OBJECT / MAP 的 collectionFirstMatch / collectionGroupBy 没有后置函数接收，不进选择器
+        List<String> listed = values(catalog.path("functions"), "functionCode");
+        // collectionContains / collectionIntersects 本身就在 SEEDED 里：总数 = 26 个通用函数 + clientExcluded + 两个 C1 评分函数
+        assertThat(listed).hasSize(SEEDED.size() + 3).containsExactlyInAnyOrderElementsOf(plus(SEEDED,
+                "clientExcluded", "getProviderMtd", "hasValidCaseApproval"));
+        assertThat(listed).doesNotContain("collectionFirstMatch", "collectionGroupBy");
+        // 集合函数：分类、参数类型（COLLECTION / PREDICATE / SORT_FIELDS）、返回类型与是否可被后置函数引用
+        JsonNode sort = entry(catalog.path("functions"), "functionCode", "collectionSort");
+        assertThat(sort.path("category").asText()).isEqualTo("COLLECTION_RECORD");
+        assertThat(sort.path("returnType").asText()).isEqualTo("COLLECTION");
+        assertThat(sort.path("referable").asBoolean()).isTrue();
+        assertThat(values(sort.path("operators"), null)).isEmpty();
+        assertThat(values(sort.path("parameters"), "code")).containsExactly("collection", "sortFields");
+        assertThat(sort.path("parameters").get(1).path("type").asText()).isEqualTo("SORT_FIELDS");
+        assertThat(entry(catalog.path("functions"), "functionCode", "collectionCountMatch").path("parameters").get(1).path("type").asText())
+                .isEqualTo("PREDICATE");
+        assertThat(entry(catalog.path("functions"), "functionCode", "collectionSize").path("operators").toString()).isEqualTo("[\"EQ\",\"NE\",\"GT\",\"GTE\",\"LT\",\"LTE\"]");
+        assertThat(entry(catalog.path("functions"), "functionCode", "collectionSize").path("returnType").asText()).isEqualTo("INTEGER");
+        // 可以绑定为函数参数的数据字段与元素结构
+        assertThat(values(catalog.path("dataFields"), "fieldCode")).contains("providerExcludedClientIds");
+        assertThat(entry(catalog.path("dataFields"), "fieldCode", "providerExcludedClientIds").path("dataType").asText()).isEqualTo("STRING_SET");
+        assertThat(values(catalog.path("elementSchemas"), "code")).contains("REACH_ROW", "PROVIDER_RESTRICTION", "COST_COMPONENT", "PREFERENCE_RULE");
         JsonNode clientExcluded = catalog.path("functions").get(0);
         assertThat(clientExcluded.path("functionName").asText()).isEqualTo("客户是否被合作方排除");
         assertThat(clientExcluded.path("returnType").asText()).isEqualTo("BOOLEAN");
@@ -131,9 +165,17 @@ class FunctionMetadataApiTest {
     }
 
     @Test
-    void pickerIsOnlyAvailableForC1AndC5() throws Exception {
-        assertThat(errorOf(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C2")))
-                .isEqualTo("目前只有 C1 附加条件和 C5 评分组的条件编辑器支持添加函数，不能用于 C2");
+    void pickerIsAvailableForRulesWithAnExecutionContext() throws Exception {
+        // C2 / C3 / C7 / C8 已接入函数节点（受控路径 + 执行上下文）；没有接入的规则（如 C4）仍不能用
+        JsonNode c2 = ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C2"));
+        assertThat(c2.path("ruleCode").asText()).isEqualTo("C2");
+        assertThat(values(c2.path("paths"), "path")).contains("candidate.providerCode", "transaction.directorNationalities", "context.regulatoryRuleId");
+        assertThat(values(c2.path("dataFields"), "fieldCode")).contains("providerCapabilityTags", "requiredCapabilityTags", "providerRestrictions",
+                "providerRestrictedNationalities").doesNotContain("providerExcludedClientIds");
+        for (String rule : List.of("C3", "C7", "C8"))
+            assertThat(ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", rule)).path("ruleCode").asText()).isEqualTo(rule);
+        assertThat(errorOf(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C4")))
+                .isEqualTo("目前只有 " + RULES + " 的条件编辑器支持添加函数，不能用于 C4");
         // C5 评分组的条件编辑器可以选函数；OBJECT 返回类型（calculateValueDate）由执行器调用，不能作为条件节点
         mvc.perform(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C5")).andExpect(status().isOk());
     }
@@ -187,7 +229,9 @@ class FunctionMetadataApiTest {
         assertThat(disabled.path("usagePolicy").asText()).as("使用策略来自代码，停用后仍是系统必检").isEqualTo("REQUIRED");
         // 停用后不能再添加为条件节点；系统必检清单仍然列出它（只读），但 implemented 为 false（不能作为节点执行）
         JsonNode catalog = ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C1"));
-        assertThat(values(catalog.path("functions"), "functionCode")).containsExactly("clientExcluded", "collectionContains", "collectionIntersects", "getProviderMtd");
+        assertThat(values(catalog.path("functions"), "functionCode")).hasSize(SEEDED.size() + 2)
+                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "clientExcluded", "getProviderMtd"))
+                .doesNotContain("hasValidCaseApproval");
         assertThat(values(catalog.path("required"), "functionCode")).containsExactly("findBestAppetiteRule", "hasValidCaseApproval", "getProviderMtd");
         assertThat(entry(catalog.path("required"), "functionCode", "hasValidCaseApproval").path("implemented").asBoolean()).isFalse();
         // 引用它的条件不能再保存
@@ -203,7 +247,9 @@ class FunctionMetadataApiTest {
         assertThat(entry(catalog.path("functions"), "functionCode", "clientExcluded").path("usagePolicy").asText()).isEqualTo("OPTIONAL");
         assertThat(ok(MockMvcRequestBuilders.delete("/api/function-metadata/clientExcluded")).path("deleted").asText()).isEqualTo("clientExcluded");
         assertThat(values(ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C1")).path("functions"), "functionCode"))
-                .containsExactly("collectionContains", "collectionIntersects", "getProviderMtd", "hasValidCaseApproval");
+                .hasSize(SEEDED.size() + 2)
+                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "getProviderMtd", "hasValidCaseApproval"))
+                .doesNotContain("clientExcluded");
         assertThat(errorOf(jsonRequest("PUT", "/api/appetites/" + rule().id + "/condition", Map.of("enabled", true,
                 "tree", Map.of("logic", "AND", "children", List.of(functionNode("clientExcluded", EXCLUSION_ARGUMENTS)))))))
                 .isEqualTo("函数不存在：clientExcluded");
@@ -270,9 +316,12 @@ class FunctionMetadataApiTest {
         assertThat(legacyUpdate.path("fieldName").asText()).isEqualTo("接口绑定标记（改名）");
         assertThat(legacyUpdate.path("valueSource").asText()).isEqualTo("FUNCTION");
         assertThat(legacyUpdate.path("functionCode").asText()).isEqualTo("clientExcluded");
-        // 保留的绑定仍按本次提交复核：把适用规则改成含 C2 会被拦下
+        // 保留的绑定仍按本次提交复核：clientExcluded 不适用于 C2，把适用规则改成含 C2 会被拦下
         assertThat(errorOf(jsonRequest("PUT", "/api/field-metadata/apiBoundFlag", fieldInput("allowedRules", "C1,C2"))))
-                .isEqualTo("绑定函数的字段目前只能适用于 C1，请先把适用规则改为 C1");
+                .isEqualTo("函数 clientExcluded 不适用于当前规则 C2");
+        // 绑定函数的字段只能适用于已接入函数节点的规则
+        assertThat(errorOf(jsonRequest("PUT", "/api/field-metadata/apiBoundFlag", fieldInput("allowedRules", "C1,C4"))))
+                .isEqualTo("绑定函数的字段只能适用于 " + RULES + "，不能用于 C1,C4");
 
         // 改回请求输入：绑定清空
         JsonNode request = send("PUT", "/api/field-metadata/apiBoundFlag", fieldInput("valueSource", "REQUEST"));

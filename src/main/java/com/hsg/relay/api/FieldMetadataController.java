@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
 import com.hsg.relay.function.FunctionMetadataService;
+import com.hsg.relay.function.FunctionTypes;
+import com.hsg.relay.function.RuleExecutionContext;
+import com.hsg.relay.function.field.RuleList;
 import com.hsg.relay.function.field.FieldResolverRegistry;
 import com.hsg.relay.function.field.FieldValueService;
 import com.hsg.relay.repo.FieldDefinitionRepository;
@@ -59,13 +62,15 @@ public class FieldMetadataController {
      * 字段定义。valueSource：REQUEST 请求输入 / FUNCTION 由业务函数计算 / DATA_RESOLVER 由字段解析器取数；
      * 绑定函数时 functionCode 为函数编码，argumentBindings 为参数绑定 JSON 对象（参数编码 → 受控路径 "$candidate.providerCode" 或字面量）；
      * 数据解析字段带 resolverCode（字段解析器）、executionScope（执行作用域）、cachePolicy（缓存策略），
-     * 集合类型（STRING_SET）另带 elementType（元素类型）。
+     * 集合类型（STRING_SET / STRING_LIST / NUMBER_LIST / DATE_LIST / OBJECT_LIST）另带 elementType（元素类型），
+     * OBJECT_LIST 还须带 elementSchema（已登记的元素结构编码）。这些字段只能由字段解析器取数（DATA_RESOLVER）。
      * 取值来源相关的各项都没有传（升级前的页面 / 脚本）表示请求没有表达取值来源：新增字段留空，修改时保持字段已有的配置。
      */
     public record Input(String fieldCode, String fieldName, String dataType, String allowedOperators,
                         String allowedRules, String valueOptions, boolean enabled,
                         String valueSource, String functionCode, JsonNode argumentBindings,
-                        String resolverCode, String elementType, String executionScope, String cachePolicy) {
+                        String resolverCode, String elementType, String executionScope, String cachePolicy,
+                         String elementSchema) {
         @JsonCreator
         public Input {
         }
@@ -74,12 +79,20 @@ public class FieldMetadataController {
         public Input(String fieldCode, String fieldName, String dataType, String allowedOperators, String allowedRules, String valueOptions, boolean enabled,
                      String valueSource, String functionCode, JsonNode argumentBindings) {
             this(fieldCode, fieldName, dataType, allowedOperators, allowedRules, valueOptions, enabled, valueSource, functionCode, argumentBindings,
-                    null, null, null, null);
+                    null, null, null, null, null);
+        }
+
+        /** 旧版十四参构造（不带元素结构），已有调用方和测试继续使用。 */
+        public Input(String fieldCode, String fieldName, String dataType, String allowedOperators, String allowedRules, String valueOptions, boolean enabled,
+                     String valueSource, String functionCode, JsonNode argumentBindings,
+                     String resolverCode, String elementType, String executionScope, String cachePolicy) {
+            this(fieldCode, fieldName, dataType, allowedOperators, allowedRules, valueOptions, enabled, valueSource, functionCode, argumentBindings,
+                    resolverCode, elementType, executionScope, cachePolicy, null);
         }
 
         /** 旧版七参构造（取值来源为请求输入），已有调用方和测试继续使用。 */
         public Input(String fieldCode, String fieldName, String dataType, String allowedOperators, String allowedRules, String valueOptions, boolean enabled) {
-            this(fieldCode, fieldName, dataType, allowedOperators, allowedRules, valueOptions, enabled, null, null, null, null, null, null, null);
+            this(fieldCode, fieldName, dataType, allowedOperators, allowedRules, valueOptions, enabled, null, null, null, null, null, null, null, null);
         }
     }
 
@@ -122,6 +135,7 @@ public class FieldMetadataController {
         old.argumentBindings = value.argumentBindings;
         old.resolverCode = value.resolverCode;
         old.elementType = value.elementType;
+        old.elementSchema = value.elementSchema;
         old.executionScope = value.executionScope;
         old.cachePolicy = value.cachePolicy;
         old.enabled = value.enabled;
@@ -187,26 +201,39 @@ public class FieldMetadataController {
         if (!code.matches("[A-Za-z][A-Za-z0-9_]{0,63}"))
             throw new IllegalArgumentException("字段编码须以字母开头，仅含字母、数字、下划线，最多64位");
         if (name.isEmpty() || name.length() > 80) throw new IllegalArgumentException("字段名称为必填项，最多80位");
-        if (!List.of("STRING", "ENUM", "DECIMAL", "INTEGER", "BOOLEAN", "DATE", FieldValueService.STRING_SET).contains(type))
-            throw new IllegalArgumentException("不支持的数据类型");
+        if (!FunctionTypes.FIELD_TYPES.contains(type)) throw new IllegalArgumentException("不支持的数据类型");
         List<String> operators = csv(input.allowedOperators());
         List<String> rules = csv(input.allowedRules());
-        List<String> allowed = List.of("DECIMAL", "INTEGER", "DATE").contains(type) ? List.of("EQ", "NE", "GT", "GTE", "LT", "LTE") :
-                "BOOLEAN".equals(type) ? List.of("EQ", "NE") : FieldValueService.isSet(type) ? List.of("CONTAINS", "NOT_CONTAINS") : List.of("EQ", "NE", "IN");
-        if (operators.isEmpty() || !allowed.containsAll(operators))
-            throw new IllegalArgumentException("运算符与数据类型不匹配");
+        // 字符串集合 / 字符串清单可以做「是否包含」；数值清单、日期清单、对象集合、分组、对象只能作为函数参数，没有可比较的运算符
+        boolean stringCollection = FieldValueService.STRING_SET.equals(type) || RuleList.STRING_LIST.equals(type);
+        boolean argumentOnly = FunctionTypes.isCollection(type) && !stringCollection || FunctionTypes.MAP.equals(type) || FunctionTypes.OBJECT.equals(type);
+        List<String> allowed = argumentOnly ? List.of() : List.of("DECIMAL", "INTEGER", "DATE").contains(type) ? List.of("EQ", "NE", "GT", "GTE", "LT", "LTE") :
+                "BOOLEAN".equals(type) ? List.of("EQ", "NE") : stringCollection ? List.of("CONTAINS", "NOT_CONTAINS") : List.of("EQ", "NE", "IN");
+        if (argumentOnly ? !operators.isEmpty() : operators.isEmpty() || !allowed.containsAll(operators))
+            throw new IllegalArgumentException(argumentOnly ? "类型 " + type + " 的字段只能作为函数的参数，不能直接作为条件字段比较，运算符须留空"
+                    : "运算符与数据类型不匹配");
         if (rules.isEmpty() || rules.stream().anyMatch(x -> !x.matches("C([1-9]|10)")))
             throw new IllegalArgumentException("适用规则须选择 C1–C10");
         String values = trim(input.valueOptions());
         if (values.length() > 1000) throw new IllegalArgumentException("可选值长度不可超过1000位");
-        if (!values.isEmpty() && List.of("DECIMAL", "INTEGER", "BOOLEAN", "DATE", FieldValueService.STRING_SET).contains(type))
+        if (!values.isEmpty() && !List.of("STRING", "ENUM").contains(type))
             throw new IllegalArgumentException("数字、布尔、日期和集合字段不使用枚举可选值");
-        // 集合类型必须声明元素类型（目前只支持 STRING）；非集合类型不能带元素类型
+        // 集合类型必须声明元素类型（由类型决定：STRING_SET / STRING_LIST → STRING，NUMBER_LIST → DECIMAL，DATE_LIST → DATE，OBJECT_LIST → OBJECT）；非集合类型不能带元素类型
+        String expectedElement = elementTypeOf(type);
         String elementType = trim(input.elementType()).toUpperCase(Locale.ROOT);
-        if (FieldValueService.isSet(type)) {
-            if (!"STRING".equals(elementType)) throw new IllegalArgumentException("集合字段 " + code + " 的元素类型 elementType 须为 STRING");
-        } else if (!elementType.isEmpty())
-            throw new IllegalArgumentException("非集合类型不能设置元素类型");
+        // 修改已有的数据解析字段、请求没有带元素类型时沿用已有的（须与类型一致）
+        boolean retainedElement = elementType.isEmpty() && existing != null && FunctionMetadataService.SOURCE_DATA.equals(existing.valueSource)
+                && expectedElement.equalsIgnoreCase(trim(existing.elementType));
+        if (!retainedElement && !expectedElement.equals(elementType))
+            throw new IllegalArgumentException(expectedElement.isEmpty() ? "非集合类型不能设置元素类型"
+                    : "集合字段 " + code + " 的元素类型 elementType 须为 " + expectedElement);
+        // 对象集合必须指定已登记的元素结构；其它类型不能带元素结构
+        String elementSchema = trim(input.elementSchema());
+        if (RuleList.OBJECT_LIST.equals(type)) {
+            if (elementSchema.isEmpty()) throw new IllegalArgumentException("对象集合字段 " + code + " 须配置元素结构 elementSchema");
+            functionMetadata.requireElementSchema(elementSchema);
+        } else if (!elementSchema.isEmpty())
+            throw new IllegalArgumentException("非对象集合类型不能设置元素结构 elementSchema");
         String resolverCode = trim(input.resolverCode()), scope = trim(input.executionScope()).toUpperCase(Locale.ROOT), cache = trim(input.cachePolicy()).toUpperCase(Locale.ROOT);
         FieldDefinition field = new FieldDefinition(code, name, type, String.join(",", operators), String.join(",", rules), values);
         field.enabled = input.enabled();
@@ -223,16 +250,32 @@ public class FieldMetadataController {
             boolean retained = existing != null && FunctionMetadataService.SOURCE_DATA.equals(existing.valueSource)
                     && blank(input.valueSource()) && blank(input.resolverCode());
             if (retained) {
-                // 保留已有解析配置的前提下复核本次提交的类型和适用规则（例如把适用规则改成含 C2 就会被拦下）
-                if (!rules.equals(List.of("C1"))) throw new IllegalArgumentException("数据解析字段目前只能适用于 C1，请先把适用规则改为 C1");
+                // 保留已有解析配置的前提下复核本次提交的类型和适用规则（例如把适用规则改成含 C4 就会被拦下）
+                if (rules.isEmpty() || !RuleExecutionContext.FUNCTION_RULES.containsAll(rules))
+                    throw new IllegalArgumentException("数据解析字段只能适用于 " + String.join(" / ", RuleExecutionContext.FUNCTION_RULES.stream().sorted().toList())
+                            + "，请先调整适用规则");
                 if (!type.equals(existing.dataType)) throw new IllegalArgumentException("修改数据解析字段的类型时，请同时填写取值来源和字段解析器");
             }
             field.resolverCode = retained ? existing.resolverCode : resolverCode;
-            field.elementType = retained ? existing.elementType : elementType;
+            field.elementType = retainedElement ? existing.elementType : elementType;
             field.executionScope = retained ? existing.executionScope : scope;
             field.cachePolicy = retained ? existing.cachePolicy : cache;
-        }
+            field.elementSchema = retained && elementSchema.isEmpty() ? existing.elementSchema : elementSchema;
+        } else if (argumentOnly)
+            throw new IllegalArgumentException("类型 " + type + " 的字段只能由字段解析器取数，请把取值来源设为数据解析（DATA_RESOLVER）并选择字段解析器");
         return field;
+    }
+
+    /** 集合类型的元素类型（由类型决定）；非集合类型为空。 */
+    public static String elementTypeOf(String dataType) {
+        if (dataType == null) return "";
+        return switch (dataType) {
+            case FieldValueService.STRING_SET, RuleList.STRING_LIST -> "STRING";
+            case RuleList.NUMBER_LIST -> "DECIMAL";
+            case RuleList.DATE_LIST -> "DATE";
+            case RuleList.OBJECT_LIST -> "OBJECT";
+            default -> "";
+        };
     }
 
     private List<String> csv(String value) {

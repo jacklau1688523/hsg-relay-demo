@@ -24,9 +24,12 @@ public class FieldDefinition {
     // 数据解析字段：字段解析器编码（对应 FieldResolverRegistry 里登记的实现）
     @Column(length = 64)
     public String resolverCode;
-    // 集合类型（STRING_SET）的元素类型，目前为 STRING；非集合字段为空
+    // 集合类型（STRING_SET / STRING_LIST）的元素类型，目前为 STRING；非集合字段为空
     @Column(length = 20)
     public String elementType;
+    // 对象集合（OBJECT_LIST）的元素结构编码（代码登记，如 REACH_ROW）；非对象集合字段为空
+    @Column(length = 40)
+    public String elementSchema;
     // 字段执行作用域：CANDIDATE 当前候选路由 / TRANSACTION 当前交易 / CONTEXT 规则上下文 / GLOBAL
     @Column(length = 20)
     public String executionScope;

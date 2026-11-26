@@ -86,6 +86,8 @@ class C1FunctionTest {
     }
 
     private static final Map<String, Object> EXCLUSION_ARGUMENTS = Map.of("providerCode", "$candidate.providerCode", "clientId", "$transaction.clientId");
+    /** 已接入函数节点的规则（报错文字里的清单，按编码排序）。 */
+    private static final String FUNCTION_RULE_TEXT = "C1 / C2 / C3 / C5 / C7 / C8";
 
     @Autowired
     C1Service c1;
@@ -391,8 +393,9 @@ class C1FunctionTest {
         var broken = group("AND", function("clientExcluded", Map.of(), "EQ", false));
         assertThatThrownBy(() -> saveCondition(rule.id, broken)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("缺少必填参数");
         var valid = group("AND", function("clientExcluded", EXCLUSION_ARGUMENTS, "EQ", false));
-        // 函数节点可用于 C1 附加条件和 C5 评分组条件；C2 仍不能使用
-        assertThatThrownBy(() -> expressions.compile(valid, "C2")).hasMessage("函数节点目前仅支持 C1 附加条件和 C5 评分组条件，不能用于 C2");
+        // 函数节点只能用于已接入的规则；clientExcluded 本身不适用于 C2
+        assertThatThrownBy(() -> expressions.compile(valid, "C2")).hasMessage("函数 clientExcluded 不适用于当前规则 C2");
+        assertThatThrownBy(() -> expressions.compile(valid, "C4")).hasMessage("函数节点目前仅支持 " + FUNCTION_RULE_TEXT + " 的条件，不能用于 C4");
         assertThatThrownBy(() -> expressions.preview(new ExpressionService.Preview(valid, Map.of(), "C1"))).hasMessage("条件引用了业务函数，只能在规则执行中求值");
     }
 
@@ -495,8 +498,11 @@ class C1FunctionTest {
         // 绑定校验：返回类型、适用规则、函数是否存在
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundAmount", "金额", "DECIMAL", "EQ", "C1", null, true, "FUNCTION", "clientExcluded", null)))
                 .hasMessage("函数 clientExcluded 返回类型为 BOOLEAN，与字段类型 DECIMAL 不一致，不能绑定");
+        // 适用规则里含未接入函数节点的规则：拦下；只含已接入的规则时再核对函数本身是否适用
+        assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1,C4", null, true, "FUNCTION", "clientExcluded", null)))
+                .hasMessage("绑定函数的字段只能适用于 " + FUNCTION_RULE_TEXT + "，不能用于 C1,C4");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1,C2", null, true, "FUNCTION", "clientExcluded", null)))
-                .hasMessage("绑定函数的字段目前只能适用于 C1，请先把适用规则改为 C1");
+                .hasMessage("函数 clientExcluded 不适用于当前规则 C2");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1", null, true, "FUNCTION", "noSuchFunction", null)))
                 .hasMessage("函数不存在：noSuchFunction");
         assertThatThrownBy(() -> fieldsApi.create(new FieldMetadataController.Input("testBoundFlag", "标记", "BOOLEAN", "EQ", "C1", null, true, "FUNCTION", " ", null)))
