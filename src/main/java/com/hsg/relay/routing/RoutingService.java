@@ -18,6 +18,8 @@ import static com.hsg.relay.routing.RoutingConfig.*;
 public class RoutingService {
     private static final MathContext MC = MathContext.DECIMAL128;
     private static final ZoneId HK = ZoneId.of("Asia/Hong_Kong");
+    /** 路由接受的交易类型；综合评分权重配置（全局）也按同一组取值。 */
+    public static final Set<String> TRANSACTION_TYPES = Set.of("TRADE", "TREASURY", "INTRAGROUP", "PAYROLL", "FEE", "REFUND", "OTHER");
     private final RoutingDocumentRepository docs;
     private final ObjectMapper json;
     private final ProviderRepository providers;
@@ -27,9 +29,10 @@ public class RoutingService {
     private final C2Service c2;
     private final C3ConditionService c3Conditions;
     private final C5ScoreService c5Scoring;
+    private final RouteRankingService ranking;
 
     public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2, C3ConditionService c3Conditions,
-                          C5ScoreService c5Scoring) {
+                          C5ScoreService c5Scoring, RouteRankingService ranking) {
         docs = d;
         json = j;
         providers = p;
@@ -39,6 +42,7 @@ public class RoutingService {
         this.c2 = c2;
         this.c3Conditions = c3Conditions;
         this.c5Scoring = c5Scoring;
+        this.ranking = ranking;
     }
 
     public record ConfigView(long revision, RoutingConfig config) {
@@ -66,8 +70,11 @@ public class RoutingService {
         public LocalDate valueDate;
         public BigDecimal estimatedCostHkd;
         public Map<String, BigDecimal> scores = new LinkedHashMap<>();
+        // 综合评分：rawScore 是未舍入的满精度值（审计用），totalScore 是两位小数、HALF_UP 的最终总分，排序只用 totalScore
         public BigDecimal totalScore;
         public Integer rank;
+        // PRIMARY / ALTERNATE_1 / ALTERNATE_2；排在第四名及以后为 NOT_SELECTED，未参与排序的候选为空
+        public String role;
         public ZonedDateTime nextFxWindow;
         public C5Calculator.Result c5;
         // C3 最终选中的覆盖行（行号 + C3 条件版本）：C5 的截单时间、偏移、日历都出自这一行，C6 用同一条覆盖行
@@ -86,7 +93,8 @@ public class RoutingService {
     public record Result(String decisionId, String paymentId, String result, String reasonCode, Candidate route,
                          List<Candidate> alternatives,
                          List<Candidate> candidates, ZonedDateTime nextFxWindow, long configRevision,
-                         boolean simulation, boolean opsCheckRequired, List<String> messages) {
+                         boolean simulation, boolean opsCheckRequired, List<String> messages,
+                         RouteRankingService.MatchInfo ranking) {
     }
 
     private String encode(Object o) {
@@ -217,11 +225,7 @@ public class RoutingService {
     }
 
     private static BigDecimal money(BigDecimal x) {
-        return x.setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private static boolean scope(String expected, String actual) {
-        return expected == null || expected.isBlank() || "ALL".equals(expected) || expected.equals(actual);
+        return RouteTotalScoreCalculator.round2(x);
     }
 
     private static void check(Candidate c, String code, List<String> reasons, Object detail) {
@@ -242,7 +246,7 @@ public class RoutingService {
         List<String> errors = validateRequest(req, cv.config());
         Result result;
         if (!errors.isEmpty())
-            result = new Result(id, req == null ? null : req.paymentId(), "REFER", "INVALID_REQUEST", null, List.of(), List.of(), null, cv.revision(), true, true, errors);
+            result = new Result(id, req == null ? null : req.paymentId(), "REFER", "INVALID_REQUEST", null, List.of(), List.of(), null, cv.revision(), true, true, errors, null);
         else result = evaluate(req, cv, id);
         docs.save(new RoutingDocument("DECISION-" + id, cv.revision(), encode(Map.of("request", req == null ? Map.of() : req, "response", result))));
         return result;
@@ -261,7 +265,7 @@ public class RoutingService {
         if (r.beneficiaryBankBic() == null || !r.beneficiaryBankBic().matches("[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?"))
             e.add("受益行 BIC 格式无效");
         if (r.chargeOption() == null || !Set.of("OUR", "SHA", "BEN").contains(r.chargeOption())) e.add("扣费方式无效");
-        if (r.paymentType() == null || !Set.of("TRADE", "TREASURY", "INTRAGROUP", "PAYROLL", "FEE", "REFUND", "OTHER").contains(r.paymentType()))
+        if (r.paymentType() == null || !TRANSACTION_TYPES.contains(r.paymentType()))
             e.add("交易类型无效");
         if (r.clientSegment() == null || r.clientSegment().isBlank() || r.directorUboNationalities() == null || r.directorUboNationalities().stream().anyMatch(x -> x == null || !x.matches("[A-Z]{2}")))
             e.add("客户层级及董事/UBO国籍列表必填");
@@ -346,17 +350,16 @@ public class RoutingService {
             messages.add(c.providerCode + "：C5 评分不可计算（" + c.c5Status + " — " + c.c5Message + "），保留在候选清单但不参与排序；这不是 C5 剔除候选");
         List<Candidate> valid = new ArrayList<>(all.stream().filter(c -> c.passed && c.c5Score != null).toList());
         BigDecimal min = valid.stream().map(c -> c.rawCost).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
-        Weight weight = cfg.weights().stream().filter(w -> (w.paymentType().equals(r.paymentType()) && scope(w.segment(), r.clientSegment())) || (w.paymentType().equals("OTHER") && w.segment().equals("ALL"))).max(Comparator.comparingInt(w -> (w.paymentType().equals(r.paymentType()) ? 2 : 0) + (!w.segment().equals("ALL") ? 1 : 0))).orElseThrow();
-        for (Candidate c : valid) {
-            BigDecimal cost = C7Calculator.score(min, c.rawCost);
-            c.scores.put("C7", money(cost));
-            c.rawScore = cost.multiply(n(weight.cost()), MC).add(c.scores.get("C5").multiply(n(weight.speed()))).add(c.scores.get("C8").multiply(n(weight.preference()))).add(c.scores.get("C9").multiply(n(weight.agreement()))).divide(n(100), MC);
-            c.totalScore = money(c.rawScore);
-        }
-        valid.sort(Comparator.comparing((Candidate c) -> c.rawScore).reversed().thenComparing(c -> c.rawCost).thenComparing(c -> c.valueDate).thenComparingInt(c -> c.priority).thenComparing(c -> c.providerCode).thenComparing(c -> c.fxVenue));
-        for (int i = 0; i < valid.size(); i++) valid.get(i).rank = i + 1;
+        for (Candidate c : valid) c.scores.put("C7", money(C7Calculator.score(min, c.rawCost)));
+        // 综合评分与排序：按交易类型 + 客户层级从全局权重配置匹配一套权重（P1 → P2 → P3），全部候选用同一个版本计算、按多级条件排序；
+        // 没有合格候选时不匹配权重，保持下面的 REFER 原因码不变；没有生效的权重配置或评分数据异常时抛出异常（不默认 0 权重、不按 0 分）
+        var outcome = ranking.rank(r.paymentId(), id, r.paymentType(), r.clientSegment(), valid, now.toLocalDateTime());
+        // 排名 1 → Primary，2 → Alternate 1，3 → Alternate 2；不足三个有多少取多少
+        List<Candidate> ordered = outcome.ranked().stream().map(RouteRankingService.Scored::candidate).toList();
+        if (!ordered.isEmpty())
+            messages.add("综合评分使用权重 " + RouteRankingService.describe(outcome.match()) + "；排序：总分降序 → 预估成本 HKD 升序 → 起息日升序 → 合作方优先级 → 合作方编码。");
         String reason = null;
-        if (valid.isEmpty()) {
+        if (ordered.isEmpty()) {
             if (fx && all.isEmpty()) reason = "NO_FX_VENUE";
             else if (!unscored.isEmpty()) reason = "C5_NOT_SCOREABLE";
             else if (!all.isEmpty() && all.stream().allMatch(c -> c.checks.stream().anyMatch(x -> Set.of("C1", "C2").contains(x.code()) && !x.passed())))
@@ -366,7 +369,7 @@ public class RoutingService {
             else reason = "NO_ROUTE";
         }
         ZonedDateTime next = "FX_WINDOW_CLOSED".equals(reason) ? all.stream().filter(c -> only(c).equals(List.of("C10"))).map(c -> c.nextFxWindow).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null) : null;
-        return new Result(id, r.paymentId(), valid.isEmpty() ? "REFER" : "ROUTE", reason, valid.isEmpty() ? null : valid.get(0), valid.stream().skip(1).limit(2).toList(), all, next, cv.revision(), true, true, messages);
+        return new Result(id, r.paymentId(), ordered.isEmpty() ? "REFER" : "ROUTE", reason, ordered.isEmpty() ? null : ordered.get(0), ordered.stream().skip(1).limit(2).toList(), all, next, cv.revision(), true, true, messages, outcome.match());
     }
 
     public Object decision(String id) {

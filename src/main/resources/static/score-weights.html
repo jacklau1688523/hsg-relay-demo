@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>HSG RELAY | 评分权重与路由排序</title>
+    <link rel="stylesheet" href="/hsg-style.css">
+    <style>
+        .scorecards {
+            display: grid;
+            grid-template-columns:repeat(3, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 18px
+        }
+
+        .scorecard {
+            padding: 17px;
+            border: 1px solid #dae6f5;
+            border-radius: 10px;
+            background: white
+        }
+
+        .scorecard b {
+            font-size: 17px;
+            color: #155fbc;
+            display: block;
+            margin: 5px 0
+        }
+
+        .scorecard span {
+            font-size: 12px;
+            color: #708399
+        }
+
+        .filterbar {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap
+        }
+
+        .filterbar .field {
+            min-width: 170px
+        }
+
+        td.num {
+            text-align: right;
+            font-variant-numeric: tabular-nums
+        }
+
+        /* 同一「交易类型 + 客户层级」的多个版本：组首行加粗分隔线 */
+        tr.group-first td {
+            border-top: 2px solid #cbd7e6
+        }
+
+        tr.draftRow td {
+            background: #f4f8ff
+        }
+
+        .badge.st-DRAFT {
+            color: #1265d7;
+            background: #eaf2ff;
+            border-color: #a9c8f5
+        }
+
+        .badge.st-PUBLISHED {
+            color: #139447;
+            background: #e9faef;
+            border-color: #85d5a1
+        }
+
+        .badge.st-DISABLED {
+            color: #5d6b7d;
+            background: #f0f2f5;
+            border-color: #c5cdd8
+        }
+
+        /* 右侧抽屉：新增 / 编辑草稿 */
+        .drawer {
+            position: fixed;
+            inset: 0;
+            background: #0b213a80;
+            display: none;
+            justify-content: flex-end;
+            z-index: 20
+        }
+
+        .drawer.show {
+            display: flex
+        }
+
+        .drawer-panel {
+            background: #fff;
+            width: min(560px, 100%);
+            height: 100%;
+            overflow: auto;
+            padding: 24px;
+            box-shadow: -10px 0 40px #1235
+        }
+
+        .wgrid {
+            display: grid;
+            grid-template-columns:repeat(4, minmax(0, 1fr));
+            gap: 10px
+        }
+
+        .sw {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            border-radius: 2px;
+            margin-right: 5px
+        }
+
+        .sumline {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 14px 0 6px
+        }
+
+        .sumbar {
+            flex: 1;
+            display: flex;
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #eef2f8
+        }
+
+        .sumbar span {
+            display: block;
+            height: 100%
+        }
+
+        .sumnum {
+            font-size: 22px;
+            font-weight: 800;
+            min-width: 150px;
+            text-align: right;
+            white-space: nowrap
+        }
+
+        .sumnum.ok {
+            color: #139447
+        }
+
+        .sumnum.bad {
+            color: #c63a4b
+        }
+
+        .mstep {
+            display: flex;
+            gap: 12px;
+            padding: 13px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px
+        }
+
+        .mstep .num {
+            height: 26px;
+            min-width: 30px;
+            background: #eaf2ff;
+            color: #1760b7;
+            border-radius: 13px;
+            text-align: center;
+            line-height: 26px;
+            font-weight: 700;
+            flex: none
+        }
+
+        .mstep small {
+            display: block;
+            color: #71849c;
+            margin-top: 5px;
+            line-height: 1.6
+        }
+
+        .mstep.off {
+            opacity: .6
+        }
+
+        .wline {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            padding: 5px 0
+        }
+
+        .wline .bar {
+            flex: 1;
+            height: 8px;
+            background: #eef2f8;
+            border-radius: 4px;
+            overflow: hidden
+        }
+
+        .wline .bar i {
+            display: block;
+            height: 100%
+        }
+
+        ol.rules {
+            padding-left: 22px;
+            line-height: 1.9;
+            font-size: 13px;
+            margin: 0
+        }
+
+        .example {
+            margin-top: 10px
+        }
+
+        @media (max-width: 1250px) {
+            .scorecards {
+                grid-template-columns: 1fr
+            }
+
+            .wgrid {
+                grid-template-columns: repeat(2, minmax(0, 1fr))
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">◢ HSG <small>RELAY</small></div>
+        <div class="nav" onclick="location.href='/'">⌂ &nbsp; 首页</div>
+        <div class="nav" onclick="location.href='/providers.html'">▤ &nbsp; 合作方管理</div>
+        <div class="nav indent" onclick="location.href='/c2-regulatory.html'">监管路由规则</div>
+        <div class="navhead">路由规则配置</div>
+        <div class="nav indent" onclick="location.href='/'">C1 业务准入</div>
+        <div class="nav indent" onclick="location.href='/c2.html'">C2 合规限制</div>
+        <div class="nav indent" onclick="location.href='/c3.html'">C3 业务覆盖</div>
+        <div class="nav indent" onclick="location.href='/c4.html'">C4 头寸资金校验</div>
+        <div class="nav indent" onclick="location.href='/c5.html'">C5 起息日 / 截单</div>
+        <div class="nav indent" onclick="location.href='/c6.html'">C6 交易限额</div>
+        <div class="nav indent" onclick="location.href='/c7.html'">C7 综合成本 / 费用</div>
+        <div class="nav indent" onclick="location.href='/c8.html'">C8 偏好规则</div>
+        <div class="nav indent" onclick="location.href='/c9.html'">C9 商业履约</div>
+        <div class="nav indent" onclick="location.href='/c10.html'">C10 外汇窗口</div>
+        <div class="nav" onclick="location.href='/routing.html'">▶ C1–C10 Check</div>
+        <div class="navhead">全局配置</div>
+        <div class="nav sel">⚖ &nbsp; 评分权重与路由排序</div>
+        <div class="navhead">工具</div>
+        <div class="nav" onclick="location.href='/fields.html'">▦ &nbsp; 元数据中心</div>
+        <div class="nav" onclick="location.href='/mtd.html'">◷ &nbsp; MTD 模拟数据</div>
+    </aside>
+    <main class="main">
+        <div class="top">
+            <div>RELAY 支付路由配置</div>
+            <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
+        </div>
+        <div class="content">
+            <div class="heading">
+                <h1>评分权重与路由排序</h1>
+                <div class="muted">综合评分权重是全局配置（不属于单个合作方），按「交易类型 × 客户层级」维护。路由对通过全部
+                    Check 的候选计算综合评分并排序，前三名依次为 Primary、Alternate 1、Alternate 2。
+                </div>
+            </div>
+            <div class="scorecards">
+                <div class="scorecard"><span>综合评分公式</span><b>(C7×W1 + C5×W2 + C8×W3 + C9×W4) ÷ 100</b><span>W1 成本、W2 速度、W3 偏好、W4 商业履约；权重为 0–100 的整数，合计必须等于 100</span>
+                </div>
+                <div class="scorecard"><span>权重匹配顺序（命中即停）</span><b>P1 → P2 → P3</b><span>P1 交易类型＋客户层级；P2 交易类型＋ALL；P3 OTHER＋ALL。只用已发布且在决策时间生效的版本</span>
+                </div>
+                <div class="scorecard"><span>排序规则</span><b>总分 → 成本 → 起息日 → 优先级 → 编码</b><span>总分（两位小数）降序，同分依次比较预估成本 HKD、候选起息日、合作方优先级、合作方编码、FX
+                    Venue
+                </span>
+                </div>
+            </div>
+            <div class="tabs">
+                <button class="tab sel" data-tab="config">评分权重配置</button>
+                <button class="tab" data-tab="match">权重匹配模拟</button>
+                <button class="tab" data-tab="rank">路由排序规则</button>
+                <button class="tab" data-tab="versions">配置版本记录</button>
+            </div>
+            <div id="pageError" class="err" role="alert"></div>
+            <div id="pageMsg" class="notice hidden" role="status"></div>
+            <div id="fallbackWarn" class="notice warn hidden"></div>
+
+            <!-- 页签一：权重配置 -->
+            <div id="tabConfig">
+                <div class="panel">
+                    <form id="filterForm" class="filterbar">
+                        <div class="field"><label for="filterType">交易类型</label><select id="filterType"></select></div>
+                        <div class="field"><label for="filterTier">客户层级</label><select id="filterTier"></select></div>
+                        <div class="field"><label for="filterStatus">状态</label><select id="filterStatus">
+                            <option value="">全部状态</option>
+                            <option value="PUBLISHED">已发布</option>
+                            <option value="DRAFT">草稿</option>
+                            <option value="DISABLED">已停用</option>
+                        </select></div>
+                        <button class="btn secondary" type="submit">查询</button>
+                        <button class="btn secondary" type="button" id="refresh">↻ 刷新</button>
+                        <button class="btn" type="button" id="newWeight">＋ 新增权重</button>
+                    </form>
+                </div>
+                <div class="panel">
+                    <div class="rowbetween" style="margin-bottom:12px">
+                        <h2 id="rowCount" style="margin:0">权重配置</h2>
+                        <span class="muted">草稿可编辑；已发布的版本是历史记录，只能由新版本接替</span>
+                    </div>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>交易类型</th>
+                                <th>客户层级</th>
+                                <th>版本</th>
+                                <th style="text-align:right">W1 成本</th>
+                                <th style="text-align:right">W2 速度</th>
+                                <th style="text-align:right">W3 偏好</th>
+                                <th style="text-align:right">W4 履约</th>
+                                <th style="text-align:right">合计</th>
+                                <th>状态</th>
+                                <th>当前</th>
+                                <th>有效时间段</th>
+                                <th>发布 / 创建</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="rows"></tbody>
+                        </table>
+                    </div>
+                    <div class="notice">保存草稿不影响路由评分；发布后才生效，发布时可以指定生效时间（留空 = 立即生效）。新一版发布后，上一版在同一时间结束并作为历史保留。
+                        权重合计不等于 100、单项超出 0–100 时，页面、服务端、数据库三处都会拒绝。
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="field" style="max-width:360px"><label for="operator">操作人（保存草稿 / 发布 / 停用必填）</label><input
+                            id="operator" placeholder="演示环境没有登录，请填写操作人并记入审计" maxlength="64"></div>
+                </div>
+            </div>
+
+            <!-- 页签二：权重匹配模拟 -->
+            <div id="tabMatch" class="hidden">
+                <div class="grid">
+                    <section>
+                        <div class="panel">
+                            <form id="matchForm" class="filterbar">
+                                <div class="field"><label for="matchType">交易类型</label><select id="matchType"></select></div>
+                                <div class="field"><label for="matchTier">客户层级</label><input id="matchTier" list="matchTierOptions"
+                                                                                          placeholder="如 STANDARD" maxlength="64">
+                                    <datalist id="matchTierOptions"></datalist></div>
+                                <div class="field"><label for="matchAt">决策时间（HKT，留空 = 当前）</label><input id="matchAt"
+                                                                                                              type="datetime-local"
+                                                                                                              step="60"></div>
+                                <button class="btn" type="submit" id="matchRun">▶ 开始匹配</button>
+                            </form>
+                            <div class="notice">匹配只读取「已发布且在决策时间生效」的配置，顺序固定为 P1 → P2 → P3，命中一级后不再继续。
+                                草稿不参与匹配；三级都没有生效配置时明确报错，不会按 0 权重计算。</div>
+                        </div>
+                        <div class="panel">
+                            <div class="ptitle">匹配过程</div>
+                            <div id="matchSteps"><div class="notice">填写交易类型和客户层级后点击「开始匹配」。</div></div>
+                        </div>
+                    </section>
+                    <aside class="rightPanel">
+                        <div class="panel">
+                            <div class="ptitle">按命中的权重试算</div>
+                            <div class="layout2">
+                                <div class="field"><label for="exC7">C7 成本得分</label><input id="exC7" type="number" min="0" max="100"
+                                                                                          step="0.01" value="90"></div>
+                                <div class="field"><label for="exC5">C5 速度得分</label><input id="exC5" type="number" min="0" max="100"
+                                                                                          step="1" value="100"></div>
+                                <div class="field"><label for="exC8">C8 偏好得分</label><input id="exC8" type="number" min="0" max="100"
+                                                                                          step="1" value="80"></div>
+                                <div class="field"><label for="exC9">C9 商业履约得分</label><input id="exC9" type="number" min="0" max="100"
+                                                                                             step="1" value="50"></div>
+                            </div>
+                            <div id="exResult" class="notice">匹配到权重后，这里按 (C7×W1 + C5×W2 + C8×W3 + C9×W4) ÷ 100 给出示意总分（页面计算）。</div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <!-- 页签三：排序规则 -->
+            <div id="tabRank" class="hidden">
+                <div class="grid">
+                    <section>
+                        <div class="panel">
+                            <div class="ptitle">综合评分与排序规则</div>
+                            <ol class="rules">
+                                <li><b>参与评分的候选</b>：只对通过全部硬过滤、且 C5 已给出分数的候选评分。被 C1–C10 剔除的候选不参与排序。</li>
+                                <li><b>权重</b>：整笔交易只匹配一次权重，全部候选使用同一个版本（P1 → P2 → P3，见「权重匹配模拟」）。</li>
+                                <li><b>综合评分</b>：(C7×W1 + C5×W2 + C8×W3 + C9×W4) ÷ 100。全程 BigDecimal，中间步骤不舍入，只有最终总分保留两位小数（四舍五入 HALF_UP）；排序使用舍入后的总分。</li>
+                                <li><b>排序</b>：① 总分降序 → ② 预估成本 HKD 升序 → ③ 候选起息日升序 → ④ 合作方优先级升序（数字小者优先）→ ⑤ 合作方编码升序 → ⑥ FX Venue 升序。比较键全部显式，同一合作方多个 FX
+                                    Venue 时结果也稳定。
+                                </li>
+                                <li><b>推荐路由</b>：第 1 名为 Primary，第 2、3 名为 Alternate 1 / Alternate 2；不足三个有多少取多少；一个合格候选都没有时走原有 REFER 流程。</li>
+                                <li><b>异常处理</b>：四项得分缺失或超出 0–100 时明确报错，不按 0 分计算；没有生效的权重配置时同样报错。C5 得 0 分是合法得分，照常参与。</li>
+                                <li><b>审计</b>：每个参与评分的候选写一条 ROUTE_SCORING 审计，包含权重版本、四项得分、四项权重、总分（含未舍入值）、排序依据和最终角色。</li>
+                            </ol>
+                        </div>
+                    </section>
+                    <aside class="rightPanel">
+                        <div class="panel">
+                            <div class="ptitle">同分时的顺序（示例）</div>
+                            <div class="tablewrap example">
+                                <table>
+                                    <thead>
+                                    <tr>
+                                        <th>候选</th>
+                                        <th style="text-align:right">总分</th>
+                                        <th style="text-align:right">成本 HKD</th>
+                                        <th>结论</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <tr>
+                                        <td>合作方 A</td>
+                                        <td class="num">87.00</td>
+                                        <td class="num">80.00</td>
+                                        <td>第 2 名 · Alternate 1</td>
+                                    </tr>
+                                    <tr>
+                                        <td>合作方 B</td>
+                                        <td class="num">87.00</td>
+                                        <td class="num">65.00</td>
+                                        <td>第 1 名 · Primary（同分，成本低者在前）</td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="notice">87.00 = (90×40 + 100×30 + 80×20 + 50×10) ÷ 100。实际排序结果可在
+                                <a href="/routing.html">C1–C10 全流程 Check</a> 的模拟结果里查看，结果消息会注明本次使用的权重版本。
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+
+            <!-- 页签四：版本记录 -->
+            <div id="tabVersions" class="hidden">
+                <div class="panel">
+                    <div class="rowbetween" style="margin-bottom:12px">
+                        <h2 id="versionCount" style="margin:0">配置版本记录</h2>
+                        <button class="btn secondary tiny" type="button" id="versionsRefresh">↻ 刷新</button>
+                    </div>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>交易类型</th>
+                                <th>客户层级</th>
+                                <th>版本</th>
+                                <th style="text-align:right">W1</th>
+                                <th style="text-align:right">W2</th>
+                                <th style="text-align:right">W3</th>
+                                <th style="text-align:right">W4</th>
+                                <th>状态</th>
+                                <th>有效时间段</th>
+                                <th>发布人</th>
+                                <th>发布时间</th>
+                                <th>说明</th>
+                            </tr>
+                            </thead>
+                            <tbody id="versionRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">操作审计（最近 500 条）</div>
+                    <div class="tablewrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>操作</th>
+                                <th>操作人</th>
+                                <th>交易类型</th>
+                                <th>客户层级</th>
+                                <th>版本</th>
+                            </tr>
+                            </thead>
+                            <tbody id="auditRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="footer">HSG RELAY · 评分权重与路由排序 · 演示环境</div>
+        </div>
+    </main>
+</div>
+
+<!-- 新增 / 编辑草稿 -->
+<div id="drawer" class="drawer" role="dialog" aria-modal="true" aria-label="权重草稿">
+    <div class="drawer-panel">
+        <div class="rowbetween">
+            <div>
+                <h2 id="drawerTitle">新增权重配置</h2>
+                <div class="muted" id="drawerSub">保存为草稿，发布后才参与路由评分</div>
+            </div>
+            <button type="button" class="btn secondary tiny" id="drawerClose">✕</button>
+        </div>
+        <div id="drawerError" class="err" role="alert"></div>
+        <div class="layout2">
+            <div class="field"><label for="editType">交易类型 *</label><select id="editType"></select></div>
+            <div class="field"><label for="editTier">客户层级 *</label><input id="editTier" list="tierOptions" maxlength="64"
+                                                                             placeholder="ALL 或字典中的层级">
+                <datalist id="tierOptions"></datalist></div>
+        </div>
+        <div id="keyNote" class="notice"></div>
+        <h2 style="margin-top:18px">权重（百分比，合计须为 100）</h2>
+        <div class="wgrid">
+            <div class="field"><label for="w1"><i class="sw" style="background:#1265d7"></i>W1 成本 · C7</label><input id="w1"
+                                                                                                               type="number" min="0"
+                                                                                                               max="100" step="1">
+            </div>
+            <div class="field"><label for="w2"><i class="sw" style="background:#16a85b"></i>W2 速度 · C5</label><input id="w2"
+                                                                                                               type="number" min="0"
+                                                                                                               max="100" step="1">
+            </div>
+            <div class="field"><label for="w3"><i class="sw" style="background:#d08a1e"></i>W3 偏好 · C8</label><input id="w3"
+                                                                                                               type="number" min="0"
+                                                                                                               max="100" step="1">
+            </div>
+            <div class="field"><label for="w4"><i class="sw" style="background:#6b4fbb"></i>W4 履约 · C9</label><input id="w4"
+                                                                                                               type="number" min="0"
+                                                                                                               max="100" step="1">
+            </div>
+        </div>
+        <div class="sumline">
+            <div class="sumbar" id="sumbar"></div>
+            <div class="sumnum" id="sumnum"></div>
+        </div>
+        <div id="sumhint" class="muted"></div>
+        <div class="field" style="margin-top:14px"><label for="editNote">说明（可留空，最多 500 字）</label><input id="editNote"
+                                                                                                          maxlength="500"></div>
+        <div id="drawerExample" class="notice"></div>
+        <div class="actions" style="margin-top:16px">
+            <button type="button" class="btn" id="drawerSave">保存草稿</button>
+            <button type="button" class="btn secondary" id="drawerCancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- 发布确认 -->
+<div id="publishBack" class="modalback">
+    <div class="modal" style="width:min(580px,100%)">
+        <h2>发布权重配置</h2>
+        <div id="publishBody" class="notice"></div>
+        <div id="publishError" class="err" role="alert"></div>
+        <div class="field" style="margin:12px 0"><label for="publishFrom">生效时间（HKT，留空 = 立即生效）</label><input
+                id="publishFrom" type="datetime-local" step="60"></div>
+        <div class="actions">
+            <button type="button" class="btn" id="publishYes">确认发布</button>
+            <button type="button" class="btn secondary" id="publishNo">取消</button>
+        </div>
+    </div>
+</div>
+<script src="/score-weights.js"></script>
+</body>
+</html>
