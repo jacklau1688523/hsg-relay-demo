@@ -1,7 +1,12 @@
 'use strict';
-// C5 速度评分规则页签：评分组（草稿）编辑、校验、模拟试算、保存草稿、发布、历史版本回放、审计。
-// 页面只编辑「草稿」；已发布版本不可修改，单独分区只读展示。分数和条件是否合法以服务端校验为准。
+// C5 速度评分规则页签：左侧评分组（草稿）编辑、校验、保存草稿、发布；右侧模拟试算与结果。历史版本回放、审计在各自的页签。
+// 页面只编辑「草稿」；已发布版本不可修改。分数和条件是否合法以服务端校验为准。
 const score = {view: null, fields: [], catalog: {functions: [], paths: []}, entries: [], seq: 0, publishers: [], dirty: false, busy: false};
+// 试算结果的状态。表单和结果在 DOM 里各只有一份，这里只记录「当前显示的结果是按什么算出来的」：
+//   key     结果对应的「试算输入 + 评分规则」指纹；之后输入或草稿有改动，指纹对不上即为过期（需要重新试算）
+//   replay  这份结果是不是历史版本回放（回放只看试算输入，不看草稿）；version = 回放的版本号
+// 正在计算 / 没有结果时 key 为空；加载状态由 runSimulation 负责（按钮禁用 + 结果区提示）。
+const sim = {key: null, stale: false, replay: false, version: null};
 const CODE = /^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/;
 const publishedRule = () => (score.view && score.view.published ? score.view.published.rule : null) || {groups: [], scoreRange: {min: 0, max: 100}};
 const scoreRange = () => publishedRule().scoreRange || {min: 0, max: 100};
@@ -40,7 +45,27 @@ function scoreMarkDirty() {
     score.dirty = scoreDirty();
     $('scoreState').innerHTML = score.dirty ? '<span class="badge warn">有未保存的修改</span>'
         : score.view && score.view.draftChanged ? '<span class="badge warn">草稿未发布</span>' : '<span class="badge">草稿与已发布一致</span>';
+    scoreSimStaleCheck();     // 评分组一改，按旧规则算出的试算结果就过期了
 }
+
+// ---------- 试算结果：过期标记 ----------
+const SIM_FIELDS = ['scoreSimProvider', 'scoreSimCurrency', 'scoreSimCountry', 'scoreSimRegion', 'scoreSimBic', 'scoreSimCharge', 'scoreSimAt', 'scoreSimRequested'];
+const scoreSimNowKey = () => SIM_FIELDS.map(id => $(id).value.trim()).join('|') + (sim.replay ? '' : canonical(scoreRuleJson()));
+// 出结果之后试算输入或评分草稿改过 → 旧结果变淡并提示「需要重新试算」，避免被当成当前配置的结果
+function scoreSimStaleCheck() {
+    sim.stale = sim.key !== null && sim.key !== scoreSimNowKey();
+    $('scoreSimStale').classList.toggle('hidden', !sim.stale);
+    $('scoreSimResult').classList.toggle('stale', sim.stale);
+}
+// 结果被清空或开始新一次试算：先忘掉旧结果对应的指纹
+const scoreSimForget = () => {sim.key = null; scoreSimStaleCheck();};
+// 结果面板在视口内露出的高度不足 240px 时才滚动：桌面双栏时右栏吸顶，只在右栏内部把结果滚到栏顶（表单仍在上方，往上滚即可回去）；窄屏单栏时滚页面
+function scoreScrollTo(id) {
+    const box = $(id).getBoundingClientRect();
+    if (box.top < 0 || innerHeight - Math.max(box.top, 0) < 240) $(id).scrollIntoView({block: 'start', behavior: 'smooth'});
+}
+// 出结果之后：刷新过期标记并把结果滚到可见位置
+const scoreSimShown = () => {scoreSimStaleCheck(); scoreScrollTo('scoreSimPanel');};
 
 // ---------- 渲染 ----------
 // 卡片上的标识：与已发布版本里的同一个评分组比较（新增 / 已修改 / 一致）
@@ -214,14 +239,26 @@ const scoreEdit = event => {
 };
 $('scoreGroups').addEventListener('input', scoreEdit);
 $('scoreGroups').addEventListener('change', scoreEdit);     // 复选框在部分浏览器只触发 change
-// 「模拟试算」按钮提交评分页签的试算表单（按钮本身不是 submit 类型）
-$('scoreSimulate').onclick = () => $('scoreSimForm').reportValidity() && $('scoreSimForm').requestSubmit();
+// 「模拟试算」按钮（评分组下方）提交右栏的试算表单：按钮本身不是 submit 类型。表单有没填完整的项时滚到表单
+$('scoreSimulate').onclick = () => {
+    if (!$('scoreSimForm').reportValidity()) {scoreScrollTo('scoreSimForm'); return;}
+    $('scoreSimForm').requestSubmit();
+};
 $('scoreSimForm').onsubmit = event => {
     event.preventDefault();
+    scoreSimForget();
     const errors = scorePageErrors();
-    if (errors.length) {showSimulation('scoreSimResult', errors.map(e => '• ' + esc(e)).join('<br>'), true); return;}
-    runSimulation('scoreSimResult', 'scoreSimRun', '/c5/score-rule/simulate', {rule: scoreRuleJson(), input: simRequest('scoreSim', 'scoreSimAt', 'scoreSimRequested')}, $('scoreSimRequested').value);
+    if (errors.length) {showSimulation('scoreSimResult', errors.map(e => '• ' + esc(e)).join('<br>'), true); scoreScrollTo('scoreSimPanel'); return;}
+    // 试算用当前页面上的评分组（不需要先保存），不写任何数据。指纹在发请求前记下：响应回来时输入或草稿已变，结果立即标为过期。
+    // 多次点击时由 runSimulation 保证只认最后一次请求
+    sim.replay = false; sim.version = null;
+    const input = simRequest('scoreSim', 'scoreSimAt', 'scoreSimRequested'), requested = $('scoreSimRequested').value, key = scoreSimNowKey();
+    runSimulation('scoreSimResult', 'scoreSimRun', '/c5/score-rule/simulate', {rule: scoreRuleJson(), input}, requested,
+        {compact: true, input, after: () => {sim.key = key; scoreSimShown();}});
+    scoreScrollTo('scoreSimPanel');
 };
+$('scoreSimForm').addEventListener('input', scoreSimStaleCheck);
+$('scoreSimForm').addEventListener('change', scoreSimStaleCheck);
 $('scoreSave').onclick = async () => {
     const button = $('scoreSave');
     button.disabled = true;
@@ -263,8 +300,9 @@ $('scorePublish').onclick = async () => {
                     expectedDraftVersion: score.view.draft ? score.view.draft.version : null, operator: who,
                     effectiveFrom: at || null, acknowledgeCoverageGaps: !!check.warnings.length})});
                 scoreApplyView(result.view);
-                // 发布前的试算结果（按草稿算的）已不代表现状：提示重新试算，避免把旧结果当成发布后的评分
-                showSimulation('scoreSimResult', `<div class="notice">评分规则已发布 v${result.published.version}。上面的试算结果已清除，请重新试算查看发布后的评分。</div>`, false);
+                // 发布前的试算结果（按草稿算的）已不代表现状：清掉并提示重新试算，避免把旧结果当成发布后的评分
+                scoreSimForget();
+                showSimulation('scoreSimResult', `<div class="notice">评分规则已发布 v${result.published.version}。发布前的试算结果已清除，请重新试算查看发布后的评分。</div>`, false);
                 scoreShowCheck(`<div class="good">已发布 v${result.published.version}，生效时间 ${esc(String(result.published.effectiveFrom).replace('T', ' '))}（操作人 ${esc(who)}）。</div>`);
             } catch (error) {
                 yes.disabled = false;
@@ -274,24 +312,39 @@ $('scorePublish').onclick = async () => {
     } catch (error) {scoreShowCheck(`<div class="err">${esc(error.message)}</div>`);}
     finally {button.disabled = false;}
 };
-$('scoreHistory').addEventListener('click', async event => {
+// 历史版本回放：用右栏的试算交易 + 指定的已发布版本重新评分。结果仍显示在「速度评分规则」页签的结果区并标明版本；
+// 只读取不可变的历史版本，不改变当前生效版本，也不碰页面上的评分草稿（草稿 DOM 原样保留）
+$('scoreHistory').addEventListener('click', event => {
     const button = event.target.closest('[data-replay]');
     if (!button) return;
     button.disabled = true;
     const version = button.dataset.replay;
-    try {
-        const r = await api(`/c5/score-rule/versions/${version}/replay`, {method: 'POST', body: JSON.stringify(simRequest('scoreSim', 'scoreSimAt', 'scoreSimRequested'))});
-        showSimulation('scoreSimResult', c5RenderSimulation(r, $('scoreSimRequested').value), false);
-        $('scoreSimResult').scrollIntoView({block: 'start', behavior: 'smooth'});
-    } catch (error) {showSimulation('scoreSimResult', esc(error.message), true);}
-    finally {button.disabled = false;}
+    const input = simRequest('scoreSim', 'scoreSimAt', 'scoreSimRequested'), requested = $('scoreSimRequested').value;
+    const complete = $('scoreSimForm').checkValidity();
+    sim.replay = true; sim.version = Number(version);
+    const key = scoreSimNowKey();
+    c5ShowTab('score');
+    if (!complete) {
+        showSimulation('scoreSimResult', '<div class="err">试算交易还没填完整：请先在右侧表单补全必填项，再回放。</div>', true);
+        scoreScrollTo('scoreSimForm');
+        button.disabled = false;
+        return;
+    }
+    runSimulation('scoreSimResult', 'scoreSimRun', `/c5/score-rule/versions/${version}/replay`, input, requested,
+        {compact: true, input, after: () => {sim.key = key; scoreSimShown();}}).finally(() => {button.disabled = false;});
 });
 
 // ---------- 进入页签 / 初始化 ----------
-// 把截单页筋试算交易的取值带到评分页签，方便用同一笔交易对照
+// 从截单页签回到评分页签：把截单页筋试算交易的取值带过来，方便用同一笔交易对照（输入变了，已有结果随之标记过期）
 function c5ScoreTabShown() {
     const map = {scoreSimProvider: 'simProvider', scoreSimCurrency: 'simCurrency', scoreSimCountry: 'simCountry', scoreSimRegion: 'simRegion', scoreSimBic: 'simBic', scoreSimCharge: 'simCharge', scoreSimAt: 'at', scoreSimRequested: 'requested'};
     Object.keys(map).forEach(target => { $(target).value = $(map[target]).value; });   // 下拉框里没有对应选项时浏览器会保持原选项
+    scoreSimStaleCheck();
+}
+// 进入历史版本页签：标明回放会用哪笔试算交易（表单在「速度评分规则」页签）
+function c5HistoryTabShown() {
+    const value = id => $(id).value.trim() || null;
+    $('scoreReplayInput').textContent = `回放使用的试算交易（取自「速度评分规则」页签右侧的表单，在这里改不了）：${value('scoreSimProvider')} · ${value('scoreSimCurrency')} · 国家 ${value('scoreSimCountry') || '—'} · 地区 ${value('scoreSimRegion') || '—'} · BIC ${value('scoreSimBic') || '—'} · ${value('scoreSimCharge')} · 模拟时间 ${value('scoreSimAt') || '当前时间'}（HKT） · 请求起息日 ${value('scoreSimRequested') || '香港当日'}`;
 }
 async function c5ScoreInit(view, providers, currencies) {
     $('scoreSimProvider').innerHTML = providers.map(p => `<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('');

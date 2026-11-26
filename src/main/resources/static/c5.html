@@ -207,15 +207,9 @@
             opacity: .62
         }
 
-        .groupcard .ghead {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 12px
-        }
-
-        .groupcard .gprio {
+        /* 优先级圆标（评分组卡片头部和试算结果的逐组明细共用） */
+        .gprio {
+            flex: none;
             min-width: 30px;
             height: 30px;
             border-radius: 50%;
@@ -226,8 +220,27 @@
             line-height: 30px
         }
 
+        /* 卡片头部固定分栏：优先级 / 编码 / 名称 / 分数 / 启用 一行，标识和操作按钮第二行；名称再长也在格内，不撑破卡片 */
+        .groupcard .ghead {
+            display: grid;
+            grid-template-columns: auto minmax(130px, 1fr) minmax(170px, 1.5fr) auto auto;
+            gap: 10px;
+            align-items: end;
+            margin-bottom: 12px
+        }
+
+        .groupcard .ghead .gprio {
+            align-self: center
+        }
+
+        .groupcard .ghead [data-roletag] {
+            grid-column: 1 / 4;
+            justify-self: start;
+            align-self: center
+        }
+
         .groupcard .ghead .field {
-            flex: 1
+            min-width: 0
         }
 
         .groupcard .gscore input {
@@ -241,13 +254,17 @@
         .groupcard .gtools {
             display: flex;
             gap: 6px;
-            flex-wrap: wrap
+            flex-wrap: wrap;
+            grid-column: 4 / 6;
+            justify-self: end
         }
 
         .c5e-group{border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}
         .c5e-group .c5e-group{margin-left:16px;background:#fff}
-        .c5e-head,.c5e-line{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
-        .c5e-head strong{flex:1}
+        .c5e-head,.c5e-line{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap;min-width:0}
+        .c5e-line > *{min-width:0}
+        .c5e-line input,.c5e-line select{max-width:100%}
+        .c5e-head strong{flex:1;min-width:120px}
         .c5e-head select{width:190px}
         .c5e-line select:first-child{flex:2;min-width:150px}
         .c5e-line select:nth-child(2){flex:1;min-width:100px}
@@ -273,6 +290,149 @@
 
         #formPanel {
             scroll-margin-top: 15px
+        }
+
+        /* 速度评分规则页签：左侧评分组约 60%，右侧「模拟试算 + 试算结果」约 40%。两栏都 minmax(0, …) + min-width:0，内容再长也只在栏内换行或内部滚动 */
+        .scoreGrid {
+            display: grid;
+            grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 16px
+        }
+
+        .scoreGrid > *, .scoreGrid .panel {
+            min-width: 0
+        }
+
+        /* 右栏随页面吸顶，高度不超过一屏，整栏内部滚动：试算完成后结果滚到栏顶，用整栏高度查看；往上滚回到表单 */
+        .scoreRight {
+            position: sticky;
+            top: 14px;
+            max-height: calc(100vh - 28px);
+            overflow: auto;
+            padding: 4px 8px 16px 4px;
+            margin: -4px -8px 0 -4px;
+            scrollbar-width: thin
+        }
+
+        /* 试算表单：按可用宽度自动排 1–3 列，模拟当前时间和请求起息日整行 */
+        .simform {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 8px
+        }
+
+        .simform .field label {
+            margin-bottom: 4px
+        }
+
+        .simform input, .simform select {
+            min-height: 32px;
+            padding: 5px 9px
+        }
+
+        /* 右栏结果区的分数头部：窄栏里用紧凑版（大号分数块留给截单页签） */
+        .score-result.compact {
+            padding: 12px 14px;
+            margin-bottom: 4px
+        }
+
+        .score-result.compact b {
+            display: inline-block;
+            font-size: 24px;
+            margin: 0 0 0 10px;
+            vertical-align: -3px
+        }
+
+        .score-result.compact small {
+            display: block;
+            margin-top: 4px;
+            line-height: 1.6
+        }
+
+        /* 试算结果：概览键值 */
+        .kvsec {
+            border-top: 1px solid #edf1f6;
+            padding: 9px 0 1px
+        }
+
+        .kvtitle {
+            font-size: 12px;
+            font-weight: 750;
+            color: #4f6d8f;
+            margin-bottom: 5px
+        }
+
+        .kv {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            gap: 4px 12px;
+            margin: 0;
+            font-size: 13px
+        }
+
+        .kv dt {
+            color: #748298;
+            white-space: nowrap
+        }
+
+        .kv dd {
+            margin: 0;
+            font-weight: 650;
+            overflow-wrap: anywhere
+        }
+
+        .kv dd .muted {
+            font-weight: 400
+        }
+
+        /* 试算结果：评分组逐组结果（窄栏里用列表，不用宽表） */
+        .gout {
+            display: flex;
+            gap: 10px;
+            padding: 9px 8px;
+            border-top: 1px solid #edf1f6;
+            font-size: 13px;
+            line-height: 1.6
+        }
+
+        .gout > div {
+            min-width: 0;
+            overflow-wrap: anywhere
+        }
+
+        .gout.hit {
+            background: #edf5ff
+        }
+
+        .gout .gprio {
+            height: 24px;
+            min-width: 24px;
+            line-height: 24px;
+            font-size: 12px
+        }
+
+        .gout .muted {
+            font-size: 12px
+        }
+
+        /* 出结果之后评分规则或试算输入改过：旧结果变淡并显示「需要重新试算」 */
+        #scoreSimResult.stale {
+            opacity: .55
+        }
+
+        @media (max-width: 1300px) {
+            .scoreGrid {
+                grid-template-columns: minmax(0, 1fr)
+            }
+
+            .scoreRight {
+                position: static;
+                max-height: none;
+                padding: 0;
+                margin: 0
+            }
         }
 
         @media (max-width: 1350px) {
@@ -358,9 +518,116 @@
             <div class="scorecards" id="scoreCards" aria-live="polite"></div>
             <div class="tabs">
                 <button class="tab sel" data-tab="score">速度评分规则</button>
+                <button class="tab" data-tab="history">历史版本</button>
+                <button class="tab" data-tab="audits">操作审计</button>
                 <button class="tab" data-tab="schedule">截单与工作日日历</button>
-                <span class="muted" id="revision" style="align-self:center"></span></div>
+                <span class="muted" id="revision" style="align-self:center"></span>
+            </div>
             <div id="pageError" class="err" role="alert"></div>
+            <div id="tabScore">
+                <div class="scoreGrid">
+                    <section class="panel scoreLeft">
+                        <div class="rulebar">
+                            <div><h2 style="margin:0">速度评分规则 <span class="muted" id="scoreMeta"></span></h2>
+                                <div class="muted">按优先级逐个判断评分组，首个命中的组给出分数（FIRST_MATCH）。修改从草稿开始，发布后生成新的不可变版本；
+                                    已发布版本不能覆盖。没有任何评分组命中属于配置错误，不默认给 100 分。</div></div>
+                            <span id="scoreState"></span></div>
+                        <div id="scoreGroups"></div>
+                        <div class="actions"><button type="button" class="btn secondary" id="scoreAdd">＋ 新增评分组</button></div>
+                        <div class="scorebar">
+                            <div class="field"><label for="scoreOperator">操作人 *</label><input id="scoreOperator" placeholder="保存草稿 / 发布必填"
+                                                                                                       maxlength="64"
+                                                                                                       autocomplete="off"></div>
+                            <button type="button" class="btn secondary" id="scoreValidate">校验规则</button>
+                            <button type="button" class="btn secondary" id="scoreSimulate">模拟试算</button>
+                            <button type="button" class="btn secondary" id="scoreSave">保存草稿</button>
+                            <button type="button" class="btn" id="scorePublish">发布</button>
+                        </div>
+                        <div id="scoreCheck" role="status"></div>
+                    </section>
+                    <aside class="scoreRight">
+                        <div class="panel">
+                            <div class="ptitle">模拟试算 <span class="muted">用当前页面上的评分组逐组判断</span></div>
+                            <form id="scoreSimForm">
+                                <div class="simform">
+                                    <div class="field"><label for="scoreSimProvider">合作方 *</label><select
+                                            id="scoreSimProvider"></select></div>
+                                    <div class="field"><label for="scoreSimCurrency">交易币种 *</label><select
+                                            id="scoreSimCurrency"></select></div>
+                                    <div class="field"><label for="scoreSimCountry">受益行国家 *</label><input
+                                            id="scoreSimCountry" value="US" required maxlength="2"></div>
+                                    <div class="field"><label for="scoreSimRegion">受益人地区（可为空）</label><input
+                                            id="scoreSimRegion" placeholder="CN-GD" maxlength="6"></div>
+                                    <div class="field"><label for="scoreSimBic">受益行 BIC *</label><input
+                                            id="scoreSimBic" value="CHASUS33" required maxlength="11"></div>
+                                    <div class="field"><label for="scoreSimCharge">扣费方式 *</label><select
+                                            id="scoreSimCharge">
+                                        <option>SHA</option>
+                                        <option>OUR</option>
+                                        <option>BEN</option>
+                                    </select></div>
+                                    <div class="field wide"><label for="scoreSimAt">模拟当前时间（HKT）</label><input
+                                            id="scoreSimAt" type="datetime-local" step="1"></div>
+                                    <div class="field wide"><label for="scoreSimRequested">请求起息日</label><input
+                                            id="scoreSimRequested" type="date"></div>
+                                </div>
+                                <button class="btn" id="scoreSimRun" type="submit" style="width:100%;margin-top:12px">▶ 用当前评分组试算
+                                </button>
+                            </form>
+                        </div>
+                        <div class="panel" id="scoreSimPanel">
+                            <div class="ptitle">试算结果</div>
+                            <div id="scoreSimStale" class="notice warn hidden" role="status">评分规则或试算输入在出结果之后有修改，下面的结果<b>需要重新试算</b>，已不代表当前配置。</div>
+                            <div id="scoreSimResult" class="notice" role="status">
+                                草稿不需要先保存即可试算，试算不写任何数据；正式评分只认已发布的版本。覆盖行由 C3
+                                的最终选择给出（与实际路由一致），评分组条件里的 cutoff / 偏移取自该行。点击「用当前评分组试算」查看起息日、延迟工作日和速度分。
+                            </div>
+                        </div>
+                    </aside>
+                </div>
+            </div>
+            <div id="tabHistory" class="hidden">
+                <div class="panel">
+                    <div class="rowbetween"><div class="ptitle" style="margin:0">当前生效的已发布版本</div><span class="muted"
+                                                                                             id="scoreEffective"></span></div>
+                    <div id="scorePublished"></div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">历史版本（不可变）与回放</div>
+                    <div class="tablewrap"><table>
+                        <thead>
+                        <tr>
+                            <th>版本</th>
+                            <th>生效时间</th>
+                            <th>发布时间 / 发布人</th>
+                            <th>评分组（按优先级）</th>
+                            <th>说明</th>
+                            <th>回放</th>
+                        </tr>
+                        </thead>
+                        <tbody id="scoreHistory"></tbody>
+                    </table></div>
+                    <div class="notice">回放用指定的已发布版本按试算交易重新评分，只用于核对历史结果，不改变当前生效版本，也不修改评分草稿。
+                        回放结果显示在「速度评分规则」页签右侧的试算结果区，并标明所用版本。</div>
+                    <div class="muted" id="scoreReplayInput"></div>
+                </div>
+            </div>
+            <div id="tabAudits" class="hidden">
+                <div class="panel">
+                    <div class="ptitle">操作审计</div>
+                    <div class="tablewrap"><table>
+                        <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>操作</th>
+                            <th>操作人</th>
+                            <th>版本</th>
+                        </tr>
+                        </thead>
+                        <tbody id="scoreAudits"></tbody>
+                    </table></div>
+                </div>
+            </div>
             <div id="tabSchedule" class="hidden">
             <div class="c5-grid">
                 <section>
@@ -452,102 +719,6 @@
                     </div>
                 </aside>
             </div>
-            </div>
-            <div id="tabScore">
-                <div class="panel">
-                    <div class="rulebar">
-                        <div><h2 style="margin:0">速度评分规则 <span class="muted" id="scoreMeta"></span></h2>
-                            <div class="muted">按优先级逐个判断评分组，首个命中的组给出分数（FIRST_MATCH）。修改从草稿开始，发布后生成新的不可变版本；
-                                已发布版本不能覆盖。没有任何评分组命中属于配置错误，不默认给 100 分。</div></div>
-                        <span id="scoreState"></span></div>
-                    <div id="scoreGroups"></div>
-                    <div class="actions"><button type="button" class="btn secondary" id="scoreAdd">＋ 新增评分组</button></div>
-                    <div class="scorebar">
-                        <div class="field"><label for="scoreOperator">操作人 *</label><input id="scoreOperator" placeholder="保存草稿 / 发布必填"
-                                                                                               maxlength="64"
-                                                                                               autocomplete="off"></div>
-                        <button type="button" class="btn secondary" id="scoreValidate">校验规则</button>
-                        <button type="button" class="btn secondary" id="scoreSimulate">模拟试算</button>
-                        <button type="button" class="btn secondary" id="scoreSave">保存草稿</button>
-                        <button type="button" class="btn" id="scorePublish">发布</button>
-                    </div>
-                    <div id="scoreCheck" role="status"></div>
-                </div>
-                <div class="layout2">
-                    <div class="panel">
-                        <div class="ptitle">模拟试算 <span class="muted">用当前页面上的评分组逐组判断</span></div>
-                        <form id="scoreSimForm">
-                            <div class="layout2">
-                                <div class="field"><label for="scoreSimProvider">合作方 *</label><select
-                                        id="scoreSimProvider"></select></div>
-                                <div class="field"><label for="scoreSimCurrency">交易币种 *</label><select
-                                        id="scoreSimCurrency"></select></div>
-                                <div class="field"><label for="scoreSimCountry">受益行国家 *</label><input
-                                        id="scoreSimCountry" value="US" required maxlength="2"></div>
-                                <div class="field"><label for="scoreSimRegion">受益人地区（可为空）</label><input
-                                        id="scoreSimRegion" placeholder="CN-GD" maxlength="6"></div>
-                                <div class="field"><label for="scoreSimBic">受益行 BIC *</label><input
-                                        id="scoreSimBic" value="CHASUS33" required maxlength="11"></div>
-                                <div class="field"><label for="scoreSimCharge">扣费方式 *</label><select
-                                        id="scoreSimCharge">
-                                    <option>SHA</option>
-                                    <option>OUR</option>
-                                    <option>BEN</option>
-                                </select></div>
-                                <div class="field wide"><label for="scoreSimAt">模拟当前时间（HKT）</label><input
-                                        id="scoreSimAt" type="datetime-local" step="1"></div>
-                                <div class="field wide"><label for="scoreSimRequested">请求起息日</label><input
-                                        id="scoreSimRequested" type="date"></div>
-                            </div>
-                            <div class="notice">覆盖行由 C3 的最终选择给出（与实际路由一致），评分组条件里的 cutoff / 偏移取自该行。
-                            </div>
-                            <button class="btn" id="scoreSimRun" type="submit" style="width:100%;margin-top:12px">▶ 用当前评分组试算
-                            </button>
-                        </form>
-                    </div>
-                    <div class="panel">
-                        <div class="ptitle">试算结果</div>
-                        <div id="scoreSimResult" class="notice" role="status">
-                            草稿不需要先保存即可试算；试算不写任何数据，正式评分只认已发布的版本。
-                        </div>
-                    </div>
-                </div>
-                <div class="panel">
-                    <div class="rowbetween"><div class="ptitle" style="margin:0">当前生效的已发布版本</div><span class="muted"
-                                                                                            id="scoreEffective"></span></div>
-                    <div id="scorePublished"></div>
-                </div>
-                <div class="panel">
-                    <div class="ptitle">历史版本（不可变）与回放</div>
-                    <div class="tablewrap"><table>
-                        <thead>
-                        <tr>
-                            <th>版本</th>
-                            <th>生效时间</th>
-                            <th>发布时间 / 发布人</th>
-                            <th>评分组（按优先级）</th>
-                            <th>说明</th>
-                            <th>回放</th>
-                        </tr>
-                        </thead>
-                        <tbody id="scoreHistory"></tbody>
-                    </table></div>
-                    <div class="notice">回放用指定的已发布版本按左侧试算交易重新评分，只用于核对历史结果，不改变当前生效版本。</div>
-                </div>
-                <div class="panel">
-                    <div class="ptitle">操作审计</div>
-                    <div class="tablewrap"><table>
-                        <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>操作</th>
-                            <th>操作人</th>
-                            <th>版本</th>
-                        </tr>
-                        </thead>
-                        <tbody id="scoreAudits"></tbody>
-                    </table></div>
-                </div>
             </div>
             <div class="footer">HSG RELAY · C5 起息日评分 · 演示环境</div>
         </div>
