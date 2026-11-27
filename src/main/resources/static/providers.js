@@ -1,5 +1,5 @@
 'use strict';
-// 合作方管理：列表、筛选和删除。新增 / 编辑在独立页面 /provider-edit.html，只读详情在 /provider-detail.html；
+// 合作方管理：列表、筛选和删除。基础信息在 /provider-edit.html 编辑，配置信息在合作方详情的各页签维护。
 // 共用的接口、字典和展示规则在 provider-common.js（须先引入）。
 const state = {views: [], deleting: false};
 // 确认框里逐项列出将被一并删除的配置：接口字段 · 名称 · 量词
@@ -21,7 +21,7 @@ function render() {
         && (!$('filterType').value || type(p) === $('filterType').value) && (!$('filterStatus').value || p.status === $('filterStatus').value));
     $('rows').innerHTML = views.map(v => {
         const p = v.provider, code = encodeURIComponent(p.code);
-        return `<tr><td><b>${esc(p.code)}</b><br>${esc(p.name)}</td><td>${esc(types[type(p)] || p.providerType)}</td><td><span class="badge ${p.status === 'LIVE' ? 'pass' : 'pending'}">${esc(p.status)}</span></td><td>${esc(p.channel)}<br>${esc(p.bic || '未设置')}</td><td>${p.fundingCheckEnabled ? 'ON' : 'OFF'}</td><td>${v.capabilityTags.map(esc).join('<br>') || '—'}</td><td>${esc(p.priority)}</td><td>${esc(p.relationshipOwner || '未设置')}<br>${esc(p.appetiteReviewDate || '未设置')}<br><span class="${v.reviewStatus === 'OVERDUE' ? 'err' : v.reviewStatus === 'DUE_SOON' ? 'pending' : 'muted'}">${esc(reviewLabel(v.reviewStatus))}</span></td><td><span class="badge ${v.ready ? 'pass' : 'pending'}">${v.ready ? '已齐备' : '待完善'}</span></td><td class="nowrap"><a class="btn secondary tiny" href="/provider-detail.html?code=${code}">详情</a><a class="btn secondary tiny" href="/provider-edit.html?code=${code}">编辑</a><button type="button" class="btn secondary tiny" data-delete="${code}">删除</button></td></tr>`;
+        return `<tr><td><b>${esc(p.code)}</b><br>${esc(p.name)}</td><td>${esc(types[type(p)] || p.providerType)}</td><td><span class="badge ${p.status === 'LIVE' ? 'pass' : 'pending'}">${esc(p.status)}</span></td><td>${esc(p.channel)}<br>${esc(p.bic || '未设置')}</td><td>${p.fundingCheckEnabled ? 'ON' : 'OFF'}</td><td>${v.capabilityTags.map(esc).join('<br>') || '—'}</td><td>${esc(p.priority)}</td><td>${esc(p.relationshipOwner || '未设置')}<br>${esc(p.appetiteReviewDate || '未设置')}<br><span class="${v.reviewStatus === 'OVERDUE' ? 'err' : v.reviewStatus === 'DUE_SOON' ? 'pending' : 'muted'}">${esc(reviewLabel(v.reviewStatus))}</span></td><td><span class="badge ${v.ready ? 'pass' : 'pending'}">${v.ready ? '已齐备' : '待完善'}</span></td><td class="nowrap"><a class="btn secondary tiny" href="/provider-detail.html?code=${code}">详情</a><a class="btn secondary tiny" href="/provider-edit.html?code=${code}">编辑基础信息</a><a class="btn secondary tiny" href="/provider-detail.html?code=${code}&amp;tab=appetites">编辑配置信息</a><button type="button" class="btn secondary tiny" data-delete="${code}">删除</button></td></tr>`;
     }).join('') || '<tr><td colspan="10">暂无符合条件的合作方</td></tr>';
     const metrics = [
         ['合作方总数', state.views.length],

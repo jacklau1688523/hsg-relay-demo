@@ -6,21 +6,12 @@ const params = new URLSearchParams(location.search);
 const code = params.get('code');
 const TABS = ['base', 'appetites', 'usage', 'balances', 'reaches', 'limits', 'fees', 'preferences', 'agreements', 'schedules', 'exclusions', 'approvals', 'restrictions', 'audit'];
 
-// 基础资料在独立编辑页维护
-function editHref() {
-    return `/provider-edit.html?code=${encodeURIComponent(state.view.provider.code)}`;
-}
-
 function pretty(text) {
     try {
         return JSON.stringify(JSON.parse(text), null, 2);
     } catch {
         return text || '无';
     }
-}
-
-function fact(label, value) {
-    return `<div class="fact"><span>${label}</span><b>${value}</b></div>`;
 }
 
 function info(label, value) {
@@ -38,9 +29,7 @@ function renderProfile(v) {
         + `<div class="badges"><span class="badge ${live ? 'pass' : 'pending'}">${live ? 'LIVE · 正式上线' : 'NOT_LIVE · 未上线'}</span>`
         + `<span class="badge neutral">${esc(types[type(p)] || p.providerType)}</span>`
         + `<span class="badge ${v.ready ? 'pass' : 'pending'}">上线准备${v.ready ? '已齐备' : '待完善'}</span>`
-        + `<span class="badge ${reviewBadge(v.reviewStatus)}">${esc(reviewLabel(v.reviewStatus))}</span></div></div>`
-        + `<div class="facts">${fact('报文通道', esc(p.channel))}${fact('BIC', esc(p.bic || '未设置'))}`
-        + `${fact('排序优先级', esc(p.priority))}${fact('数据版本', esc(p.version))}</div></div>`;
+        + `<span class="badge ${reviewBadge(v.reviewStatus)}">${esc(reviewLabel(v.reviewStatus))}</span></div></div></div>`;
 }
 
 function renderBase(v) {
@@ -461,8 +450,6 @@ async function load() {
     renderBase(view);
     renderReadiness(view.checks);
     $('reviewInfo').textContent = reviewText(p.appetiteReviewDate, p.relationshipOwner);
-    $('edit').href = editHref();
-    $('simulate').href = `/routing.html?includeProvider=${encodeURIComponent(code)}`;
 }
 
 // quiet：不显示「正在加载…」，用于浏览器「后退」恢复页面时的静默重读
@@ -473,12 +460,10 @@ async function show(quiet = false) {
         await load();
         $('loading').hidden = true;
         $('detail').classList.remove('hidden');
-        for (const id of ['edit', 'simulate']) $(id).style.display = '';
         await activate(state.tab, quiet);
     } catch (e) {
         $('loading').hidden = true;
         $('detail').classList.add('hidden');
-        for (const id of ['edit', 'simulate']) $(id).style.display = 'none';
         $('pageError').textContent = e.message;
     }
 }
@@ -932,7 +917,6 @@ $('usageView').addEventListener('click', async e => {
     renderUsage({rows: usageRows, rules: usageRules});
     openTabEditor('usageForm');
 });
-$('refresh').onclick = () => show();
 const initial = params.get('tab');
 state.tab = TABS.includes(initial) ? initial : 'base';
 reloadIfChangedSinceLoad();
