@@ -1,6 +1,7 @@
 'use strict';
 let c1ConditionTree = null;
 let c1ConditionConfig = null;
+let c1CompiledExpression = null;
 // 函数库数据（GET /function-metadata/available?ruleCode=C1）：受控取值路径、系统必检清单、可添加到条件的函数。
 // 打开页面和打开「添加函数」时读取；读取失败不影响字段条件的配置，函数条件显示为不可用并说明原因。
 let c1FunctionCatalog = null, c1FunctionCatalogError = '', c1FunctionTarget = null, c1FunctionDrafts = {}, c1FunctionResults = {};
@@ -64,12 +65,20 @@ function c1Add(path,kind){
 // c1Shown：上一次重绘时展示给操作员的提示（字段被停用 / 条件值失效），用于判断改值后是否需要重绘
 let c1Notices=[],c1Shown=[];
 function c1HasOptions(node){const f=c1Fields().find(x=>x.fieldCode===node.field);return node.operator!=='IN'&&(f?.fieldCode==='candidateProviderCode'||f?.dataType==='BOOLEAN'||c1Split(f?.valueOptions).length>0);}
-function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();}
+function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();else c1InvalidateExpression();}
+function c1InvalidateExpression(){
+  c1CompiledExpression=null;
+  $('c1Compiled').classList.remove('formatted');
+  $('c1Compiled').textContent='条件已修改，请重新校验';
+  $('c1FormatButton').disabled=true;
+  $('c1FormatButton').textContent='格式化';
+}
 // 参数绑定：使用「来源 + 绑定」控件的参数保存为对象（{source, fieldCode}），其余沿用字符串（受控路径 / 字面量）
 function c1SetArgument(path,code,value){
   const node=c1Node(path),p=c1Function(node.functionCode)?.parameters.find(x=>x.code===code);
   const mapping=c1Mapping(p,node.arguments?.[code])||(c1UnboundMapping(p,node.arguments?.[code])?c1DefaultMapping(p):null);
   node.arguments={...(node.arguments||{}),[code]:mapping?{...mapping,fieldCode:value}:value};
+  c1InvalidateExpression();
 }
 // 改来源：可绑定项随来源变化（字段 ↔ 受控路径），取该来源下第一个类型一致的项
 function c1SetArgumentSource(path,code,source){
@@ -204,18 +213,59 @@ function c1ScopeGroup(path,providerCode){
   parent.children[index]={type:'GROUP',logic:'OR',children:[providerCondition('NE'),{type:'GROUP',logic:'AND',children:[providerCondition('EQ'),original]}]};
   c1RenderTree();
 }
+// 点击连接符旁的「（ ）」时，把它两侧现有条件放进一个新条件组；不复制条件，也不改变初始求值结果。
+function c1WrapPair(path,index){
+  const parent=c1Node(path),depth=path.split('.').filter(Boolean).length;
+  if(index<1||index>=parent.children.length)return;
+  const subtreeDepth=node=>c1IsGroup(node)?1+Math.max(...node.children.map(subtreeDepth)):0;
+  if(depth+2+Math.max(subtreeDepth(parent.children[index-1]),subtreeDepth(parent.children[index]))>6){alert('最多6层条件组，无法再给这两项加括号');return;}
+  const pair=parent.children.slice(index-1,index+1);
+  parent.children.splice(index-1,2,{type:'GROUP',logic:parent.logic,children:pair});
+  c1RenderTree();
+}
+function c1UnwrapGroup(path){
+  const parts=path.split('.'),index=Number(parts.pop()),parent=c1Node(parts.join('.'));
+  const group=parent.children[index];
+  if(!c1IsGroup(group))return;
+  if(parent.children.length-1+group.children.length>20){alert('拆开后单组条件会超过20项');return;}
+  if(group.logic!==parent.logic&&!confirm('拆开括号后，组内 AND/OR 将改为外层关系，条件结果可能变化。确定继续吗？'))return;
+  parent.children.splice(index,1,...group.children);
+  c1RenderTree();
+}
+// 条件树的同一个 GROUP 只有一个 logic。修改单个连接符时，把其它同逻辑的相邻项保留为括号组。
+// AND 优先于 OR：A AND B AND C 改第一个连接符为 OR，形成 A OR (B AND C)。
+function c1ChangeJoin(path,index,nextLogic){
+  const parent=c1Node(path),beforeLogic=parent.logic,beforeChildren=parent.children;
+  if(index<1||index>=beforeChildren.length||!['AND','OR'].includes(nextLogic)||nextLogic===beforeLogic)return;
+  const grouped=(children,logic)=>children.length===1?children[0]:{type:'GROUP',logic,children};
+  if(beforeLogic==='AND'){
+    parent.logic='OR';
+    parent.children=[grouped(beforeChildren.slice(0,index),'AND'),grouped(beforeChildren.slice(index),'AND')];
+  }else{
+    parent.logic=beforeChildren.length===2?'AND':'OR';
+    parent.children=beforeChildren.length===2?beforeChildren:
+      [...beforeChildren.slice(0,index-1),{type:'GROUP',logic:'AND',children:beforeChildren.slice(index-1,index+1)},...beforeChildren.slice(index+1)];
+  }
+  const maxDepth=(node,depth=0)=>c1IsGroup(node)?Math.max(depth,...node.children.map(child=>maxDepth(child,depth+1))):depth;
+  if(maxDepth(c1ConditionTree)>6){
+    parent.logic=beforeLogic;parent.children=beforeChildren;
+    alert('最多6层条件组，无法单独修改此连接符');return;
+  }
+  c1RenderTree();
+}
 function c1RenderGroup(group,path,depth=0){
   const logic=group.logic==='OR'?'OR':'AND';group.logic=logic;
   const scope=depth&&depth<=3&&providers.length?`<select aria-label="按合作方限定本组" title="其他合作方通过本组，选中合作方才检查本组条件" onchange="c1ScopeGroup('${path}',this.value)"><option value="">按合作方限定本组…</option>${providers.map(p=>`<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('')}</select>`:'';
-  const head=`<div class="c1-head"><strong>${depth?'子条件组':'根条件组'}（${group.children.length} 项）</strong><select aria-label="条件组关系" onchange="c1Change('${path}','logic',this.value)"><option value="AND" ${logic==='AND'?'selected':''}>全部满足 AND</option><option value="OR" ${logic==='OR'?'selected':''}>任一满足 OR</option></select>${scope}${depth?`<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')">删除子组</button>`:''}</div>`;
+  const head=`<div class="c1-head"><strong>${depth?'子条件组':'根条件组'}（${group.children.length} 项）</strong><select aria-label="条件组关系" onchange="c1Change('${path}','logic',this.value)"><option value="AND" ${logic==='AND'?'selected':''}>全部满足 AND</option><option value="OR" ${logic==='OR'?'selected':''}>任一满足 OR</option></select>${scope}${depth?`<button type="button" class="btn secondary tiny" onclick="c1UnwrapGroup('${path}')">拆开括号</button><button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')">删除子组</button>`:''}</div>`;
   // 嵌套的条件组排在前面，字段 / 函数条件排在后面，保持根条件组与子条件组的显示顺序稳定
-  const body=group.children.map((child,i)=>`${i?`<div class="c1-join">${logic}</div>`:''}${c1IsGroup(child)?c1RenderGroup(child,path?path+'.'+i:String(i),depth+1):c1IsFunction(child)?c1RenderFunction(child,path?path+'.'+i:String(i)):c1RenderLeaf(child,path?path+'.'+i:String(i))}`).join('');
-  return `<div class="c1-group">${head}${body}<div class="actions"><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','leaf')">＋ 添加条件</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','group')">▧ 添加子条件组</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','function')">ƒ 添加函数</button></div></div>`;
+  const body=group.children.map((child,i)=>`${i?`<div class="c1-join"><select aria-label="第 ${i} 个条件连接符" title="单独修改此连接符；其它关系自动保留在括号组中" onchange="c1ChangeJoin('${path}',${i},this.value)"><option value="AND" ${logic==='AND'?'selected':''}>AND</option><option value="OR" ${logic==='OR'?'selected':''}>OR</option></select><button type="button" class="btn secondary tiny" title="将连接符两侧的条件放入同一括号组" aria-label="将两侧条件用括号分组" onclick="c1WrapPair('${path}',${i})">（ ）括号分组</button></div>`:''}${c1IsGroup(child)?c1RenderGroup(child,path?path+'.'+i:String(i),depth+1):c1IsFunction(child)?c1RenderFunction(child,path?path+'.'+i:String(i)):c1RenderLeaf(child,path?path+'.'+i:String(i))}`).join('');
+  return `<div class="c1-group">${head}${depth?'<div class="c1-paren c1-paren-open">（</div>':''}${body}${depth?'<div class="c1-paren c1-paren-close">）</div>':''}<div class="actions"><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','leaf')">＋ 添加条件</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','group')">▧ 添加子条件组</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','function')">ƒ 添加函数</button></div></div>`;
 }
 function c1RenderTree(){
   c1Notices=[];
   $('c1ConditionTree').innerHTML=c1RenderGroup(c1ConditionTree,'');
   c1Shown=[...new Set(c1Notices)];c1Notices=[];
+  c1InvalidateExpression();
   $('c1Compiled').textContent=(c1Shown.length?c1Shown.join('\n')+'\n':'')+'条件已修改，请重新校验';
   c1RenderRequired();
 }
@@ -236,7 +286,167 @@ async function c1LoadFunctionCatalog(){
   catch(error){c1FunctionCatalog=null;c1FunctionCatalogError=error.message;}
   c1RenderPathOptions();
 }
-async function c1CompileCondition(){try{const out=await api('/c1/condition/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});$('c1Compiled').textContent=out.expression;$('c1ConditionError').textContent='';}catch(error){$('c1Compiled').textContent='条件校验失败';$('c1ConditionError').textContent=error.message;}}
+// 只拆条件组的 && / ||；函数调用参数和引号中的括号、运算符保持原样。
+function c1BooleanParts(text){
+  const parts=[],operators=[];let depth=0,quote='',escaped=false,start=0;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(quote){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch===quote)quote='';continue;}
+    if(ch==='\''||ch==='"'){quote=ch;continue;}
+    if(ch==='('){depth++;continue;}
+    if(ch===')'){depth--;continue;}
+    if(depth===0&&(text.slice(i,i+2)==='&&'||text.slice(i,i+2)==='||')){
+      parts.push(text.slice(start,i).trim());operators.push(text.slice(i,i+2));i++;start=i+1;
+    }
+  }
+  parts.push(text.slice(start).trim());return {parts,operators};
+}
+function c1OuterParens(text){
+  if(!text.startsWith('(')||!text.endsWith(')'))return false;
+  let depth=0,quote='',escaped=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(quote){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch===quote)quote='';continue;}
+    if(ch==='\''||ch==='"'){quote=ch;continue;}
+    if(ch==='(')depth++;else if(ch===')'&&--depth===0&&i<text.length-1)return false;
+  }
+  return depth===0;
+}
+function c1PrettyExpression(text,level=0){
+  const value=String(text).trim(),wrapped=c1OuterParens(value),inner=wrapped?value.slice(1,-1).trim():value;
+  const {parts,operators}=c1BooleanParts(inner);
+  if(parts.length===1){
+    if(!wrapped||!c1OuterParens(inner))return value;
+    const nested=c1PrettyExpression(inner,level+1);
+    return nested.includes('\n')?`(\n${'  '.repeat(level+1)}${nested}\n${'  '.repeat(level)})`:value;
+  }
+  const lines=parts.map((part,i)=>`${'  '.repeat(level+1)}${i?operators[i-1]+' ':''}${c1PrettyExpression(part,level+1)}`);
+  return `${wrapped?'(\n':''}${lines.join('\n')}${wrapped?'\n'+'  '.repeat(level)+')':''}`;
+}
+function c1ToggleExpressionFormat(){
+  if(!c1CompiledExpression)return;
+  const box=$('c1Compiled'),button=$('c1FormatButton'),formatted=!box.classList.contains('formatted');
+  box.classList.toggle('formatted',formatted);
+  box.textContent=formatted?c1PrettyExpression(c1CompiledExpression):c1CompiledExpression;
+  button.textContent=formatted?'查看原始':'格式化';
+}
+function c1OpenExpressionImport(){
+  $('c1ExpressionImportText').value=c1CompiledExpression?c1PrettyExpression(c1CompiledExpression):'';
+  $('c1ExpressionImportError').textContent='';
+  $('c1ExpressionImport').classList.add('show');
+  $('c1ExpressionImportText').focus();
+}
+function c1CloseExpressionImport(){$('c1ExpressionImport').classList.remove('show');}
+// Only parse the expression syntax emitted by this editor. Never evaluate pasted JavaScript/Aviator text.
+function c1SplitTopLevel(text,separator){
+  const parts=[];let depth=0,quote='',escaped=false,start=0;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(quote){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch===quote)quote='';continue;}
+    if(ch==='\''||ch==='"'){quote=ch;continue;}
+    if(ch==='('){depth++;continue;}
+    if(ch===')'){if(--depth<0)throw Error('括号不匹配');continue;}
+    if(depth===0&&text.startsWith(separator,i)){
+      const part=text.slice(start,i).trim();if(!part)throw Error('连接符两侧必须有条件');
+      parts.push(part);i+=separator.length-1;start=i+1;
+    }
+  }
+  if(quote||depth)throw Error(quote?'引号未闭合':'括号不匹配');
+  const last=text.slice(start).trim();if(!last)throw Error('表达式末尾缺少条件');
+  return [...parts,last];
+}
+function c1ParseLiteral(text){
+  const raw=text.trim();
+  if(/^'(?:[^'\\]|\\.)*'$/.test(raw)||/^"(?:[^"\\]|\\.)*"$/.test(raw))
+    return raw.slice(1,-1).replace(/\\(['"\\])/g,'$1');
+  if(/^(?:true|false|-?\d+(?:\.\d+)?)$/.test(raw))return raw;
+  throw Error(`不支持的比较值：${raw.slice(0,50)}`);
+}
+function c1ParseComparison(text){
+  let depth=0,quote='',escaped=false,at=-1,symbol='';
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(quote){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch===quote)quote='';continue;}
+    if(ch==='\''||ch==='"'){quote=ch;continue;}
+    if(ch==='('){depth++;continue;}if(ch===')'){depth--;continue;}
+    if(depth===0){const match=/^(==|!=|>=|<=|>|<)/.exec(text.slice(i));if(match){at=i;symbol=match[1];break;}}
+  }
+  if(at<0)throw Error(`找不到比较运算符：${text.slice(0,70)}`);
+  const left=text.slice(0,at).trim(),value=c1ParseLiteral(text.slice(at+symbol.length));
+  const operator={'==':'EQ','!=':'NE','>':'GT','>=':'GTE','<':'LT','<=':'LTE'}[symbol];
+  const call=/^([A-Za-z][A-Za-z0-9_]*)\((.*)\)$/s.exec(left);
+  if(!call){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(left))throw Error(`不支持的字段写法：${left.slice(0,70)}`);
+    const field=c1Fields().find(f=>f.fieldCode===left);
+    if(!field)throw Error(`字段库中没有已启用的 C1 字段：${left}`);
+    if(!c1Split(field.allowedOperators).includes(operator))throw Error(`字段 ${left} 不支持 ${symbol}`);
+    return {type:'FIELD',field:left,operator,value};
+  }
+  const fn=c1Function(call[1]);if(!fn)throw Error(`函数库中没有可用于 C1 的函数：${call[1]}`);
+  if(!fn.operators.includes(operator))throw Error(`函数 ${call[1]} 不支持 ${symbol}`);
+  const args={};
+  for(const item of c1SplitTopLevel(call[2],',')){
+    const match=/^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$/s.exec(item);
+    if(!match)throw Error(`函数 ${call[1]} 的参数写法无效：${item.slice(0,70)}`);
+    const param=fn.parameters.find(p=>p.code===match[1]);
+    if(!param)throw Error(`函数 ${call[1]} 没有参数 ${match[1]}`);
+    const raw=match[2].trim();
+    if(c1DataFields().some(f=>f.fieldCode===raw)&&c1SourcesFor(param).includes('FIELD'))
+      args[match[1]]={source:'FIELD',fieldCode:raw};
+    else if(raw.startsWith('$'))args[match[1]]=raw;
+    else args[match[1]]=c1ParseLiteral(raw);
+  }
+  return {type:'FUNCTION',functionCode:call[1],arguments:args,operator,value};
+}
+function c1ParseExpression(text){
+  let value=String(text).trim();if(!value)throw Error('请先粘贴表达式');
+  if(c1OuterParens(value))value=value.slice(1,-1).trim();
+  const ors=c1SplitTopLevel(value,'||');
+  if(ors.length>1)return {type:'GROUP',logic:'OR',children:ors.map(c1ParseExpression)};
+  const ands=c1SplitTopLevel(value,'&&');
+  if(ands.length>1)return {type:'GROUP',logic:'AND',children:ands.map(c1ParseExpression)};
+  if(c1OuterParens(value))return c1ParseExpression(value);
+  return c1ParseComparison(value);
+}
+async function c1ImportExpression(){
+  const button=$('c1ExpressionImportButton'),errorBox=$('c1ExpressionImportError');
+  errorBox.textContent='';button.disabled=true;
+  try{
+    if(!c1FunctionCatalog)await c1LoadFunctionCatalog();
+    const parsed=c1ParseExpression($('c1ExpressionImportText').value);
+    const tree=c1IsGroup(parsed)?parsed:{type:'GROUP',logic:'AND',children:[parsed]};
+    const out=await api('/c1/condition/compile',{method:'POST',body:JSON.stringify({tree})});
+    c1ConditionTree=c1Normalize(tree);c1RenderTree();
+    c1CompiledExpression=out.expression;
+    $('c1Compiled').textContent=out.expression;
+    $('c1FormatButton').disabled=false;
+    $('c1ConditionError').textContent='';
+    $('c1ConditionGood').textContent='表达式已还原到条件区，请核对后保存条件配置';
+    c1CloseExpressionImport();
+  }catch(error){errorBox.textContent=error.message;}
+  finally{button.disabled=false;}
+}
+async function c1CompileCondition(){
+  const snapshot=JSON.stringify(c1ConditionTree);
+  try{
+    const out=await api('/c1/condition/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});
+    if(snapshot!==JSON.stringify(c1ConditionTree))return;
+    c1CompiledExpression=out.expression;
+    $('c1Compiled').classList.remove('formatted');
+    $('c1Compiled').textContent=out.expression;
+    $('c1FormatButton').disabled=false;
+    $('c1FormatButton').textContent='格式化';
+    $('c1ConditionError').textContent='';
+  }catch(error){
+    if(snapshot!==JSON.stringify(c1ConditionTree))return;
+    c1CompiledExpression=null;
+    $('c1FormatButton').disabled=true;
+    $('c1FormatButton').textContent='格式化';
+    $('c1Compiled').classList.remove('formatted');
+    $('c1Compiled').textContent='条件校验失败';
+    $('c1ConditionError').textContent=error.message;
+  }
+}
 async function c1LoadConditionRules(){
   try{
    // 左侧是 C1 全局过滤条件，与右侧模拟选择及具体合作方准入规则相互独立

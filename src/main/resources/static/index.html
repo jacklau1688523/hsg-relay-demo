@@ -450,6 +450,11 @@
         }
         .c1-group {border:1px solid #cad9ec;border-radius:9px;padding:14px;margin:12px 0;background:#f8fbff}
         .c1-group .c1-group {margin-left:16px;background:#fff}
+        .c1-join {display:flex;align-items:center;gap:10px;color:#2361a6;font-weight:700;margin:8px 0}
+        .c1-join select {width:94px;min-width:94px;font-weight:700;color:#2361a6}
+        .c1-paren {color:#2361a6;font-size:20px;font-weight:700;line-height:1}
+        .c1-paren-close {margin-top:8px}
+        #c1Compiled.formatted {white-space:pre-wrap;overflow-wrap:anywhere;tab-size:2}
         .c1-head,.c1-line {display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
         .c1-head strong{flex:1}.c1-head select{width:190px}.c1-line select:first-child{flex:2;min-width:150px}.c1-line select:nth-child(2){flex:1;min-width:100px}.c1-line input,.c1-line select:nth-child(3){flex:1.5;min-width:120px}
         .c1-join{font-size:12px;font-weight:700;color:#2763ad;margin-left:16px}
@@ -564,9 +569,9 @@
             <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：读取客户分类状态。</div><div class="notice">② 全局准入表达式：读取客户档案、交易字段、函数结果和元数据字段（如合作方有效排除客户集合）；表达式不满足即过滤合作方。</div><div class="notice">③ 开启合作方准入规则校验时，逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ 命中 CASE_BY_CASE 时检查有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。关闭合作方准入规则校验后跳过③和④。</div></div></div>
             <div class="grid c1-workspace">
             <section id="conditionView" class="panel">
-                <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。</div><div class="muted">“币种准入”和“受益行国家准入”已按当前候选合作方查询详情中的准入规则。若只想让某个合作方执行一组额外条件，请在该子组选择“按合作方限定本组”；其他合作方会跳过本组，仍须通过各自的准入规则。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
+                <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。 每个连接符都可单独选择 AND / OR，系统会自动生成必要的括号组；也可点“（ ）括号分组”将两侧已有条件归组。</div><div class="muted">“币种准入”和“受益行国家准入”已按当前候选合作方查询详情中的准入规则。若只想让某个合作方执行一组额外条件，请在该子组选择“按合作方限定本组”；其他合作方会跳过本组，仍须通过各自的准入规则。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
                 <div class="notice" style="margin-top:14px"><label style="display:flex;align-items:center;gap:9px;font-weight:600"><input id="c1AppetiteCheckEnabled" type="checkbox" checked style="width:auto">校验合作方准入规则</label><div class="muted" style="margin-top:5px">默认开启。关闭后跳过合作方准入规则匹配、个案审批和 MTD 校验；上方条件树仍执行，条件树引用的“币种准入”等字段也仍会参与判断。</div></div>
-                <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
+                <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><button id="c1FormatButton" type="button" class="btn secondary tiny" onclick="c1ToggleExpressionFormat()" disabled style="margin-left:8px">格式化</button><button type="button" class="btn secondary tiny" onclick="c1OpenExpressionImport()" style="margin-left:8px">从表达式还原</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
                 <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
                 <details class="c1-required"><summary>准入规则校验开启时的必检清单</summary><div class="muted" style="margin-top:8px">开启合作方准入规则校验后，这些检查由执行器按命中规则执行，不随条件树节点增删。关闭开关后，规则匹配、个案审批和 MTD 校验一同跳过。</div><div id="c1RequiredList"></div></details>
                 <div class="actions" style="justify-content:flex-end;margin-top:22px"><button id="c1SaveButton" type="button" class="btn" onclick="c1SaveCondition()">保存条件配置</button></div>
@@ -606,6 +611,15 @@
                     </aside>
             </div>
             <datalist id="c1PathOptions"></datalist>
+            <div class="modalback" id="c1ExpressionImport" role="dialog" aria-modal="true" aria-labelledby="c1ExpressionImportTitle" onclick="if(event.target===this)c1CloseExpressionImport()">
+                <div class="modal" style="width:min(1000px,100%)">
+                    <div class="rowbetween"><h2 id="c1ExpressionImportTitle">从表达式还原 C1 条件</h2><button type="button" class="btn secondary tiny" onclick="c1CloseExpressionImport()">✕ 关闭</button></div>
+                    <p class="muted">粘贴由条件编辑器生成的字段、函数、括号及 AND / OR 表达式。校验通过后替换当前条件区；请检查并点击“保存条件配置”才会生效。</p>
+                    <textarea id="c1ExpressionImportText" aria-label="待还原的表达式" rows="12" style="width:100%;font-family:monospace;resize:vertical" placeholder="(clientClassificationStatus == 'COMPLETE')"></textarea>
+                    <div id="c1ExpressionImportError" class="err"></div>
+                    <div class="actions" style="justify-content:flex-end"><button type="button" class="btn" id="c1ExpressionImportButton" onclick="c1ImportExpression()">校验并还原</button></div>
+                </div>
+            </div>
             <div class="modalback" id="c1FunctionPicker" role="dialog" aria-modal="true" aria-labelledby="c1FunctionPickerTitle" onclick="if(event.target===this)c1CloseFunctionPicker()">
                 <div class="modal" style="width:min(1100px,100%)">
                     <div class="rowbetween"><h2 id="c1FunctionPickerTitle">ƒ 添加函数</h2><button type="button" class="btn secondary tiny" onclick="c1CloseFunctionPicker()">✕ 关闭</button></div>
