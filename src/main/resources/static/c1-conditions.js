@@ -13,7 +13,7 @@ const c1IsGroup = node => Array.isArray(node.children)&&node.children.length>0;
 const c1IsFunction = node => !c1IsGroup(node)&&(node.type==='FUNCTION'||!!node.functionCode);
 // 可选字段完全由元数据中心决定：已启用且适用规则含 C1 的字段全部进入下拉，运算符和可选值随字段定义走
 function c1Fields(){return fieldDefs.filter(f=>f.enabled&&c1Split(f.allowedRules).includes('C1'));}
-function c1DefaultValue(f){return c1Split(f?.valueOptions)[0]||(f?.dataType==='BOOLEAN'?'true':['DECIMAL','INTEGER'].includes(f?.dataType)?'0':f?.fieldCode==='flowCategory'?'STANDARD':'');}
+function c1DefaultValue(f){return f?.fieldCode==='candidateProviderCode'?(providers[0]?.code||''):c1Split(f?.valueOptions)[0]||(f?.dataType==='BOOLEAN'?'true':['DECIMAL','INTEGER'].includes(f?.dataType)?'0':f?.fieldCode==='flowCategory'?'STANDARD':'');}
 function c1DefaultLeaf(){const f=c1Fields()[0];return {type:'FIELD',field:f?.fieldCode||'',operator:c1Split(f?.allowedOperators)[0]||'EQ',value:c1DefaultValue(f)};}
 const c1Function = code => c1FunctionCatalog?.functions.find(f=>f.functionCode===code)||null;
 function c1FunctionName(code){
@@ -63,7 +63,7 @@ function c1Add(path,kind){
 }
 // c1Shown：上一次重绘时展示给操作员的提示（字段被停用 / 条件值失效），用于判断改值后是否需要重绘
 let c1Notices=[],c1Shown=[];
-function c1HasOptions(node){const f=c1Fields().find(x=>x.fieldCode===node.field);return node.operator!=='IN'&&(f?.dataType==='BOOLEAN'||c1Split(f?.valueOptions).length>0);}
+function c1HasOptions(node){const f=c1Fields().find(x=>x.fieldCode===node.field);return node.operator!=='IN'&&(f?.fieldCode==='candidateProviderCode'||f?.dataType==='BOOLEAN'||c1Split(f?.valueOptions).length>0);}
 function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();}
 // 参数绑定：使用「来源 + 绑定」控件的参数保存为对象（{source, fieldCode}），其余沿用字符串（受控路径 / 字面量）
 function c1SetArgument(path,code,value){
@@ -83,7 +83,7 @@ function c1RenderLeaf(node,path){
   // 已保存条件引用的字段在元数据中心停用或不再适用 C1 时，换成当前首个可用字段，并在表达式区提示
   if(!fields.some(x=>x.fieldCode===node.field)){c1Notices.push(`字段 ${node.field||'（空）'} 已在元数据中心停用或不再适用 C1，对应条件已换成当前可用字段，请核对后再保存`);node.field=f.fieldCode;node.operator=c1Split(f.allowedOperators)[0];node.value=c1DefaultValue(f);}
   const ops=c1Split(f.allowedOperators);if(!ops.includes(node.operator))node.operator=ops[0];
-  const values=node.operator!=='IN'?(f.dataType==='BOOLEAN'?['true','false']:c1Split(f.valueOptions)):[];
+  const values=node.operator!=='IN'?(f.fieldCode==='candidateProviderCode'?providers.map(p=>p.code):f.dataType==='BOOLEAN'?['true','false']:c1Split(f.valueOptions)):[];
   // 还没有取值时（例如刚从 IN 的文本框切到 EQ）取第一个可选值，与下拉实际显示的保持一致
   if(values.length&&!String(node.value??'').trim())node.value=values[0];
   const current=String(node.value??'');
@@ -193,9 +193,21 @@ function c1RenderFunction(node,path){
 
 // ---------- 条件树 ----------
 
+function c1ScopeGroup(path,providerCode){
+  if(!providerCode)return;
+  if(!providers.some(p=>p.code===providerCode)){alert('请选择有效合作方');return;}
+  if(!c1Fields().some(f=>f.fieldCode==='candidateProviderCode')){alert('字段库中尚未启用「候选合作方」字段，请刷新字段库');return;}
+  const parts=path.split('.'),index=Number(parts.pop()),parent=c1Node(parts.join('.'));
+  const original=parent.children[index];
+  const providerCondition=operator=>({type:'FIELD',field:'candidateProviderCode',operator,value:providerCode});
+  // 其他合作方直接通过本组；指定合作方才执行原有币种、国家等条件。
+  parent.children[index]={type:'GROUP',logic:'OR',children:[providerCondition('NE'),{type:'GROUP',logic:'AND',children:[providerCondition('EQ'),original]}]};
+  c1RenderTree();
+}
 function c1RenderGroup(group,path,depth=0){
   const logic=group.logic==='OR'?'OR':'AND';group.logic=logic;
-  const head=`<div class="c1-head"><strong>${depth?'子条件组':'根条件组'}（${group.children.length} 项）</strong><select aria-label="条件组关系" onchange="c1Change('${path}','logic',this.value)"><option value="AND" ${logic==='AND'?'selected':''}>全部满足 AND</option><option value="OR" ${logic==='OR'?'selected':''}>任一满足 OR</option></select>${depth?`<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')">删除子组</button>`:''}</div>`;
+  const scope=depth&&depth<=3&&providers.length?`<select aria-label="按合作方限定本组" title="其他合作方通过本组，选中合作方才检查本组条件" onchange="c1ScopeGroup('${path}',this.value)"><option value="">按合作方限定本组…</option>${providers.map(p=>`<option value="${esc(p.code)}">${esc(p.code)} · ${esc(p.name)}</option>`).join('')}</select>`:'';
+  const head=`<div class="c1-head"><strong>${depth?'子条件组':'根条件组'}（${group.children.length} 项）</strong><select aria-label="条件组关系" onchange="c1Change('${path}','logic',this.value)"><option value="AND" ${logic==='AND'?'selected':''}>全部满足 AND</option><option value="OR" ${logic==='OR'?'selected':''}>任一满足 OR</option></select>${scope}${depth?`<button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')">删除子组</button>`:''}</div>`;
   // 嵌套的条件组排在前面，字段 / 函数条件排在后面，保持根条件组与子条件组的显示顺序稳定
   const body=group.children.map((child,i)=>`${i?`<div class="c1-join">${logic}</div>`:''}${c1IsGroup(child)?c1RenderGroup(child,path?path+'.'+i:String(i),depth+1):c1IsFunction(child)?c1RenderFunction(child,path?path+'.'+i:String(i)):c1RenderLeaf(child,path?path+'.'+i:String(i))}`).join('');
   return `<div class="c1-group">${head}${body}<div class="actions"><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','leaf')">＋ 添加条件</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','group')">▧ 添加子条件组</button><button type="button" class="btn secondary tiny" onclick="c1Add('${path}','function')">ƒ 添加函数</button></div></div>`;

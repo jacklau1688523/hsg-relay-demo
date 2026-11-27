@@ -563,7 +563,7 @@
             <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：读取客户分类状态。</div><div class="notice">② 全局准入表达式：读取客户档案、交易字段、函数结果和元数据字段（如合作方有效排除客户集合）；表达式不满足即过滤合作方。</div><div class="notice">③ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
             <div class="grid c1-workspace">
             <section id="conditionView" class="panel">
-                <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
+                <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。</div><div class="muted">“币种准入”和“受益行国家准入”已按当前候选合作方查询详情中的准入规则。若只想让某个合作方执行一组额外条件，请在该子组选择“按合作方限定本组”；其他合作方会跳过本组，仍须通过各自的准入规则。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
                 <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
                 <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
                 <details class="c1-required"><summary>系统必检清单：C1 执行器每次判定都会执行，不随条件树增删</summary><div class="muted" style="margin-top:8px">这些检查由后端代码强制落实：停用函数、删除条件节点都绕不过。可以把其中的函数加到条件树参与比较，删除节点只是不再比较它的返回值。</div><div id="c1RequiredList"></div></details>

@@ -30,3 +30,5 @@ logging:
     # 条件求值过程日志（ExpressionService.evaluate）：每次求值输出一个 DEBUG 块，按 CANDIDATE / TRANSACTION / CONTEXT 三组列出上下文取值，
     # 以及函数调用、代入变量和每个叶子条件的真假，用于溯源。日志含客户与交易数据，生产环境请删除这一项或改为 info。
     com.hsg.relay.service.ExpressionService: debug
+    # C1 完整模拟过程：客户档案、全局条件、准入规则匹配、审批或 MTD、最终结果。
+    com.hsg.relay.service.C1Service: debug

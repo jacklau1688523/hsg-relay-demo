@@ -1,6 +1,11 @@
 package com.hsg.relay.service;
 
 import org.junit.jupiter.api.Test;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -188,6 +193,32 @@ class C1ServiceTest {
     }
 
     @Test
+    void simulationWritesCompleteC1CalculationToDebugLog() {
+        Logger logger = (Logger) LoggerFactory.getLogger(C1Service.class);
+        Level previousLevel = logger.getLevel();
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.DEBUG);
+        try {
+            var result = service.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("150000")));
+            assertThat(result.reasonCode()).isEqualTo("PASS");
+            var rejected = service.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "USD", "KG", new BigDecimal("150000")));
+            assertThat(rejected.reasonCode()).isEqualTo("APPETITE_EXCLUDED");
+        } finally {
+            logger.detachAppender(appender);
+            logger.setLevel(previousLevel);
+        }
+        assertThat(String.join("\n", appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList()))
+                .contains("C1 模拟计算｜客户 C10001｜候选合作方 PROV-HO")
+                .contains("[PASS] 1. 客户档案")
+                .contains("[PASS] 3. 规则匹配 PSP")
+                .contains("[PASS] 4. 个案审批 PSP")
+                .contains("[结果] PASS｜原因码 PASS")
+                .contains("[结果] FAIL｜原因码 APPETITE_EXCLUDED");
+    }
+
+    @Test
     void pspRejectedByTierOneBank() {
         var result = service.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "USD", "KG", new BigDecimal("150000")));
         assertThat(result.passed()).isFalse();
@@ -241,6 +272,27 @@ class C1ServiceTest {
             assertThat(step.status()).isEqualTo("PASS");
             assertThat(step.detail()).contains("准入条件满足");
         });
+    }
+
+    @Test
+    @Transactional
+    void candidateProviderBranchUsesActualProviderAndLeavesOthersUnaffected() {
+        assertThat(metadata.list().stream().filter(field -> "candidateProviderCode".equals(field.fieldCode)).toList())
+                .singleElement().satisfies(field -> {
+                    assertThat(field.fieldName).isEqualTo("候选合作方");
+                    assertThat(field.allowedRules).contains("C1");
+                });
+        var provider = new ExpressionService.Node(null, null, "candidateProviderCode", "EQ", "PROV-HO");
+        var otherProvider = new ExpressionService.Node(null, null, "candidateProviderCode", "NE", "PROV-HO");
+        var usd = new ExpressionService.Node(null, null, "paymentCurrency", "EQ", "USD");
+        var scoped = new ExpressionService.Node("OR", List.of(otherProvider,
+                new ExpressionService.Node("AND", List.of(provider, usd), null, null, null)), null, null, null);
+        globalConditions.save(new C1ConditionService.Input(true, scoped, null));
+
+        assertThat(service.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100"))).reasonCode()).isEqualTo("PASS");
+        assertThat(service.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "HKD", "KG", new BigDecimal("100"),
+                Map.of("candidateProviderCode", "PROV-T1"))).reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(service.evaluate(new C1Service.Simulation("C10002", "PROV-T1", "HKD", "KG", new BigDecimal("100"))).reasonCode()).isEqualTo("PASS");
     }
 
     @Test

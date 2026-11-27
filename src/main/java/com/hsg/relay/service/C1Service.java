@@ -7,6 +7,8 @@ import com.hsg.relay.function.FunctionExecutionService.Call;
 import com.hsg.relay.function.RequiredFunctionProvider;
 import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.repo.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -15,6 +17,7 @@ import java.util.*;
 
 @Service
 public class C1Service implements RequiredFunctionProvider {
+    private static final Logger log = LoggerFactory.getLogger(C1Service.class);
     /**
      * 系统必检清单（代码级，只读）：C1 执行器在代码里直接调用这些检查对应的 Java Handler，
      * 不读取函数库元数据（停用、删除、改绑定都不影响），也不看条件树里有没有对应节点；页面只读展示。
@@ -91,7 +94,30 @@ public class C1Service implements RequiredFunctionProvider {
 
     private Result fail(String code, Long ruleId, String action, List<Trace> steps, RuleExecutionContext context, String detail) {
         steps.add(new Trace("失败原因", "FAIL", detail));
-        return new Result(false, code, ruleId, action, steps, context.calls());
+        return complete(false, code, ruleId, action, steps, context);
+    }
+
+    private Result complete(boolean passed, String code, Long ruleId, String action, List<Trace> steps, RuleExecutionContext context) {
+        Result result = new Result(passed, code, ruleId, action, List.copyOf(steps), context.calls());
+        if (log.isDebugEnabled()) {
+            StringBuilder detail = new StringBuilder("C1 模拟计算｜客户 ").append(context.value("transaction.clientId"))
+                    .append("｜候选合作方 ").append(context.value("candidate.providerCode"))
+                    .append("｜交易 ").append(context.value("transaction.paymentCurrency"))
+                    .append('/').append(context.value("transaction.beneficiaryBankCountry"))
+                    .append("｜金额 USD ").append(context.value("transaction.amountUsd"))
+                    .append("｜决策时间 ").append(context.value("context.decisionTime"));
+            for (Trace step : result.steps())
+                detail.append("\n  [").append(step.status()).append("] ").append(step.step()).append("：").append(step.detail());
+            for (Call call : result.functionCalls())
+                detail.append("\n  [函数] ").append(call.functionCode()).append("｜入参 ").append(call.arguments())
+                        .append("｜返回 ").append(call.value()).append("｜来源 ").append(call.dataSource())
+                        .append(call.cached() ? "｜本次复用" : "｜耗时 " + call.durationMs() + "ms");
+            detail.append("\n  [结果] ").append(passed ? "PASS" : "FAIL").append("｜原因码 ").append(code)
+                    .append("｜准入规则 ").append(ruleId == null ? "—" : "#" + ruleId)
+                    .append("｜动作 ").append(action == null ? "—" : action);
+            log.debug("{}", detail);
+        }
+        return result;
     }
 
     public Result evaluate(Simulation req) {
@@ -125,6 +151,7 @@ public class C1Service implements RequiredFunctionProvider {
             Map<String, Object> variables = new HashMap<>();
             if (req.variables() != null) variables.putAll(req.variables());
             variables.put("clientClassificationStatus", client.classificationStatus);
+            variables.put("candidateProviderCode", req.providerCode());
             variables.put("flowCategory", flow);
             variables.put("paymentCurrency", req.paymentCurrency());
             variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
@@ -135,7 +162,7 @@ public class C1Service implements RequiredFunctionProvider {
             variables.put("appetiteCountryEnabled", appetites.findAll().stream().anyMatch(a -> a.enabled
                     && req.providerCode().equals(a.providerCode) && flow.equals(a.flowCategory)
                     && active(a.effectiveFrom, a.effectiveTo, now) && scopeMatch(a.bankCountry, req.beneficiaryBankCountry())));
-            C1ConditionService.Outcome trigger = globalConditions.evaluate(variables, context);
+           C1ConditionService.Outcome trigger = globalConditions.evaluate(variables, context);
             if (trigger.configured()) {
                 steps.add(new Trace("2. C1 准入条件 " + flow, trigger.matched() ? "PASS" : "FAIL",
                         trigger.note() + "；表达式 " + trigger.expression()));
@@ -176,7 +203,7 @@ public class C1Service implements RequiredFunctionProvider {
             } else throw new IllegalStateException("未知准入动作 " + a.action);
         }
         steps.add(new Trace("5. C1 汇总", "PASS", "全部流转类别通过；模拟不占用 MTD"));
-        return new Result(true, "PASS", lastId, lastAction, steps, context.calls());
+        return complete(true, "PASS", lastId, lastAction, steps, context);
     }
 
     private boolean active(LocalDateTime start, LocalDateTime end, LocalDateTime now) {
@@ -208,6 +235,7 @@ public class C1Service implements RequiredFunctionProvider {
             Map<String, Object> variables = new HashMap<>();
             if (req.variables() != null) variables.putAll(req.variables());
             variables.put("clientClassificationStatus", client.classificationStatus);
+            variables.put("candidateProviderCode", req.providerCode());
             variables.put("flowCategory", flow);
             variables.put("paymentCurrency", req.paymentCurrency());
             variables.put("beneficiaryBankCountry", req.beneficiaryBankCountry());
