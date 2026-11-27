@@ -15,6 +15,7 @@ import com.hsg.relay.function.field.FieldValueService;
 import com.hsg.relay.function.field.RuleCollection;
 import com.hsg.relay.repo.ClientExclusionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -37,7 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * 元数据集合字段 + 通用集合函数：providerExcludedClientIds 由字段解析器取数，collectionContains / collectionIntersects 只做计算，
- * 函数参数用显式来源映射（FIELD / TRANSACTION）；客户排除由条件树里的节点决定，执行器不再单独必检。
+ * 函数参数用显式来源映射（FIELD / TRANSACTION）。客户排除是 C1 必检，与路径条件树里的集合条件共用同一份排除集合；
+ * 路径配置用只有 DEFAULT 路径、条件恒成立的基线（{@link C1PathFixtures#publishDefaultOnly}）。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -60,7 +62,7 @@ class CollectionFunctionTest {
     @Autowired
     C1Service c1;
     @Autowired
-    C1ConditionService globalConditions;
+    C1PathConfigService pathConfig;
     @Autowired
     ClientExclusionChecker checker;
     @Autowired
@@ -77,6 +79,18 @@ class CollectionFunctionTest {
     MockMvc mvc;
     @Autowired
     ObjectMapper json;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
+
+    /** 把 DEFAULT 路径的条件树换成给定的树并发布。 */
+    private void publishDefaultTree(ExpressionService.Node tree) {
+        pathConfig.saveDraft(json.valueToTree(new C1PathRule("C1", "FIRST_MATCH", List.of(
+                C1PathFixtures.path("DEFAULT", "默认路径", List.of(), 0, true, tree)))), null, "tester");
+        pathConfig.publish(new C1PathConfigService.PublishRequest(null, "tester", null));
+    }
 
     private static ExpressionService.Node function(String code, Map<String, Object> arguments, String operator, Object value) {
         return new ExpressionService.Node("FUNCTION", null, null, null, operator, value, code, arguments);
@@ -144,7 +158,7 @@ class CollectionFunctionTest {
         assertThat(containsView.parameters()).extracting(FunctionMetadataService.ParameterView::code).containsExactly("collection", "element");
         assertThat(containsView.parameters()).extracting(FunctionMetadataService.ParameterView::type).containsExactly("STRING_SET", "STRING");
         assertThat(containsView.usagePolicy()).isEqualTo("OPTIONAL");
-        // clientExcluded 保持兼容：仍是可选条件里的函数，但不再由执行器列为系统必检
+        // clientExcluded 在函数库里是可选函数（执行器的必检直接调用 Java Handler，不列在这里）
         assertThat(catalog.functions()).filteredOn(f -> f.functionCode().equals("clientExcluded")).singleElement()
                 .extracting(FunctionMetadataService.FunctionView::usagePolicy).isEqualTo("OPTIONAL");
         assertThat(catalog.required()).extracting(FunctionMetadataService.RequiredView::functionCode)
@@ -240,11 +254,13 @@ class CollectionFunctionTest {
         assertThat(matched(contains("EQ", true), context)).isTrue();
         relay.releaseExclusion(record.id);
         assertThat(exclusions.findById(record.id).orElseThrow().effectiveTo).isNotNull();
-        // 新的判定（新的上下文）里不再命中
+        // 新的判定（新的上下文）里不再命中：必检通过，PROV-GD 没有准入规则 → 默认拒绝
         var later = context("PROV-GD", "C10001");
         assertThat(matched(contains("EQ", true), later)).isFalse();
-        assertThat(c1.evaluate(new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"))).reasonCode())
-                .isEqualTo("APPETITE_NOT_SET");
+        var result = c1.evaluate(new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100")));
+        assertThat(result.reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded");
+        assertThat(result.functionCalls().get(0).value()).isEqualTo(false);
     }
 
     // 7. 不同合作方拥有不同排除集合
@@ -376,40 +392,45 @@ class CollectionFunctionTest {
         assertThat(expressions.evaluate(compiled, Map.of("paymentCurrency", "USD"), context("PROV-HO", "C10001")).matched()).isFalse();
     }
 
-    // 13. 客户排除不再由执行器必检：由全局准入条件里的集合条件决定是否过滤，命中记录随函数调用返回
+    // 13. 客户排除是必检：有有效的排除记录即按 CLIENT_EXCLUDED 过滤，与路径条件树里有没有集合条件无关；
+    //     路径条件树里的集合条件 collectionContains(providerExcludedClientIds, clientId) == false 不满足时按路径的失败原因码过滤
     @Test
-    void c1ExclusionIsDecidedByTheConditionTreeNotByAMandatoryCheck() throws Exception {
+    void c1ExclusionIsAMandatoryCheckAndThePathTreeCanAlsoUseTheSet() {
         ClientExclusion record = exclude("C10001", "PROV-GD");
         var request = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
-        // 条件树里没有任何排除相关的节点：有有效的排除记录也不会被过滤，也不查询排除记录；
-        // PROV-GD 没有准入规则，按默认拒绝返回
-        globalConditions.save(new C1ConditionService.Input(true, group("AND", field("paymentCurrency", "EQ", "USD")), null));
-        var withoutNode = c1.evaluate(request);
-        assertThat(withoutNode.reasonCode()).isEqualTo("APPETITE_NOT_SET");
-        assertThat(withoutNode.functionCalls()).isEmpty();
-        assertThat(withoutNode.steps()).extracting(C1Service.Trace::step).containsSubsequence("1. 客户档案", "2. C1 准入条件 PSP", "失败原因");
+        // 路径条件树里没有任何排除相关的节点：仍然被必检过滤，命中记录随结果返回
+        var mandatory = c1.evaluate(request);
+        assertThat(mandatory.passed()).isFalse();
+        assertThat(mandatory.reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        assertThat(mandatory.exclusionRecordId()).isEqualTo(record.id.toString());
+        assertThat(mandatory.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded");
+        assertThat(mandatory.functionCalls().get(0).value()).isEqualTo(true);
+        assertThat(mandatory.functionCalls().get(0).recordId()).isEqualTo(record.id.toString());
+        assertThat(mandatory.steps()).extracting(C1Service.Trace::step)
+                .containsSubsequence("1. 客户档案", "2. 路径条件 PSP", "3. 客户分类", "3. 客户排除", "失败原因");
+        // 排除命中不另写决策审计：结果和调用记录里带着命中的记录 ID
+        assertThat(audit.findAll()).noneMatch(row -> row.objectType.equals("C1_DECISION") && row.operation.equals("EXCLUSION_HIT"));
 
-        // 条件树里就是目标表达式 collectionContains(providerExcludedClientIds, clientId) == false：
-        // 客户在集合里，条件不满足，C1 返回 C1_CONDITION_NOT_MATCHED
-        var version = globalConditions.get().versionNo;
-        globalConditions.save(new C1ConditionService.Input(true, contains("EQ", false), version));
+        // 路径条件树里就是目标表达式 collectionContains(providerExcludedClientIds, clientId) == false：
+        // 客户在集合里，条件不满足，C1 按路径的失败原因码返回（还没走到必检）
+        publishDefaultTree(contains("EQ", false));
         var result = c1.evaluate(request);
         assertThat(result.passed()).isFalse();
-        assertThat(result.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(result.reasonCode()).isEqualTo("C1_PATH_DEFAULT_NOT_MATCHED");
         assertThat(result.functionCalls()).extracting(Call::functionCode).containsExactly("collectionContains");
         assertThat(result.functionCalls().get(0).value()).isEqualTo(true);
         assertThat(result.functionCalls().get(0).recordId()).isEqualTo(record.id.toString());
         assertThat(result.steps()).anySatisfy(step -> {
-            assertThat(step.step()).isEqualTo("2. C1 准入条件 PSP");
+            assertThat(step.step()).isEqualTo("2. 路径条件 PSP");
             assertThat(step.status()).isEqualTo("FAIL");
-            assertThat(step.detail()).contains("准入条件不满足");
+            assertThat(step.detail()).contains("路径 DEFAULT").contains("collectionContains");
         });
-        // 原必检的「排除命中」审计随必检一起去掉
-        assertThat(audit.findAll()).noneMatch(row -> row.objectType.equals("C1_DECISION") && row.operation.equals("EXCLUSION_HIT"));
 
-        // 运营改成不引用集合的条件：排除记录不再参与判定
-        globalConditions.save(new C1ConditionService.Input(true, field("paymentCurrency", "EQ", "USD"), null));
-        assertThat(c1.evaluate(request).reasonCode()).isEqualTo("APPETITE_NOT_SET");
+        // 运营改成不引用集合的条件：排除记录不再由路径条件过滤，但必检照常过滤
+        publishDefaultTree(field("paymentCurrency", "EQ", "USD"));
+        var withoutSet = c1.evaluate(request);
+        assertThat(withoutSet.reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        assertThat(withoutSet.functionCalls()).extracting(Call::functionCode).containsExactly("clientExcluded");
     }
 
     // 条件树里的多个节点共用请求内的同一份数据：字段解析一次执行 + 两次复用，第二个相同函数节点复用结果
@@ -419,16 +440,17 @@ class CollectionFunctionTest {
         ClientExclusion record = exclude("C10009", "PROV-HO");
         // (不包含 C10001) AND ( (包含 C10001) OR (不包含 C10001) )：第三个节点与第一个实参相同，复用其结果
         var twice = group("AND", contains("EQ", false), group("OR", contains("EQ", true), contains("EQ", false)));
-        globalConditions.save(new C1ConditionService.Input(true, twice, null));
+        publishDefaultTree(twice);
         var result = c1.evaluate(new C1Service.Simulation("C10001", "PROV-HO", "USD", "KG", new BigDecimal("100")));
         assertThat(result.reasonCode()).isEqualTo("PASS");
         assertThat(result.functionCalls()).extracting(Call::functionCode)
-                .containsExactly("collectionContains", "collectionContains", "collectionContains", "hasValidCaseApproval");
+                .containsExactly("collectionContains", "collectionContains", "collectionContains", "clientExcluded", "hasValidCaseApproval");
         // 当前客户未被排除：三个节点的函数结果都是 false；第三个节点与第一个实参相同，复用其结果
         assertThat(result.functionCalls().get(0).value()).isEqualTo(false);
         assertThat(result.functionCalls().get(1).value()).isEqualTo(false);
         assertThat(result.functionCalls().get(2).value()).isEqualTo(false);
         assertThat(result.functionCalls().get(2).cached()).isTrue();
+        // 必检的客户排除检查在路径条件之后、准入匹配之前执行
 
         // 直接求值同一个上下文：三个节点各做一次字段解析（后两次复用请求级结果，不再查库），第三个节点的函数结果为复用
         var context = context("PROV-HO", "C10001");

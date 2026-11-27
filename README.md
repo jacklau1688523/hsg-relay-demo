@@ -10,7 +10,8 @@ java -version  # Java 17 或更新版本
 mvn spring-boot:run
 ```
 
-浏览器访问：**http://localhost:8080/**（C1）和 **http://localhost:8080/c2.html**（C2）。左侧导航可在 C1 / C2 间切换。
+浏览器访问：**http://localhost:8080/**（C1）和 **http://localhost:8080/c2.html**（C2）。左侧导航可在 C1 / C2 间切换。C1 首页（`/` = `index.html`）分四个页签：
+「全局必检流程」「合作方路径配置」「模拟试算」「历史版本」；地址栏可用 `?tab=flow|paths|simulate|history` 直接打开某个页签，`?client=C10001&provider=PROV-GD` 预设模拟要素。
 
 静态页面、JS、CSS 由服务端返回 `Cache-Control: no-cache`（`application.yml` 的 `spring.web.resources.cache.cachecontrol`）：浏览器每次打开
 页面都会向服务端确认是否有更新，未变化返回 304。否则浏览器会按 `Last-Modified` 自行判定旧页面仍可使用，页面更新后继续显示旧菜单；若遇到这种情况，强制刷新一次（macOS
@@ -36,6 +37,11 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 数据库在 `ddl-auto=update` 下重启即自动补列，旧规则该列为空、照常按范围执行；采用手工 DDL 的 MySQL 数据库执行一次
 `sql/migrate-c2-trigger-condition.sql`（新执行 `schema-mysql.sql` 建表的库已包含该列，无需再执行）。
 
+2026-11-27 起 C1 新增「合作方动态规则路径配置」两张表 `relay_c1_path_config`、`relay_c1_path_version`（见「表结构」）。`ddl-auto=update` 的库（含默认的 H2）启动时自动建表；
+已有旧版全局准入条件（`c1condition_config`）的库，建表后第一次启动自动把它迁入：v1 = 旧条件树原样作为 DEFAULT 路径（已发生的决策按它回放），草稿 = 去掉两个旧版布尔条件后的条件树，
+等人工核对后发布；旧配置行原样保留，不改写、不删除。手工 DDL 的 MySQL 数据库执行一次 `sql/migrate-c1-path.sql`（只有 `CREATE TABLE IF NOT EXISTS`，不改旧表）。
+全新库或旧版没有配置条件的库没有已发布版本：C1 对全部候选合作方返回 `C1_CONFIG_MISSING`（默认拒绝），直到在「合作方路径配置」页签保存草稿并发布。
+
 ## C1 功能
 
 - 准入规则列表、筛选、新增、编辑、启用/停用、版本号、审计记录、相同维度有效期冲突检查
@@ -44,9 +50,15 @@ C1 MySQL 数据库，自动更新会增加 `relay_rule_field.value_options` 列�
 - HKT 自然月 MTD 查询，C1 模拟校验，逐步骤 PASS / FAIL 和原因码
 - MTD 模拟数据页面（工具 → MTD 模拟数据）：按「合作方＋流转类别＋月份」通过 `PUT /api/usage` 覆盖月累计金额，用于演示月度上限 `APPETITE_CAP_REACHED`；无定时任务，C1 只读取香港当月记录
 - 字段库与 AND/OR 条件组 → 后端生成安全受控表达式 → AviatorScript 执行试算
-- **C1 全局准入条件按元数据中心字段库动态构建**：首页「① 全局准入条件：字段库 + 函数库」通过 `GET/PUT /api/c1/condition` 独立读取和保存一棵条件树；每次 C1 判定先执行该树，表达式不满足即过滤候选合作方并返回 `C1_CONDITION_NOT_MATCHED`，满足才继续准入规则、个案审批和 MTD。字段下拉读取 `GET /api/field-metadata`，运算符和值均受字段元数据约束
-- C1 模拟校验支持附加条件字段：除固定的交易要素外，模拟面板按字段库为其余 C1 字段自动生成取值控件；条件缺值或失效的规则按不命中处理并在校验过程中给出 `SKIP` 说明（见下文「附加条件的取值与不命中处理」）
-- **C1 触发条件接入函数库**：条件组里可以添加字段条件、子条件组和函数条件；「ƒ 添加函数」选择器列出可用于 C1 的业务函数（名称、编码、返回类型、参数与数据来源），选好比较方式和期望值后加入条件树。准入匹配、个案审批、MTD 三项检查由 C1 执行器在代码里强制落实（系统必检），与条件树里有没有对应节点无关；客户排除是可选函数 `clientExcluded`，只在条件树里有它的节点（或字段绑定到它）时才检查（见下文「C1 条件接入函数库」）
+- **C1 合作方动态规则路径配置（2026-11-27）**：首页「合作方路径配置」页签按合作方维护路径（P1 / P2 / … / DEFAULT），每条路径绑定若干合作方，有自己的条件树（字段库 + 函数库，沿用同一个
+  AND/OR 编辑器）和失败原因码；每次 C1 判定先按候选合作方 `candidate.providerCode` 选一条路径，只执行这条路径自己的条件树，再执行对所有路径都生效的全局必检（客户分类 COMPLETE、客户排除、
+  APPETITE_MATCH 准入匹配、个案审批、MTD 上限，见下文「重要：C1 规则约束」）。配置按「草稿 → 发布 → 不可变版本」管理，执行只读已发布版本，历史决策按版本号回放。旧的「全局准入条件」
+  （`GET/PUT /api/c1/condition`）不再参与新版本的判定：启动时迁入一次（之后执行器不再读取它），接口原样保留，但读写它都不影响判定；它的两个布尔条件（`appetiteCurrencyEnabled` / `appetiteCountryEnabled`）由
+  APPETITE_MATCH 取代，新配置不能再引用。字段下拉读取 `GET /api/field-metadata`，运算符和值均受字段元数据约束
+- C1 模拟校验支持附加条件字段：除固定的交易要素外，模拟面板按字段库为其余 C1 字段自动生成取值控件；条件缺值或失效的规则按不命中处理并在校验过程中给出 `SKIP` 说明（见下文「路径条件的取值与不命中处理」）
+- **C1 路径条件接入函数库**：路径的条件组里可以添加字段条件、子条件组和函数条件；「ƒ 添加函数」选择器列出可用于 C1 的业务函数（名称、编码、返回类型、参数与数据来源），选好比较方式和期望值后加入条件树。
+  客户分类 COMPLETE、客户排除、准入匹配（APPETITE_MATCH 四级匹配）、个案审批、MTD 上限五项检查由 C1 执行器在代码里强制落实（全局必检），对每条路径都执行，与条件树里有没有对应节点无关；
+  其中 `clientExcluded` 在函数库里仍登记为可选函数（可停用，被引用时不能删除），但执行器每次判定都会直接检查客户排除（见下文「C1 路径条件接入函数库」）
 - 演示模拟不会扣减 MTD
 
 ## C2 功能（本次新增）
@@ -162,27 +174,62 @@ Check 页三个页面的侧边栏顺序在浏览器里核对，17 个页面的�
 
 ### 重要：C1 规则约束
 
-- 客户分类状态不在 Java 中写死；它与交易字段、函数结果一起代入 C1 页面保存的全局准入表达式。表达式不满足时过滤，满足时继续后续 C1 流程。
+C1 每次判定固定按下面的顺序执行，首个失败项决定原因码（页面「全局必检流程」页签展示的是同一顺序；步骤名与模拟结果「校验过程」里的一致）：
+
+| 步骤 | 内容 | 不通过时 |
+|---|---|---|
+| `0. 路径配置` | 读取已发布的路径配置：默认最新版本，回放按 `configVersion` 指定版本 | 从未发布 → `C1_CONFIG_MISSING`；已发布版本读不出来 → `C1_CONFIG_BROKEN` |
+| `1. 客户档案` | 读取客户分类状态和流转类别 | `CLIENT_NOT_FOUND` |
+| `2. 路径选择` | 按候选合作方 `candidate.providerCode` 选一条路径（FIRST_MATCH） | 多条启用路径绑定同一合作方 → `C1_PATH_CONFLICT`；没有可用路径 → `C1_PATH_NOT_FOUND`；启用了多条 DEFAULT → `C1_CONFIG_BROKEN` |
+| `2. 路径条件 <流转类别>` | 只执行所选路径自己的条件树，每个流转类别分别求值 | 这条路径的失败原因码；启用的路径没有条件树或条件树无法编译 → `C1_CONFIG_BROKEN` |
+| `3. 客户分类`（必检） | 分类状态须为 COMPLETE | `CLIENT_NOT_CLASSIFIED` |
+| `3. 客户排除`（必检） | 客户不在合作方的有效排除记录中 | `CLIENT_EXCLUDED`；排除记录查不出来 → `CLIENT_EXCLUSION_CHECK_FAILED` |
+| `3. 规则匹配 <流转类别>`（必检） | APPETITE_MATCH 四级匹配，全部流转类别都要命中 | `APPETITE_NOT_SET` / `APPETITE_EXCLUDED` |
+| `4. 个案审批 / MTD <流转类别>`（必检） | CASE_BY_CASE 须有有效审批；设有月度上限的 ACCEPT 校验 MTD + 本笔金额 | `APPETITE_APPROVAL_MISSING` / `APPETITE_CAP_REACHED` |
+| `5. C1 汇总` | 以上全部通过 | `PASS` |
+
+**路径选择（FIRST_MATCH，按候选合作方 `candidate.providerCode`）：**
+
+- 只看启用的路径：启用的专用路径里**恰好一条**绑定了该合作方 → 用它；一条也没有 → DEFAULT 路径；多条启用路径同时绑定 → `C1_PATH_CONFLICT`（发布前校验拦截；
+  执行时遇到直接拒绝，不会随机选一条）；DEFAULT 也未启用 → `C1_PATH_NOT_FOUND`。
+- 优先级只决定路径清单的显示顺序，不参与选路，也不是路由排序。
+- DEFAULT 路径显式存在、不绑定合作方，**不是自动通过**：走它的合作方同样要过它的条件树和全部必检。命中 DEFAULT 时模拟结果标明「命中 DEFAULT 路径」。
+- 选中路径后只执行这条路径的条件树；不满足即按这条路径自己的失败原因码过滤（留空时为 `C1_PATH_<编码大写>_NOT_MATCHED`，迁移产生的 v1 沿用 `C1_CONDITION_NOT_MATCHED`），
+  不落到 DEFAULT 或其它路径。路径不满足返回的就是路径的原因码，不会被改写成 `APPETITE_EXCLUDED` 等准入原因码。
+- 配置缺失或损坏一律拒绝，不会默认通过：从未发布 → `C1_CONFIG_MISSING`；已发布的条件树在发布后失效（引用的字段 / 函数被停用、绑定变更）而无法编译、启用的路径没有条件树、
+  配置读不出来 → `C1_CONFIG_BROKEN`。
+
+**准入规则匹配（APPETITE_MATCH）：**
+
 - 流转类别多选：所有流转类别必须分别通过；无类别按 STANDARD。
-- 按币种+国家精确性选最高优先级：精确+精确 > 精确+ALL > ALL+精确 > ALL+ALL。
-- 无匹配默认拒绝，`EXCLUDE` 禁止；CASE_BY_CASE 只检查有效审批；`ACCEPT` 有上限则查实时 MTD。
+- 每个流转类别在该合作方有效（启用、在有效期内）、覆盖本笔币种和国家的准入规则里按精确性分四级：精确币种+精确国家（`EXACT_EXACT`）＞ 精确币种+ALL（`EXACT_ALL`）＞
+  ALL+精确国家（`ALL_EXACT`）＞ ALL+ALL（`ALL_ALL`）。先看最高级：某一级里有准入规则自身的附加条件成立，就取这一级里编号最小的一条，**不再看更低的级别**；高一级没有成立的规则才看低一级。
+- 无匹配默认拒绝 `APPETITE_NOT_SET`；`EXCLUDE` 禁止 `APPETITE_EXCLUDED`；CASE_BY_CASE 只检查有效审批；`ACCEPT` 有上限则查实时 MTD。
 - C1 内部遇第一失败即返回；完整 RELAY 系统应继续检查 C2/C3/C4/C6/C10，以记录候选全部失败原因。
-- 页面上的字段库 / 函数库条件是独立的 C1 全局过滤判断，不绑定某条准入规则，也不受右侧模拟客户切换影响；规则本身仍按精确度匹配和默认拒绝执行。
-- 系统必检（准入匹配、个案审批、MTD）由执行器在代码里强制落实，条件树里有没有对应的函数节点都执行；客户排除不在必检之列，需要时在全局准入条件里加 `clientExcluded` 函数节点；函数条件只是把函数返回值作为一个可选条件参与比较，见下文「C1 全局条件接入函数库」。
 
-**全局过滤条件的取值与不命中处理：**
+**必检不被绕过：**
 
-- 全局条件是 C1 的候选准入门槛：对客户的每个流转类别求值，任一类别不满足即返回 `C1_CONDITION_NOT_MATCHED`；全部满足才进入准入规则匹配。
-- `flowCategory`、`paymentCurrency`、`beneficiaryBankCountry`、`amountUsd` 四个交易要素固定取自模拟表单（客户档案的流转类别、交易币种、受益行国家、本笔金额 USD），不能用 `variables` 覆盖；其余 C1 字段的取值来自模拟请求的 `variables`（字段编码 → 值）。
+- 客户分类 COMPLETE、客户排除、准入匹配、个案审批、MTD 上限五项由执行器在代码里强制落实：直接调用 Java Handler，不读函数库元数据（停用函数、删除条件节点、改绑定都绕不过），
+  也不看路径条件树里有没有对应节点。路径条件树里加 `clientExcluded == false`、`hasValidCaseApproval == true` 这样的函数条件只是多一个可选比较，函数条件本身不能代替必检。
+- 「分类状态须为 COMPLETE」是必检：路径条件树没有引用 `clientClassificationStatus` 时，非 COMPLETE 的客户同样返回 `CLIENT_NOT_CLASSIFIED`；路径条件树可以另外用它做比较（取值由客户档案代入）。
+- 路径条件只来自已发布的版本，页面草稿不参与判定；条件里只能引用字段库里已启用、适用 C1 的字段和已注册 Handler 的函数（发布前每条非空条件树都要能编译，不通过不能发布）。
+
+**路径条件的取值与不命中处理：**
+
+- 路径条件是 C1 的候选准入门槛：对客户的每个流转类别求值，任一类别不满足即按这条路径的失败原因码过滤；全部满足才进入必检。
+- `clientClassificationStatus`、`flowCategory`、`paymentCurrency`、`beneficiaryBankCountry`、`amountUsd` 固定取自本次判定（客户档案的分类状态与流转类别、交易币种、受益行国家、本笔金额 USD），
+  不能用 `variables` 覆盖；其余 C1 字段的取值来自模拟请求的 `variables`（字段编码 → 值）。
 - C1 模拟面板为字段库里其余已启用的 C1 字段自动生成取值控件：有可选值 → 下拉（首项「（不提供）」，默认选中第一个可选值）；数字 → 数字输入框；布尔 → true / false 下拉；其它 → 文本框。选「（不提供）」或留空的字段不提交。
-- 全局条件引用字段本次没有取值时按**未命中**处理，并在「C1 过滤条件 <流转类别>」步骤说明；条件保存后字段被停用、不再适用 C1 或值不再合法时，执行会明确报出全局条件已失效，要求重新保存，避免静默改变过滤语义。
+- 路径条件引用字段本次没有取值时按**未命中**处理，并在「2. 路径条件 <流转类别>」步骤说明；已发布的条件树引用的字段被停用、不再适用 C1，或函数被停用 / Handler 不再可用时，
+  执行按 `C1_CONFIG_BROKEN` 拒绝并说明原因，需修正后发布新版本，避免静默改变过滤语义（路径条件引用的字段和函数在草稿或任一已发布版本使用期间不能删除，可以停用）。
 - 已保存的条件引用了当前不可用的字段时，条件编辑器会把该条件换成第一个可用字段并在表达式区提示；条件值已不在可选值中时，下拉原样列出该值并标注「已不在可选值中」，不会悄悄改成其它值。两种情况都需核对后重新保存。
-- C1–C10 Check（`/routing.html`）也调用同一个 C1 执行器，因此会读取同一棵全局过滤条件；未提供的扩展字段按未命中处理并写入步骤说明。
+- C1–C10 Check（`/routing.html`）也调用同一个 C1 执行器，因此读取同一份已发布路径配置（最新版本）；未提供的扩展字段按未命中处理并写入步骤说明。
 
-### C1 全局条件接入函数库（字段 / 函数 / 条件组）
+### C1 路径条件接入函数库（字段 / 函数 / 条件组）
 
-C1 全局过滤条件树支持三类节点：函数库的业务函数既可以作为条件节点直接比较返回值，也可以绑定为字段的取值来源。旧版 `relay_appetite.condition_json` 仍兼容执行，但首页新配置统一保存到全局条件。C1 的后续系统检查保持排除优先于准入、
-流转类别无类别按 STANDARD、四级精确度匹配、`APPETITE_EXCLUDED` / `APPETITE_APPROVAL_MISSING` / `APPETITE_CAP_REACHED`、所有流转类别都须通过）。
+C1 的路径条件树（「合作方路径配置」页签里每条路径自己的 `conditionAst`）和准入规则的附加条件树（`relay_appetite.condition_json`）支持三类节点：函数库的业务函数既可以作为条件节点直接比较返回值，也可以绑定为字段的取值来源。
+2026-11-27 起「全局准入条件」（`GET/PUT /api/c1/condition`）不再参与判定，首页的条件编辑器编辑的是所选路径的条件树（草稿），发布后进入不可变版本。C1 的后续系统检查保持排除先于准入、流转类别无类别按
+STANDARD、四级精确度匹配且高一级命中后不再看低一级、`APPETITE_NOT_SET` / `APPETITE_EXCLUDED` / `APPETITE_APPROVAL_MISSING` / `APPETITE_CAP_REACHED`、所有流转类别都须通过。
 
 **条件树节点：**
 
@@ -211,7 +258,10 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
   `hasValidCaseApproval`（命中 CASE_BY_CASE 规则时须有有效审批 `APPETITE_APPROVAL_MISSING`）、`getProviderMtd`（命中设有月度上限的 ACCEPT 规则时校验 MTD + 本笔金额 `APPETITE_CAP_REACHED`）。
 - 执行器的系统必检直接调用 Java Handler，不经过函数库元数据，也不看条件树里有没有对应节点：在函数库里停用、删除、改绑定都绕不过。
 - 系统必检函数可以加入条件树（节点带「系统必检」标记，此时只是把它的返回值作为一个可选条件参与比较），也可以从条件树删除，删除前页面提示执行器每次判定仍会执行这项检查。页面右侧的「系统必检清单」只读展示这三项，没有删除按钮。
-- 函数库里系统必检函数不能删除（「C1 正在使用该系统必检函数，请停用而非删除」），可以停用；可选函数被字段绑定或已保存的 C1 条件引用时同样不能删除。可选函数只有在条件树里时才执行。
+- 函数库里系统必检函数不能删除（「C1 正在使用该系统必检函数，请停用而非删除」），可以停用；可选函数被字段绑定或已保存的 C1 条件引用时同样不能删除——引用它的位置包括 C1 路径草稿和**任一**已发布版本的路径条件树（引用说明写作
+  `C1 路径草稿 <路径编码>` / `C1 路径已发布 v<n> <路径编码>`），以及准入规则的附加条件。
+- 客户分类 COMPLETE、客户排除两项必检在函数库里没有对应的系统必检函数（执行器直接读客户档案、直接调用 `clientExcluded` 的 Handler）。`clientExcluded` 因此在函数库里仍登记为可选函数（`OPTIONAL`：可以停用，被引用时不能删除），
+  但执行器每次判定都会检查客户排除，与路径条件树里有没有它的节点无关，在函数库里停用它也不影响这项必检；条件树里的 `clientExcluded` 节点只是复用同一次查询结果再做一次比较。除它之外，可选函数只有在条件树里时才执行。
 
 **参数解析（只允许受控取值路径或字面量）：**
 
@@ -233,11 +283,17 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 - 失败不放行：函数抛异常、没有返回结果、返回类型与声明不符，都按执行失败报错，不会当成 false 或「未命中」。条件树内的函数执行失败时整个模拟请求返回 400（`C1 规则 #n 条件执行失败: …`）。
 - 规则保存后函数在函数库里被停用、不再适用 C1 或 Handler 不再可用：引用它的规则在第 3 步按不命中处理，并在校验过程中给出 `SKIP` 说明（「附加条件已失效」），全部不命中时为 `APPETITE_NOT_SET`，与字段失效的处理一致；
   系统必检照常执行。条件编辑器把这样的函数条件标为「不可用」并在表达式区提示，不会悄悄换成别的函数，需删除后按需重新添加。
+- 路径配置的保存草稿 / 校验 / 发布（`PUT /api/c1/paths/draft`，`POST /api/c1/paths/compile` / `check` / `publish`）按同样的规则校验**每一条非空条件树**，停用的路径也要能编译（停用的路径恢复启用时必须可用）：引用了已停用函数、未注册 Handler、已停用或不适用
+  C1 的字段的条件树不能进入新发布的版本，返回 400 并指出路径和原因；用这样的草稿试算（`POST /api/c1/paths/simulate`）返回 `C1_CONFIG_BROKEN`（`草稿不是有效的路径配置：…`），不会默认通过。
+- 已发布的路径条件树在发布之后失效（引用的字段 / 函数被停用、Handler 不再可用、绑定变更）而无法编译，或者启用的路径没有条件树：执行按 `C1_CONFIG_BROKEN` 拒绝（HTTP 200、`passed=false`，过程里说明是哪条路径），
+  不会当成「条件不满足」，更不会放行；需修正后发布新版本。
+- 路径条件树执行途中的运行时失败（函数查询失败等）返回 400（`C1 路径 <路径编码> 条件执行失败: …`），准入规则附加条件的失败仍是 400（`C1 规则 #n 条件执行失败: …`）；两者都不会当成 false 或「未命中」。
 
 **条件求值过程日志（溯源计算过程）：**
 
 - `ExpressionService.evaluate` 每次求值输出一个 DEBUG 日志块（logger `com.hsg.relay.service.ExpressionService`）。`application.yml` 的 `logging.level` 已为演示打开；日志含客户与交易数据，生产环境请删除这一项或改为 `info`。
-  所有经过 `evaluate` 的条件都会记录：C1 全局准入条件（标题带「C1 全局准入条件」）、C1 准入规则条件、函数试算（「函数试算 {函数编码}」）、`POST /api/expression/preview`、C2 附加触发条件和 C3 全局条件。
+  所有经过 `evaluate` 的条件都会记录：C1 路径条件（标题带「C1 路径条件 <路径编码>」）、C1 准入规则条件、函数试算（「函数试算 {函数编码}」）、`POST /api/expression/preview`、C2 附加触发条件和 C3 全局条件
+  （旧接口 `/api/c1/condition` 的标题仍是「C1 全局准入条件」）。
 - 块内依次是：`表达式`（页面可读形式；含函数时另给 `可执行表达式`）→ **CANDIDATE 当前正在评估的候选路由 / TRANSACTION 当前支付交易的数据 / CONTEXT 规则引擎执行过程中的上下文数据**
   三组受控路径的当前取值（没有执行上下文时说明只有请求变量参与）→ `函数调用`（目标 ← 函数与 Handler｜入参｜返回值｜耗时或复用｜数据来源｜命中记录；调用前就失败的给出参数绑定和原因）
   → `代入变量`（表达式引用的每个变量代入的取值和来源：请求取值 / 函数计算 / 函数返回值）→ `逐项求值`（每个叶子条件的真假）→ `结果：命中 / 未命中 / 执行失败｜耗时`。
@@ -252,12 +308,14 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 3. 查询 `relay_client_exclusion`（合作方详情「客户排除管理」维护的记录）：同一合作方 + 同一客户，且 `effectiveFrom <= 决策时间 < effectiveTo`（`effectiveTo` 为空表示长期有效）；未到生效时间、已过失效时间、已解除的记录
    都不算有效，命中多条取 ID 最小的一条。
 4. 返回 BOOLEAN：命中为 `true`，`recordId` 为排除记录 ID；未命中为 `false`；数据来源 `CLIENT_EXCLUSION`。
-5. C1 执行顺序：`1. 客户档案` → `2. C1 准入条件 <流转类别>`（全局条件树）→ `3. 规则匹配 <流转类别>`（在这里求值规则的附加条件树）→ `4. 个案审批 / MTD <流转类别>` → `5. C1 汇总`。
-   执行器不再单独检查客户排除：`clientExcluded` 是可选函数，条件树（全局或规则）里有它的节点、或字段绑定到它时才查询排除记录。
-6. 被排除的客户：全局准入条件里有 `clientExcluded == false` 节点时不满足，返回 `C1_CONDITION_NOT_MATCHED`；规则的附加条件里有该节点时规则不命中，返回 `APPETITE_NOT_SET`。
-   条件树里没有相关节点时不查询排除记录，也不返回 `CLIENT_EXCLUDED`。多处引用（全局条件、规则条件、函数绑定字段、集合字段）入参相同时复用请求级缓存，一次判定只查询一次。
-7. 排除记录查询失败（数据库异常）时：引用它的节点执行失败——全局条件返回 400（`C1 全局过滤条件执行失败: …`），规则条件返回 400（`C1 规则 #n 条件执行失败: …`），
-   不会按「未排除」放行；条件树里没有相关节点时不查询，判定不受影响。模拟请求 `variables` 里的 `clientProviderExcluded`：字段绑定了 `clientExcluded` 时不采用（取函数结果）；未绑定时按请求输入取值，
+5. C1 执行顺序：`0. 路径配置` → `1. 客户档案` → `2. 路径选择` → `2. 路径条件 <流转类别>`（所选路径自己的条件树）→ `3. 客户分类` → `3. 客户排除` → `3. 规则匹配 <流转类别>`（在这里求值规则的附加条件树）→
+   `4. 个案审批 / MTD <流转类别>` → `5. C1 汇总`。2026-11-27 起客户排除重新是必检：执行器在 `3. 客户排除` 直接调用 `clientExcluded` 的 Handler（入参固定为本次判定的 `$candidate.providerCode` + `$transaction.clientId`），
+   每个候选合作方都检查，与条件树里有没有它的节点无关，在函数库里停用它也不影响这项必检。
+6. 被排除的客户返回 `CLIENT_EXCLUDED`（结果里 `exclusionRecordId` 为命中的排除记录 ID），不会进入准入规则匹配，不写 `C1_DECISION / EXCLUSION_HIT` 审计。路径条件树或规则附加条件里另有 `clientExcluded == false`
+   节点时复用同一次查询结果：路径条件里该节点不满足 → 这条路径自己的失败原因码；规则的附加条件里该节点 → 这条规则不命中（全部不命中时 `APPETITE_NOT_SET`）。多处引用（路径条件、规则条件、函数绑定字段、集合字段）
+   入参相同时复用请求级缓存，一次判定只查询一次。
+7. 排除记录查询失败（数据库异常）时不按「未排除」放行：必检返回 `CLIENT_EXCLUSION_CHECK_FAILED`（200、`passed=false`）；路径条件树里的 `clientExcluded` 节点执行失败返回 400（`C1 路径 <路径编码> 条件执行失败: …`），
+   规则条件里的返回 400（`C1 规则 #n 条件执行失败: …`）。模拟请求 `variables` 里的 `clientProviderExcluded`：字段绑定了 `clientExcluded` 时不采用（取函数结果）；未绑定时按请求输入取值，
    没有取值时引用它的规则按不命中处理。
 
 **试算与调用记录：**
@@ -278,17 +336,51 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
   就自动绑定（`providerCode` → `$candidate.providerCode`、`clientId` → `$transaction.clientId`），并写审计 `FIELD_METADATA / BIND_FUNCTION`（操作人 `system`）；运营保存过的取值配置不会被覆盖。演示种子没有这个字段，全新库不会触发。
 - 接口兼容：`POST` / `PUT /api/field-metadata` 增加 `valueSource`、`functionCode`、`argumentBindings`（JSON 对象）三个入参；三项都不传表示请求没有表达取值来源，新增字段留空（按请求输入），修改时保留已有配置并按本次提交的类型 / 适用规则复核。
 
-**页面：**
+**页面（C1 首页 `/` = `index.html`，蓝白配色，四个页签）：**
 
-- C1 页「① 触发条件：字段库 + 函数库」：条件组的操作按钮为「添加条件」「添加子条件组」「ƒ 添加函数」；选择器为每个可添加的函数显示一张卡片（名称、编码、系统必检 / 可选、返回类型、数据来源、参数与绑定、比较方式、期望值、试算），
-  沿用蓝白配色；右侧「系统必检清单」只读，没有删除按钮。函数条件在条件树里显示为带虚线框的一行：`ƒ 函数名`、比较方式和期望值。
+- 「全局必检流程」（只读）：C1 判定顺序（⓪ 读取路径配置 → ① 客户档案 → ② 路径选择 → ② 路径条件 → ③ 客户分类 / 客户排除 / 规则匹配 → ④ 个案审批 / MTD → ⑤ C1 汇总，每一步写出不通过时的原因码）、
+  代码级的「系统必检清单」（只读，没有删除按钮），以及从旧版全局准入条件迁入的说明（第一次发布后清空）。
+- 「合作方路径配置」：顶部工具条填操作人（保存草稿 / 发布必填）和发布说明，按钮为「↻ 刷新」「校验」「保存草稿」「发布」，「＋ 新增路径」增加路径卡片。每张卡片可改路径名称、勾选绑定合作方、填优先级（只排序）、启用 / 停用、
+  改失败原因码（留空 = `C1_PATH_<编码大写>_NOT_MATCHED`），并有「✎ 编辑条件」「▶ 试算」「✕ 删除」（已发布过的路径不能删除，只能停用）；同一合作方被多条启用路径绑定时卡片直接标「冲突」。
+  点「编辑条件」后这条路径的条件树挂在页面下方的条件编辑器里——**与原来的全局条件编辑器是同一个**（`c1-conditions.js`，没有第二套编辑器）：操作按钮「添加条件」「添加子条件组」「ƒ 添加函数」，函数选择器为每个可添加的函数显示一张卡片
+  （名称、编码、系统必检 / 可选、返回类型、数据来源、参数与绑定、比较方式、期望值、试算），函数条件在条件树里显示为带虚线框的一行：`ƒ 函数名`、比较方式和期望值；字段下拉读取
+  `GET /api/field-metadata`，两个旧版布尔字段不出现在下拉里；根条件组可以删空（草稿），子条件组至少保留一项。「校验并生成表达式」列出每条路径的可读表达式。
+  卡片和编辑器上的修改先留在页面上，点「保存草稿」才写入草稿（草稿版本号与保存时不一致会提示已被他人修改）；点「发布」先做发布前校验，有提示（警告）时须勾选确认，发布后生成新的不可变版本并立即生效。
+- 「模拟试算」（只读，不写任何数据、不占用 MTD）：左侧是模拟要素（客户、合作方、交易币种、受益行国家、本笔金额 USD、路径配置版本，以及按字段库自动生成的其它 C1 字段取值控件），两个按钮
+  「▶ 按已发布版本校验」（`POST /api/c1/simulate`，与 C1–C10 Check 读同一份已发布版本；选了版本即按该版本回放）和「▶ 按当前页面草稿试算」（`POST /api/c1/paths/simulate`，用页面上的草稿，不必先保存）。
+  「判定摘要」依次为：合作方 `providerCode`、命中路径（`pathCode · 名称`；没有任何启用的专用路径绑定该合作方而走 DEFAULT 时明确标出「命中 DEFAULT 路径」）、路径优先级（只决定列表顺序，不参与选路）、规则版本（`vN` 或草稿）、
+  路径条件树（每个流转类别）、客户分类、客户排除（含命中的排除记录 ID）、最终原因；其下的「准入规则匹配」表逐个流转类别给出匹配级别（`EXACT_EXACT` / `EXACT_ALL` / `ALL_EXACT` / `ALL_ALL`）、命中的规则 `#id`
+  与币种 / 国家、动作、个案审批、MTD；再往下是逐步「校验过程」和「函数调用」。配置或要素在出结果之后有修改时提示结果已过期，需重新试算。
+- 「历史版本」：已发布版本（新 → 旧；版本、发布人、时间、说明、各版本的路径表）与操作审计（类型 `C1_PATH`：系统迁移 / 保存草稿 / 发布）；「查看明细」看某个版本的路径清单，「用此版本试算」按该版本回放（只用于核对，不改变当前生效版本）。
 - 元数据中心（字段 ↔ 函数绑定、函数库的使用策略）见「元数据中心页面」一章。
 
 2026-11-25（C1 条件接入函数库）：全套 258 项测试通过（本次新增 28 项）：`C1FunctionTest` 13 项、`C1FunctionFailureTest` 2 项、`FunctionMetadataApiTest` 8 项、`ConditionJsonCompatibilityTest` 4 项、`SchemaRestartTest` 1 项（明细见「测试用例」）。
 在独立端口与临时数据库上以无头 Chrome 完成 48 项检查：函数库接口与内置字段的启动自动绑定（旧字段 → 重启 → 已绑定）、C1 页面的三个操作按钮与只读的系统必检清单、选择器卡片内容、选择器里的函数试算、把 `clientExcluded`
 加入条件树并保存、无排除记录时的模拟校验（一次执行 + 一次复用）、加入有效排除记录后的 `CLIENT_EXCLUDED`、从条件树删除 `clientExcluded` 节点后保存仍返回 `CLIENT_EXCLUDED`（验收场景）、元数据中心的字段绑定 / 函数库使用策略 /
 表达式页拦截，以及页面没有脚本异常或控制台错误。未读写 8080 / 8081 实例的数据库。
-2026-11-26（客户排除改由条件树决定）：C1 执行器去掉写死的客户排除必检——不再直接调用 `clientExcluded`，不再返回 `CLIENT_EXCLUDED` / `CLIENT_EXCLUSION_CHECK_FAILED`，不再写 `C1_DECISION / EXCLUSION_HIT` 审计，步骤编号顺延（见上文第 5–7 条）。`clientExcluded` 由系统必检改为可选函数：没有被字段绑定或已保存条件引用时可以删除。全套 345 项测试通过：6 个测试文件里断言旧必检行为的用例按新口径改写，新增 1 项（未被引用的可选函数可以删除）。
+2026-11-26（客户排除改由条件树决定）：C1 执行器去掉写死的客户排除必检——不再直接调用 `clientExcluded`，不再返回 `CLIENT_EXCLUDED` / `CLIENT_EXCLUSION_CHECK_FAILED`，不再写 `C1_DECISION / EXCLUSION_HIT` 审计，步骤编号顺延（见上文第 5–7 条）。`clientExcluded` 由系统必检改为可选函数：没有被字段绑定或已保存条件引用时可以删除。全套 345 项测试通过：6 个测试文件里断言旧必检行为的用例按新口径改写，新增 1 项（未被引用的可选函数可以删除）。**本条口径已被 2026-11-27 的「合作方动态规则路径配置」取代**：客户排除恢复为必检，`clientExcluded`
+回到「被引用时不能删除」，见下一条。
+
+2026-11-27（C1 合作方动态规则路径配置）：C1 由「一棵全局准入条件」改为「按候选合作方 `candidate.providerCode` 选路径」。新增两张表 `relay_c1_path_config` / `relay_c1_path_version`、服务 `C1PathConfigService`
+（草稿 / 校验 / 发布 / 不可变版本 / 历史 / 审计 / 启动迁移）和页面接口 `/api/c1/paths`（见「API」「表结构」）。执行器 `C1Service` 先选路径（FIRST_MATCH：恰好一条启用的专用路径绑定了该合作方 →
+用它；一条也没有 → DEFAULT 路径；多条 → `C1_PATH_CONFLICT`，发布前拦截、执行时拒绝；DEFAULT 未启用 → `C1_PATH_NOT_FOUND`），只执行这条路径自己的条件树，不满足即按它自己的失败原因码过滤，不落到其它路径；
+然后执行对每条路径都生效的必检（客户分类 COMPLETE、客户排除、APPETITE_MATCH、个案审批、MTD 上限），首个失败项决定原因码，顺序与原因码见「重要：C1 规则约束」。从未发布、配置读不出来、启用的路径没有条件树或条件树无法编译，
+一律拒绝（`C1_CONFIG_MISSING` / `C1_CONFIG_BROKEN` / `C1_PATH_CONFLICT`），不会默认通过。APPETITE_MATCH 按币种 + 国家精确性分四级（`EXACT_EXACT` ＞ `EXACT_ALL` ＞ `ALL_EXACT` ＞ `ALL_ALL`），高一级命中后不再看低一级；
+旧版全局准入条件的两个布尔条件 `appetiteCurrencyEnabled` / `appetiteCountryEnabled` 由它取代，新配置不能再引用（结构校验 + 发布前校验拦截，字段下拉里也不出现）。首页改为四个页签，路径条件树沿用原来的 AND/OR
+编辑器（`c1-conditions.js`），见上文「页面」。已有旧版全局准入条件的库第一次启动自动迁入：v1 = 旧条件树原样作为 DEFAULT 路径（已发生的决策按它回放），草稿 = 去掉两个布尔条件后的条件树，并给出迁移提示
+（布尔条件原本在「或」条件组里时重点提示：APPETITE_MATCH 是必检，与路径条件是与的关系，补不回「或」的关系），旧配置行原样保留；见「启动」一节。
+
+全套 467 项测试通过（50 个测试类，比上一版多 30 项）：`C1PathRoutingTest` 10 项、`C1PathConfigServiceTest` 18 项、`C1PathSchemaTest` 2 项，明细见「测试用例」；另有 16 个既有测试文件按新口径调整（非 C1
+的测试进入 C1 前先发布一份只含 DEFAULT 路径的配置，见 `C1PathFixtures`）。测试在与仓库源码逐字节一致的隔离目录里运行，没有占用 8080 实例。在隔离目录打出的 jar 上验证（独立端口、独立数据库）：全新库的无头 Chrome
+检查 59 项全部通过（四个页签；路径的新增 / 删除未发布的路径 / 改名称 / 选合作方 / 优先级 / 启停 / 编辑条件 / 试算 / 保存草稿 / 发布 / 历史；共用编辑器里加函数条件；路径条件不满足时返回路径自己的失败原因码而不是
+`APPETITE_*`；发布后新增 P3 路径绑定 `PROV-T1`，不改 Java 即生效，按 v1 回放仍走 DEFAULT），页面无脚本异常；带旧版全局准入条件的旧库迁移检查 46 项全部通过（v1 原样快照 + 去掉两个布尔条件的草稿 + 迁移提示；
+字段库里有没有这两个字段，按 v1 回放结果都一样：USD 通过、EUR `C1_CONDITION_NOT_MATCHED`；发布 v2 后最新判定改读新配置、提示清空，回放 v1 结论不变）；MariaDB 12.3.2 上手工 DDL 建表两次 + 迁移脚本幂等、列类型与实体一致、
+重启不再 ALTER、非法 JSON 与重复版本号被数据库约束拒绝、20 项接口冒烟通过。MySQL 8 未实测。
+
+**已知范围（2026-11-27）：**发布没有独立权限模型，只要求操作人（可选 `relay.c1-path.publishers` 名单）；没有生效时间，发布即生效、默认读最新版本，回放靠决策记录里的 `configVersion`；应用刚启动、启动迁移还没执行的一两秒内
+读到的是空白草稿（页面点「↻ 刷新」即可，保存草稿会先补做迁移）；`RuleExecutionContext.outputs` 按节点 id 登记函数输出，同一节点 id 在不同流转类别间会拿到上一次的输出（跨流转类别引用 `FUNCTION_OUTPUT`
+的场景）；准入规则的附加条件里仍引用旧版布尔字段的规则照常按「没有取值、不命中」跳过，需到合作方详情重新保存；旧的 `/api/c1/condition` 接口与 `c1condition_config` 表原样保留但不再参与判定；`C1_DECISION`
+决策审计本 Demo 不写（回放能力由版本 + 模拟接口提供）。
 
 ## API
 
@@ -300,9 +392,24 @@ C1 全局过滤条件树支持三类节点：函数库的业务函数既可以�
 - `POST /api/exclusions`, `POST /api/approvals`
 - `PUT /api/usage`：演示用，模拟统计任务回填 MTD。提交 `{providerCode,flowCategory,monthKey,amountUsd}`，按三者组合覆盖写入（不存在则新增），金额必填、保留两位小数并写审计
 - `DELETE /api/usage/{id}`：删除一条 MTD 记录
-- `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`，也可以是函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`（保存前按函数库和白名单校验，见「C1 条件接入函数库」）
+- `PUT /api/appetites/{id}/condition`：保存准入规则的附加条件，提交 `{enabled,tree}`；`enabled=false` 清除条件。保存前按元数据中心校验：字段存在、已启用、适用规则含 C1，运算符在允许运算符内，有可选值时条件值须在其中，最多 6 层、每组 20 项；不通过返回 400。`tree` 结构：条件组 `{logic:"AND"|"OR",children:[…]}`，叶子 `{field,operator,value}`，也可以是函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`（保存前按函数库和白名单校验，见「C1 路径条件接入函数库」）
 - `POST /api/appetites/compile`：提交 `{tree}`，只校验并返回 `{expression}`，不保存
-- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理；绑定了函数的字段不取 `variables` 里的值。响应新增 `functionCalls`（本次判定的函数调用记录）；条件树内的函数执行失败返回 400（不按「未排除」放行）
+- `POST /api/c1/simulate`：提交 `{clientId,providerCode,paymentCurrency,beneficiaryBankCountry,amountUsd,variables?,configVersion?}`；`variables` 为附加条件字段的取值（可选），没有提供取值的字段按「条件不命中」处理；绑定了函数的字段不取 `variables`
+  里的值。按**已发布**的路径配置判定（顺序与原因码见「重要：C1 规则约束」）：`configVersion` 不传取最新版本，指定即按该版本回放（版本不存在返回 400）。配置原因的拒绝（`C1_CONFIG_MISSING` 等）也是 HTTP 200、`passed=false`。
+  响应在原有字段（`passed`、`reasonCode`、`matchedRuleId`、`matchedRuleAction`、`steps`、`functionCalls`）之外增加 `providerCode`、`pathCode`、`pathName`、`pathPriority`、`defaultPathHit`（没有任何启用的专用路径绑定该合作方、走了
+  DEFAULT 路径时为 true）、`configVersion`（判定用的版本）、`classificationStatus`、`exclusionRecordId`（命中排除记录时）、`appetiteMatchLevel`（命中规则所在的匹配级别）、`appetiteDecisions`（每个流转类别一条
+  `{flowCategory,matchLevel,ruleId,action,currency,bankCountry}`，没有命中时只有 `flowCategory`）；条件树内的函数执行失败返回 400（不按「未排除」放行）
+- `GET /api/c1/paths`：页面一次取齐 `{ruleCode,branchMode,draft,published,draftChanged,history,migrationHints}`——`draft` 为 `{rule,version,updatedBy,updatedAt}`（没有草稿时为 null），`published` 为
+  `{version,rule,branchMode,publishedAt,publishedBy,note}`（从未发布时为 null），`history` 为已发布版本（新 → 旧，每项带各路径的摘要 `paths`），`migrationHints` 为待确认的迁移提示
+- `PUT /api/c1/paths/draft`：保存草稿，提交 `{rule,expectedDraftVersion?,operator}`（操作人必填）；做结构校验、每条非空条件树的编译校验和删除保护（最新已发布版本里的路径不能从草稿里删掉，可以停用）；草稿版本号与
+  `expectedDraftVersion` 不一致返回 400（`草稿已被他人修改…`）。草稿不参与判定；返回同 `GET` 的视图
+- `POST /api/c1/paths/compile`、`POST /api/c1/paths/check`：提交 `{rule}`，返回 `{ok,errors,warnings,paths:[{pathCode,pathName,expression}]}`，都不落库；`compile` 只做结构 + 编译，`check` 做与发布一致的全部校验（含合作方存在、启用路径不冲突、
+  启用路径必须有条件树）并给出提示（警告）
+- `POST /api/c1/paths/publish`：提交 `{expectedDraftVersion?,operator,note?}`，把**已保存的草稿**发布为下一个不可变版本并立即生效；任一项校验不通过返回 400、已发布版本不变；`relay.c1-path.publishers` 非空时只有名单内的操作人可以发布
+- `POST /api/c1/paths/simulate`：提交 `{rule?,simulation}`，用页面上的草稿试算（`rule` 为空时用已保存的草稿），只试算、不落库；`simulation` 形态同 `/api/c1/simulate` 的请求（`configVersion` 在这里没有意义，忽略）；响应同
+  `/api/c1/simulate`，其中 `configVersion` 为 null（草稿不是已发布版本）
+- `GET /api/c1/paths/history`、`GET /api/c1/paths/versions/{version}`、`GET /api/c1/paths/audits`、`GET /api/c1/paths/migration`：历史版本（新 → 旧）、某个版本的完整快照、操作审计（类型 `C1_PATH`，操作 `MIGRATE` /
+  `SAVE_DRAFT` / `PUBLISH`）、启动迁移的说明 `{migrated,legacyConfigured,legacyVersionNo,legacyConditionJson,pendingReview,hints}`。以上路径接口和 `/api/c1/simulate` 的参数错误、状态错误统一返回 400 + `{error}`
 - `POST /api/expression/preview`：元数据中心的表达式试算，提交 `{tree,variables}`，返回 `{matched,expression}`；条件含函数条件或函数绑定字段时返回 400（没有规则执行上下文，函数只在 C1 判定和函数试算中执行）
 - `GET /api/function-metadata`：函数库全量（按函数编码排序），每项带 `usagePolicy`（`REQUIRED` 系统必检 / `OPTIONAL` 可选，只读自执行器代码，不落库）和 `implemented`（后端实现是否已注册）；`POST` 新增、`PUT /{code}` 修改、`POST /{code}/toggle` 启用 / 停用、`DELETE /{code}` 删除（系统必检函数，以及被字段绑定或已保存 C1 条件引用的函数不能删除，返回 400）；`GET /api/function-metadata/handlers` 返回可绑定的 Java Handler 编码
 - `GET /api/function-metadata/available?ruleCode=C1`：「ƒ 添加函数」选择器的数据 `{ruleCode,paths,required,functions}`：`paths` 受控取值路径，`required` 系统必检清单，`functions` 当前可添加的函数（参数、默认绑定、可用运算符）；`ruleCode` 不是 C1 时返回 400
@@ -317,7 +424,21 @@ curl -X POST http://localhost:8080/api/c1/simulate \
   -d '{"clientId":"C10001","providerCode":"PROV-HO","paymentCurrency":"USD","beneficiaryBankCountry":"KG","amountUsd":150000}'
 ```
 
-将返回 `PASS`（示例数据预置了有效 PSP 个案审批）。改成 `PROV-T1` 返回 `APPETITE_EXCLUDED`。
+**全新库要先发布路径配置**：示例数据不预置路径配置，发布前 `/api/c1/simulate` 对全部候选合作方返回 `C1_CONFIG_MISSING`（默认拒绝）。在首页「合作方路径配置」给 DEFAULT 路径加条件 → 填操作人 →「保存草稿」→「发布」即可；也可以直接调用接口。下面是一份只含
+DEFAULT 路径、条件为「流转类别不是 NONE」的配置（`rule`，其中 `conditionAst` 是条件树，节点形态见「C1 路径条件接入函数库」；全新库的字段库里适用 C1 的字段只有 `flowCategory`、`paymentCurrency`、`beneficiaryBankCountry`，`clientClassificationStatus` 等其它字段要先在元数据中心建为适用
+C1）：
+
+```json
+{"ruleCode":"C1","branchMode":"FIRST_MATCH","paths":[{"pathCode":"DEFAULT","pathName":"默认路径","providerCodes":[],"priority":0,"enabled":true,"failureReasonCode":"C1_PATH_DEFAULT_NOT_MATCHED","conditionAst":{"type":"GROUP","logic":"AND","children":[{"type":"FIELD","field":"flowCategory","operator":"NE","value":"NONE"}]}}]}
+```
+
+```bash
+curl -X PUT http://localhost:8080/api/c1/paths/draft -H 'Content-Type: application/json' \
+  -d '{"rule":<上面的 JSON>,"operator":"demo"}'
+curl -X POST http://localhost:8080/api/c1/paths/publish -H 'Content-Type: application/json' -d '{"operator":"demo"}'
+```
+
+发布后上例返回 `PASS`（示例数据预置了有效 PSP 个案审批；`PROV-HO` 没有专用路径，走 DEFAULT 路径，结果里 `pathCode=DEFAULT`、`defaultPathHit=true`）。改成 `PROV-T1` 返回 `APPETITE_EXCLUDED`。
 
 准入规则配置了引用其它 C1 字段的附加条件时（例如元数据中心里的 `clientClassificationStatus`，其适用规则须勾选 C1），通过 `variables` 提供取值；不提供则该规则按不命中处理，并在校验过程中给出 `SKIP` 说明：
 
@@ -476,6 +597,18 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 （只有 `ALTER TABLE ... ADD COLUMN`，不改已有数据，已保存的 C1 / C2 / C3 条件 JSON 不需要改动）；开启了 `ddl-auto=update` 的库启动时自动补列，不要重复执行。函数库表 `relay_business_function` 由 Hibernate 按实体建表，
 `schema-mysql.sql` 里尚未收录。
 
+2026-11-27 新增 C1「合作方动态规则路径配置」两张表（`sql/schema-mysql.sql` 已收录；已按旧版 `schema-mysql.sql` 手工建表且未开启 `ddl-auto=update` 的库执行一次 `sql/migrate-c1-path.sql`，只有 `CREATE TABLE IF NOT EXISTS`，
+不改旧表）：
+
+- `relay_c1_path_config`（全局一行，`id = 1`）：`draft_version`（草稿版本号，每次保存草稿 +1，保存 / 发布时用它做并发校验）、`draft_json`（草稿，形态同下）、`draft_updated_by`、`draft_updated_at`、`published_version`（最新已发布版本号，从未发布时为空）、
+  `published_at`、`published_by`、`migration_hints_json`（启动迁移写入的提示 `[{code,message}]`，第一次发布后清空）。草稿不参与判定。
+- `relay_c1_path_version`（已发布版本：只插入，不更新、不删除；某一时刻生效的是最新版本，回放按 `version` 取）：`version`（唯一约束 `uk_c1_path_version`）、`branch_mode`（`FIRST_MATCH`）、`payload_json`（NOT NULL，发布时的完整快照，每条路径带
+  `version`）、`published_at`、`published_by`、`note`（发布说明）。
+- `draft_json` / `payload_json` 的形态：`{"ruleCode":"C1","branchMode":"FIRST_MATCH","paths":[{"pathCode","pathName","providerCodes":[…],"priority","enabled","conditionAst":{…},"failureReasonCode","version"}]}`；
+  `conditionAst` 是条件树（条件组 `{type:"GROUP",logic,children}`、字段条件 `{type:"FIELD",field,operator,value}`、函数条件 `{type:"FUNCTION",functionCode,arguments,operator,value}`），没有条件树时为 null。
+- 三个 JSON 列在实体上都是 `@Lob`：MariaDB / MySQL 为 `longtext`（`payload_json` 另加 `NOT NULL`），H2 为 `clob`。列类型必须与实体映射一致，否则开启 `ddl-auto=update` 的应用每次启动都会 ALTER 这两张表（`C1PathSchemaTest`
+  回归）。手工 DDL 另带 `JSON_VALID` CHECK 约束，非法 JSON 在数据库层被拒绝；重复版本号由唯一约束拒绝。
+
 ## 生产化前需补充
 
 该项目为**参考 Demo，不是完整 C1–C10 支付引擎，更不是可直接投产的银行路由服务**。
@@ -498,11 +631,24 @@ Java Entity 对应原有 8 张：`relay_provider`、`relay_appetite`、`relay_cl
 `SchemaRestartTest`（旧库自动补 `trigger_condition_json` 列且数据不丢）覆盖。模拟响应里的 C2 条件结构（`groups`）另由 `C2ServiceTest` 的 5 项（8 个规则组的顺序、叶子字段和原因码；只传合并国籍名单时两个国籍叶子结果一致；
 董事、UBO 国籍分别判断且响应不含国籍取值；同一规则组的两个叶子各命中一条限制记录；监管能力缺失使第 8 项不满足）和 `C2RegulatoryControllerTest` 的 1 项（`simulate` 的新入参与 `groups` 的 HTTP 契约）覆盖。
 
-函数库接入 C1 条件由 `C1FunctionTest`（13 项：无有效排除记录时 `clientExcluded` 为 false；客户排除只由条件树里的节点决定，没有节点时不检查；未到生效时间 / 已过失效时间 / 已解除的记录不算有效；可选函数只有在条件树里才执行；`clientExcluded` 是可选函数，被引用时不能删除、停用后引用它的条件失效；
+函数库接入 C1 条件由 `C1FunctionTest`（13 项：无有效排除记录时 `clientExcluded` 为 false；客户排除是必检，条件树里没有节点也返回 `CLIENT_EXCLUDED`，路径条件树 / 规则条件里的 `clientExcluded` 节点与必检共用请求级缓存；未到生效时间 / 已过失效时间 / 已解除的记录不算有效；可选函数只有在条件树里才执行；`clientExcluded` 是可选函数，被引用时不能删除、停用后引用它的条件失效但绕不过必检；
 函数条件在 AND / OR 子条件组内可用；缺少或类型错误的入参被拒绝；DECIMAL 返回值按数字比较；旧版字段 / 条件组 JSON 照常执行；个案审批与 MTD 检查不受影响并记入调用记录；函数计算字段的取值来自函数；模拟结果报告入参、返回值和命中记录；
 内置字段只自动绑定一次且不覆盖运营的明确选择）、`C1FunctionFailureTest`（3 项：排除记录查询失败不按「未排除」处理；条件树里的集合条件一次加载排除集合；同一函数同一入参一次判定只查询一次）、`FunctionMetadataApiTest`（9 项：选择器数据；仅 C1 可用；试算结果；
 试算参数不合法返回 400；系统必检函数只能停用不能删除；被引用的可选函数不能删除；未被引用的可选函数可以删除；列表带使用策略和实现状态；字段绑定经接口保存且旧版请求体保留已有绑定）、`ConditionJsonCompatibilityTest`（4 项：旧版不带 `type` 的 JSON 照常读取；
-函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。条件求值过程日志由 `ConditionTraceLogTest`（5 项：成功时输出上下文三组 / 函数调用 / 代入变量 / 逐项求值；没有取值的变量被点名；函数调用失败的过程与异常照常抛出；DEBUG 关闭时不输出；C1 全局准入条件与函数试算的标题带来源说明）覆盖。执行：
+函数节点往返；序列化只含节点属性；字段请求体兼容旧版与绑定两种形态）和 `SchemaRestartTest` 的 1 项（旧库自动补 `relay_rule_field` 的三个函数绑定列且数据不丢）覆盖。条件求值过程日志由 `ConditionTraceLogTest`（5 项：成功时输出上下文三组 / 函数调用 / 代入变量 / 逐项求值；没有取值的变量被点名；函数调用失败的过程与异常照常抛出；DEBUG 关闭时不输出；C1 全局准入条件与函数试算的标题带来源说明）覆盖。
+
+C1 合作方动态规则路径配置（2026-11-27）由三个新测试类共 30 项覆盖：
+
+- `C1PathRoutingTest` 10 项（执行器 `C1Service`）：`candidate.providerCode` 选中绑定它的专用路径；没有专用路径的合作方命中 DEFAULT 并在结果里标明；合作方被两条启用路径绑定是冲突、优先级解决不了；APPETITE_MATCH
+  取最精确的级别且不退到低级别；必检在每条路径之后执行、路径条件树绕不过；DEFAULT 不是自动通过、配置损坏（没有条件树、无法编译）被拒绝；带旧版布尔条件的版本照常回放、不可读的配置被拒绝；字段库里有没有这两个旧版字段，回放结果都一样；
+  给另一个合作方加一条路径只是配置、不改 Java；请求非法是请求错误、客户档案不存在先于路径选择被拒绝。
+- `C1PathConfigServiceTest` 18 项（配置管理 + 页面接口）：全新库只有空白草稿、发布前全部候选被拒绝；结构错误先于解析和编译报告；路径编码 / 名称 / 失败原因码的规则与系统原因码保留；发布前检查合作方、冲突、条件树，警告只需阅读；
+  保存草稿会规范化且草稿不参与执行；保存和发布需要操作人与当前草稿版本号；已发布版本不可变、旧决策按自己的版本回放；已发布路径可停用不可删除；函数停用后不能发布新规则、已发布的条件树不再可编译；被草稿或任一版本使用的字段和函数不能删除；
+  旧版全局准入条件原样成为 v1、草稿只去掉两个布尔条件；只有两个布尔条件的旧条件迁成没有条件树的草稿；布尔条件在「或」条件组里时才给重点提示并保留其余条件；旧条件为空或不可读时不臆造；启动迁移执行前到达的保存请求仍能把旧条件迁入
+  （被拒绝的请求整体回滚）；页面接口（草稿 / 校验 / 发布 / 试算 / 历史 / 迁移）的契约。
+- `C1PathSchemaTest` 2 项：MariaDB / MySQL 上三个 JSON 列都是 `longtext`；重复执行 schema update 不再产生 DDL。
+- 既有测试按新口径调整：`C1ServiceTest` 15 项（路径条件须满足才继续、分类 PENDING 的客户即使规则条件允许也被拒绝、客户排除是必检等），`C1FunctionTest` / `C1FunctionFailureTest` / `FunctionMetadataApiTest`
+  按客户排除恢复必检改写；进入 C1 的非 C1 测试用 `C1PathFixtures` 先发布一份只含 DEFAULT 路径的配置。执行：
 
 ```bash
 mvn clean test
@@ -922,7 +1068,7 @@ PROVIDER 判定，与全流程候选生成一致；示例按钮覆盖资金部�
 
 页面左侧为字段库全量表格（数据来自 `relay_rule_field` 表，较原标签页增加「可选值」「状态」两列，另有「取值来源」一列）：展示字段编码、名称、类型、适用规则、运算符、取值来源、可选枚举与启用状态，并说明维护方式（H2
 控制台 INSERT/UPDATE 或 `DemoData` 种子，后者仅空表生效；`allowedRules` 含 C2 且启用的字段进入试算菜单的 C2 筛选和监管路由规则新增 / 编辑页附加触发条件的字段下拉，C2
-模拟页各输入项的下拉可选值也从这里读取，九个固定交易要素之外的字段还会在模拟面板自动生成取值控件；`allowedRules` 含 C1 且启用的字段进入首页 C1「① 触发条件」的字段下拉（取值来源为函数计算的字段带「ƒ 函数名」标注），停用字段从下拉消失但历史规则表达式按原样存档）。
+模拟页各输入项的下拉可选值也从这里读取，九个固定交易要素之外的字段还会在模拟面板自动生成取值控件；`allowedRules` 含 C1 且启用的字段进入首页 C1「合作方路径配置」里路径条件编辑器的字段下拉（取值来源为函数计算的字段带「ƒ 函数名」标注），停用字段从下拉消失但历史版本的条件树按原样存档；旧版的两个布尔字段不出现在下拉里）。
 
 右侧为 AND / OR 可视化表达式试算（字段定义与各规则页面共用）：选字段与运算符组成条件组，有可选值枚举的字段自动渲染下拉；模拟输入
 JSON 作为业务变量，`POST /api/expression/preview` 将条件树编译为受控 AviatorScript 表达式并返回命中结果与表达式原文。表达式试算不直接代替
@@ -934,7 +1080,7 @@ C1 固定业务判断，避免 OR 绕过精确匹配与默认拒绝。示例按�
 
 字段编辑器增加「取值来源」：「请求输入」（默认，取值来自调用方在请求中提供的 `variables`）或「函数计算」（选择函数库里的函数，并为每个参数指定受控取值路径）。取值来源为「函数计算」的字段只能适用于 C1：选「函数计算」时只保留 C1，
 其余九个规则不可勾选；函数下拉只列出返回类型与字段类型一致的函数（枚举字段对应 STRING），已保存但当前不可用的函数保留并标注「（当前不可用）」；字段列表里这类字段的名称后有 ƒ。表达式菜单里，条件引用了函数计算字段时字段名
-同样带 ƒ，点「执行」会提示只能在规则执行中取值（如 C1 页的模拟校验）而不发请求。绑定规则、校验和 C1 执行时的取值见「C1 条件接入函数库」。
+同样带 ƒ，点「执行」会提示只能在规则执行中取值（如 C1 页的模拟校验）而不发请求。绑定规则、校验和 C1 执行时的取值见「C1 路径条件接入函数库」。
 
 ## MTD 模拟数据页面（C1 月度上限）
 
@@ -960,7 +1106,7 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 
 - `GET /api/fields`：返回字段库全量（含停用）。
 - `GET /api/c2/fields`：C2 页面使用，仅 `allowedRules` 含 C2 且启用的字段：监管路由规则新增 / 编辑页附加触发条件的字段下拉、C2 模拟页的下拉可选值，以及九个固定交易要素之外字段的取值控件都从这里读取。
-- `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1「① 触发条件」的字段下拉、C2
+- `GET /api/field-metadata`：元数据中心字段库全量（按字段编码排序）；`POST /api/field-metadata` 新增、`PUT /api/field-metadata/{code}` 修改、`POST /api/field-metadata/{code}/toggle` 启用 / 停用。首页 C1 路径条件编辑器的字段下拉、C2
   页面和试算菜单都按这里的 `allowedRules` 取字段。「适用规则」的 C2 可对任意数据类型勾选：勾选后字段出现在试算菜单的「C2」筛选下并按字段类型比较取值，进入监管路由规则新增 / 编辑页
   附加触发条件的字段下拉，并在 C2 模拟面板自动生成取值控件；监管路由规则的适用范围（币种 + 受益行国家）本身不使用字段库条件树。
 - `POST` / `PUT /api/field-metadata` 的取值来源与函数绑定：入参增加 `valueSource`（`REQUEST` 请求输入 / `FUNCTION` 函数计算）、`functionCode`、`argumentBindings`（JSON 对象：参数编码 → 受控路径 `"$candidate.providerCode"` 或字面量）。
@@ -975,7 +1121,7 @@ C1「MTD 使用情况」页签的数据来自 `relay_provider_usage`（合作方
 
 2026-11-25（字段 ↔ 函数绑定）：「字段库」增加「取值来源」列，字段编辑器增加取值来源 / 绑定函数 / 参数绑定；「业务函数库」增加「使用策略 / 实现」列，系统必检函数不能删除；表达式菜单对函数计算字段只展示、不试算。
 后端 `POST` / `PUT /api/field-metadata` 增加取值来源与函数绑定入参（旧版请求体照常可用）。无头 Chrome 验证：字段列表的取值来源列、字段编辑器的绑定（选「函数计算」后 C2–C10 置灰）、函数库的使用策略列与置灰的删除按钮、
-表达式页对函数计算字段的拦截提示；这几项包含在「C1 条件接入函数库」的 48 项检查里。
+表达式页对函数计算字段的拦截提示；这几项包含在「C1 路径条件接入函数库」（原「C1 条件接入函数库」）的 48 项检查里。
 
 ## 评分权重与路由排序（全局配置）
 

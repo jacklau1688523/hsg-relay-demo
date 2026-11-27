@@ -2,6 +2,7 @@ package com.hsg.relay.routing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,6 +12,8 @@ import java.time.*;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 
 @SpringBootTest
 @Transactional
@@ -23,6 +26,15 @@ class C5ServiceTest {
     RoutingService routing;
     @Autowired
     ObjectMapper json;
+
+    @Autowired
+    C1PathConfigService pathConfig;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        // C1 只执行已发布的路径配置：先发布基线（只有 DEFAULT 路径，条件恒成立），结果由必检和准入规则决定
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
 
     private C5Service.Input input(String at, String requested) {
         return new C5Service.Input("PROV-T1", "USD", "US", null, "CHASUS33", "SHA", requested == null ? null : LocalDate.parse(requested), ZonedDateTime.parse(at));

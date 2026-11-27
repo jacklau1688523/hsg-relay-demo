@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hsg.relay.api.FieldMetadataController;
 import com.hsg.relay.repo.*;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 import com.hsg.relay.service.C1Service;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,10 +29,14 @@ class RoutingServiceTest {
     AppetiteRepository appetites;
     @Autowired
     FieldMetadataController metadata;
+    @Autowired
+    C1PathConfigService pathConfig;
     ObjectNode req;
 
     @BeforeEach
     void setup() throws Exception {
+        // C1 只执行已发布的路径配置：先发布一份只有 DEFAULT 路径、条件恒成立的基线，结果由必检和准入规则决定
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
         req = (ObjectNode) json.readTree("""
                 {"paymentId":"TEST-1","clientId":"C10002","debitCurrency":"USD","paymentCurrency":"USD","amount":10000,
                 "beneficiaryBankCountry":"US","beneficiaryAddressCountry":"US","beneficiaryBankBic":"CHASUS33","chargeOption":"SHA",
@@ -87,9 +93,14 @@ class RoutingServiceTest {
     }
 
     @Test
-    void incompleteClassificationIsHandledByConfiguredC1Rules() {
+    void incompleteClassificationIsRejectedByTheMandatoryClassificationCheck() {
+        // C10003 的分类状态是 PENDING：路径条件先满足（flowCategory != NONE），随后必检「客户分类 COMPLETE」过滤每个候选合作方
         req.put("clientId", "C10003");
-        assertThat(run().reasonCode()).isNotEqualTo("CLIENT_NOT_CLASSIFIED");
+        var r = run();
+        assertThat(r.reasonCode()).isNotEqualTo("CLIENT_NOT_CLASSIFIED");
+        assertThat(candidate(r, "PROV-T1").checks).filteredOn(x -> x.code().equals("C1") && !x.passed())
+                .singleElement().satisfies(check -> assertThat(check.reasons()).containsExactly("CLIENT_NOT_CLASSIFIED"));
+        assertThat(c1Trace("PROV-T1")).contains("客户 C10003 的分类状态为 PENDING，仅 COMPLETE 可继续");
     }
 
     @Test

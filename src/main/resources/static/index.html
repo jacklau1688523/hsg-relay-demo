@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>HSG RELAY | C1 代理行业务准入</title>
+    <title>HSG RELAY | C1 业务准入 · 合作方路径配置</title>
     <style>
         :root {
             font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -485,6 +485,210 @@
         .c1-kvrow > div {min-width:0;overflow-wrap:anywhere}
         .c1-call.bad {background:#fff7f7;border-radius:8px;padding:9px 10px}
 
+
+        /* 合作方路径配置：判定顺序、路径卡片、试算布局 */
+        .flowsteps {
+            display: grid
+        }
+
+        .flowstep {
+            display: flex;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid #edf1f6;
+            font-size: 13px
+        }
+
+        .flowstep:last-child {
+            border-bottom: 0
+        }
+
+        .flowstep .num {
+            flex: none;
+            height: 26px;
+            min-width: 26px;
+            background: #eaf2ff;
+            color: #1760b7;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 26px;
+            font-weight: 700
+        }
+
+        .flowstep.required .num {
+            background: #e9faef;
+            color: #139447
+        }
+
+        .flowstep small {
+            display: block;
+            color: #71849c;
+            line-height: 1.6;
+            margin-top: 4px
+        }
+
+        .pathbar {
+            display: grid;
+            grid-template-columns: 190px minmax(220px, 1fr) repeat(4, auto);
+            gap: 10px;
+            align-items: end;
+            margin-top: 16px
+        }
+
+        .pathcards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(370px, 1fr));
+            gap: 12px;
+            margin-top: 14px
+        }
+
+        .pathcard {
+            border: 1px solid #cad9ec;
+            border-radius: 9px;
+            padding: 14px;
+            background: #f8fbff;
+            display: grid;
+            gap: 10px;
+            align-content: start
+        }
+
+        .pathcard.sel {
+            border-color: #1265d7;
+            box-shadow: 0 0 0 2px #1265d724;
+            background: #fff
+        }
+
+        .pathcard.off {
+            opacity: .72
+        }
+
+        .pathcard .p1-head {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap
+        }
+
+        .pathcard .p1-head b {
+            font-size: 15px
+        }
+
+        .pathcard .p1-switch {
+            margin-left: auto;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 650;
+            color: #355173;
+            white-space: nowrap
+        }
+
+        .pathcard .p1-switch input {
+            width: auto;
+            min-height: 0;
+            margin: 0
+        }
+
+        .pathcard .p1-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px 10px
+        }
+
+        .pathcard .p1-grid .span2 {
+            grid-column: 1 / -1
+        }
+
+        .pathcard .p1-box {
+            border: 1px solid #dfe8f4;
+            border-radius: 8px;
+            background: #fff;
+            padding: 9px 10px;
+            font-size: 12px;
+            overflow-wrap: anywhere
+        }
+
+        .pathcard .p1-box .caps {
+            display: block;
+            margin-bottom: 6px
+        }
+
+        .pathcard .p1-prov {
+            display: flex;
+            gap: 6px 14px;
+            flex-wrap: wrap
+        }
+
+        .pathcard .p1-prov label {
+            display: inline-flex;
+            gap: 5px;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: #274369
+        }
+
+        .pathcard .p1-prov input {
+            width: auto;
+            min-height: 0;
+            margin: 0
+        }
+
+        .simgrid {
+            display: grid;
+            grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+            gap: 18px;
+            align-items: start
+        }
+
+        .simvars {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: 8px 10px;
+            margin-top: 12px;
+            border-top: 1px dashed #dfe8f4;
+            padding-top: 10px
+        }
+
+        .simsummary {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 8px 14px
+        }
+
+        .simsummary .kv {
+            border: 1px solid #dfe8f4;
+            border-radius: 8px;
+            background: #f8fbff;
+            padding: 8px 10px;
+            font-size: 12px;
+            overflow-wrap: anywhere
+        }
+
+        .simsummary .kv .caps {
+            display: block;
+            margin-bottom: 3px
+        }
+
+        .simtable th, .simtable td {
+            white-space: normal;
+            vertical-align: top
+        }
+
+        .hintlist {
+            margin: 8px 0 0;
+            padding-left: 18px;
+            font-size: 12px;
+            display: grid;
+            gap: 6px
+        }
+
+        .pathcard .p1-cond {
+            max-height: 110px;
+            overflow: auto
+        }
+
         .footer {
             color: #8b98ac;
             font-size: 12px;
@@ -494,6 +698,14 @@
 
         @media (max-width: 1250px) {
             .grid {
+                grid-template-columns:1fr
+            }
+
+            .pathbar {
+                grid-template-columns:repeat(2, minmax(0, 1fr))
+            }
+
+            .simgrid {
                 grid-template-columns:1fr
             }
 
@@ -556,78 +768,229 @@
             <div style="font-size:12px;font-weight:400">演示环境 · HKT &nbsp; ◉ ops.demo</div>
         </div>
         <div class="content">
-            <div class="heading"><h1>C1 业务准入条件与模拟</h1>
-                <div class="muted">准入规则、客户排除、个案审批和 MTD 使用情况在合作方详情页维护；这里配置全局准入条件并模拟 C1 判定。
-                </div>
+        <div class="heading"><h1>C1 业务准入 · 合作方动态规则路径</h1>
+            <div class="muted">C1 按候选合作方选择路径（P1 / P2 / … / DEFAULT），只执行该路径自己的条件树，再执行对所有路径都生效的全局必检。
+                准入规则、客户排除、个案审批和 MTD 在合作方详情页维护；这里配置路径、模拟判定、查看历史版本。
             </div>
-            <div class="panel"><h2>C1 过滤顺序与配置来源</h2><div class="layout3"><div class="notice">① 客户档案：读取客户分类状态。</div><div class="notice">② 全局准入表达式：读取客户档案、交易字段、函数结果和元数据字段（如合作方有效排除客户集合）；表达式不满足即过滤合作方。</div><div class="notice">③ 准入配置：逐个流转类别匹配。精确币种+国家 ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL+ALL；无匹配默认拒绝。</div><div class="notice">④ CASE_BY_CASE 检查合作方详情中的有效审批；ACCEPT 有上限时检查 MTD + 本笔金额。首个失败项返回原因码。</div></div></div>
-            <div class="grid c1-workspace">
-            <section id="conditionView" class="panel">
-                <div class="rowbetween"><div><h2>① 全局准入条件：字段库 + 函数库</h2><div class="muted">每次 C1 判定都读取这棵条件树；表达式满足才继续后续准入校验，不满足即过滤当前合作方。支持嵌套 AND / OR。</div></div><button type="button" class="btn secondary" onclick="c1LoadConditionRules()">↻ 刷新条件 / 字段库</button></div>
-                <div id="c1ConditionArea"><div id="c1ConditionTree"></div><button type="button" class="btn secondary tiny" onclick="c1CompileCondition()">校验并生成表达式</button><div id="c1Compiled" class="code" style="margin-top:10px">点击校验查看表达式</div></div>
-                <div id="c1ConditionError" class="err"></div><div id="c1ConditionGood" class="good"></div>
-                <details class="c1-required"><summary>系统必检清单：C1 执行器每次判定都会执行，不随条件树增删</summary><div class="muted" style="margin-top:8px">这些检查由后端代码强制落实：停用函数、删除条件节点都绕不过。可以把其中的函数加到条件树参与比较，删除节点只是不再比较它的返回值。</div><div id="c1RequiredList"></div></details>
-                <div class="actions" style="justify-content:flex-end;margin-top:22px"><button id="c1SaveButton" type="button" class="btn" onclick="c1SaveCondition()">保存条件配置</button></div>
-            </section>
-                    <aside class="rightPanel">
-                        <div class="panel">
-                            <div class="ptitle">C1 规则模拟校验 ⓘ</div>
-                            <div class="field section"><label>客户 ID *</label><select id="simClient"></select></div>
-                            <div class="field section"><label>客户分类状态</label><input id="simStatus" readonly></div>
-                            <div class="field section"><label>合作方 *</label><select id="simProvider"></select></div>
-                            <div class="field section"><label>客户流转类别（档案自动读取）</label><input id="simFlows"
-                                                                                                       readonly></div>
-                            <div class="field section"><label>交易币种 *</label><select id="simCurrency">
-                                <option>USD</option>
-                                <option>HKD</option>
-                                <option>CNH</option>
-                                <option>EUR</option>
-                                <option>AUD</option>
-                            </select></div>
-                            <div class="field section"><label>受益行国家 *</label><select id="simCountry">
-                                <option>KG</option>
-                                <option>CN</option>
-                                <option>HK</option>
-                                <option>US</option>
-                                <option>SG</option>
-                            </select></div>
-                            <div class="field section"><label>本笔金额 USD *</label><input type="number" min="0"
-                                                                                           step="0.01" id="simAmount"
-                                                                                           value="150000"></div>
-                            <button class="btn" style="width:100%" onclick="simulate()">▶ 执行 C1 校验</button>
-                        </div>
-                        <div class="panel">
-                            <div id="simResult" class="notice">填写交易数据后点击「执行 C1
-                                校验」，这里会展示每个步骤及命中准入规则。
-                            </div>
-                        </div>
-                    </aside>
-            </div>
-            <datalist id="c1PathOptions"></datalist>
-            <div class="modalback" id="c1FunctionPicker" role="dialog" aria-modal="true" aria-labelledby="c1FunctionPickerTitle" onclick="if(event.target===this)c1CloseFunctionPicker()">
-                <div class="modal" style="width:min(1100px,100%)">
-                    <div class="rowbetween"><h2 id="c1FunctionPickerTitle">ƒ 添加函数</h2><button type="button" class="btn secondary tiny" onclick="c1CloseFunctionPicker()">✕ 关闭</button></div>
-                    <div class="muted">选择函数，配置参数绑定、比较方式和期望值，再加入当前条件组。参数可引用受控取值路径（$ 开头，输入框有候选）或填写字面量；集合类函数（如 collectionContains）的参数按「来源 + 绑定」显式选择：集合字段取元数据字段（如合作方有效排除客户集合），比较元素取本笔交易 / 候选合作方 / 规则上下文。保存时由服务端校验。</div>
-                    <div class="notice" id="c1FunctionSample"></div>
-                    <div class="c1-cards" id="c1FunctionCards"></div>
-                </div>
-            </div>
-            <div class="footer">HSG RELAY C1 Demo · Java 17 · Spring Boot · JPA · AviatorScript · 非生产环境</div>
         </div>
+        <div class="tabs">
+            <button class="tab sel" data-tab="flow">全局必检流程</button>
+            <button class="tab" data-tab="paths">合作方路径配置</button>
+            <button class="tab" data-tab="simulate">模拟试算</button>
+            <button class="tab" data-tab="history">历史版本</button>
+            <span class="muted" id="c1PathStatus" style="align-self:center"></span>
+        </div>
+        <div id="c1PageError" class="err" role="alert"></div>
+
+        <div id="tabFlow">
+            <div class="panel">
+                <h2>C1 判定顺序（每个候选合作方都按这个顺序执行，首个失败项决定原因码）</h2>
+                <div class="flowsteps">
+                    <div class="flowstep"><span class="num">⓪</span><div><b>读取路径配置</b><small>只读已发布的版本。从未发布 →
+                        C1_CONFIG_MISSING；版本读不出来、启用的路径没有条件树 → C1_CONFIG_BROKEN。都按拒绝处理，不会默认通过。</small></div>
+                    </div>
+                    <div class="flowstep"><span class="num">①</span><div><b>客户档案</b><small>读取客户分类状态和流转类别；档案不存在 →
+                        CLIENT_NOT_FOUND。</small></div></div>
+                    <div class="flowstep"><span class="num">②</span><div><b>路径选择（FIRST_MATCH，按 candidate.providerCode）</b><small>启用的专用路径里恰好一条绑定了该合作方
+                        → 用它；一条也没有 → DEFAULT 路径；多条 → C1_PATH_CONFLICT；DEFAULT 未启用 → C1_PATH_NOT_FOUND。优先级只决定列表顺序，不参与选路。</small></div>
+                    </div>
+                    <div class="flowstep"><span class="num">②</span><div><b>路径条件 &lt;流转类别&gt;（所选路径自己的条件树）</b><small>只执行所选路径的条件树，每个流转类别分别求值；不满足即按这条路径的失败原因码过滤，不落到其它路径。DEFAULT
+                        也要过自己的条件树，不是自动通过。</small></div></div>
+                    <div class="flowstep required"><span class="num">③</span><div><b>客户分类（必检）</b><small>分类状态须为
+                        COMPLETE，否则 CLIENT_NOT_CLASSIFIED。</small></div></div>
+                    <div class="flowstep required"><span class="num">③</span><div><b>客户排除（必检）</b><small>客户在合作方的有效排除记录中 →
+                        CLIENT_EXCLUDED；排除记录查不出来 → CLIENT_EXCLUSION_CHECK_FAILED（不按「未排除」放行）。</small></div></div>
+                    <div class="flowstep required"><span class="num">③</span><div><b>规则匹配 &lt;流转类别&gt;（APPETITE_MATCH，必检）</b><small>对每个流转类别在合作方准入规则里按四级匹配：精确币种+精确国家
+                        ＞ 精确币种+ALL ＞ ALL+精确国家 ＞ ALL/ALL；高一级里有命中的规则就不再看低一级，不会退到低级别。无命中 → APPETITE_NOT_SET；命中
+                        EXCLUDE → APPETITE_EXCLUDED。</small></div></div>
+                    <div class="flowstep required"><span class="num">④</span><div><b>个案审批 / MTD（必检）</b><small>命中
+                        CASE_BY_CASE 须有有效审批（APPETITE_APPROVAL_MISSING）；命中设有月度上限的 ACCEPT 规则时校验 MTD +
+                        本笔金额（APPETITE_CAP_REACHED）。</small></div></div>
+                    <div class="flowstep"><span class="num">⑤</span><div><b>C1 汇总</b><small>全部流转类别通过路径条件和必检 → PASS。</small></div>
+                    </div>
+                </div>
+            </div>
+            <div class="layout2">
+                <div class="panel">
+                    <div class="ptitle">系统必检清单（代码级，只读）</div>
+                    <div class="muted" style="margin-bottom:8px">C1 执行器在代码里直接执行这些检查，不读函数库元数据，也不看路径条件树里有没有对应的节点：停用函数、删除条件节点都绕不过。可以把其中的函数加到路径条件树参与比较，删除节点只是不再比较它的返回值。</div>
+                    <div id="c1RequiredList"></div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">从旧版「全局准入条件」迁入的说明</div>
+                    <div class="muted" style="margin-bottom:8px">旧版全局准入条件的两个布尔条件（appetiteCurrencyEnabled / appetiteCountryEnabled）已由 APPETITE_MATCH
+                        四级匹配取代。迁移只生成草稿和只读的 v1 快照，不改写旧配置；下列提示在第一次发布后清空。</div>
+                    <div id="c1MigrationHints"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tabPaths" class="hidden">
+            <!-- 待确认的迁移提示：与「全局必检流程」页签里的同一份，人工核对草稿、发布时就在手边；第一次发布后隐藏 -->
+            <div class="panel hidden" id="c1MigrationHintsPaths"></div>
+            <div class="panel">
+                <div class="rowbetween">
+                    <div><h2 style="margin:0">路径清单 <span class="muted" id="c1PathMeta"></span></h2>
+                        <div class="muted">每条路径绑定若干合作方，有自己的条件树和失败原因码。修改从草稿开始：保存草稿不参与判定，发布后生成新的不可变版本，C1
+                            只读已发布版本。已发布过的路径不能删除，可以停用。</div></div>
+                    <button type="button" class="btn secondary" id="c1PathAdd">＋ 新增路径</button>
+                </div>
+                <div class="pathbar">
+                    <div class="field"><label for="c1Operator">操作人 *</label><input id="c1Operator" placeholder="保存草稿 / 发布必填"
+                                                                                          maxlength="64"
+                                                                                          autocomplete="off"></div>
+                    <div class="field"><label for="c1Note">发布说明</label><input id="c1Note" placeholder="发布时写入版本的说明（可留空）"
+                                                                                 maxlength="500" autocomplete="off"></div>
+                    <button type="button" class="btn secondary" id="c1PathRefresh">↻ 刷新</button>
+                    <button type="button" class="btn secondary" id="c1PathCheck">校验</button>
+                    <button type="button" class="btn secondary" id="c1PathSave">保存草稿</button>
+                    <button type="button" class="btn" id="c1PathPublish">发布</button>
+                </div>
+                <div id="c1PathCheckResult" role="status"></div>
+                <div id="c1PathCards" class="pathcards"></div>
+            </div>
+            <div class="panel" id="c1PathEditor">
+                <div class="rowbetween">
+                    <div><h2 style="margin:0">条件树：<span id="c1EditorPath"></span></h2>
+                        <div class="muted" id="c1EditorHint">点击路径卡片上的「编辑条件」，这条路径的条件树就挂在下面的编辑器里（字段库 + 函数库，与原来的全局条件编辑器是同一个）。修改先留在页面上，保存草稿后才写入草稿。</div></div>
+                    <button type="button" class="btn secondary" id="c1PathCompile">校验并生成表达式</button>
+                </div>
+                <div id="c1ConditionArea"><div id="c1ConditionTree"></div>
+                    <div id="c1Compiled" class="code" style="margin-top:10px">点击「校验并生成表达式」查看每条路径的可读表达式</div>
+                </div>
+                <div id="c1ConditionError" class="err"></div>
+                <div id="c1ConditionGood" class="good"></div>
+            </div>
+        </div>
+
+        <div id="tabSimulate" class="hidden">
+            <div class="simgrid">
+                <div class="panel">
+                    <div class="ptitle">模拟要素 ⓘ</div>
+                    <div class="layout2">
+                        <div class="field"><label>客户 ID *</label><select id="simClient"></select></div>
+                        <div class="field"><label>合作方 *</label><select id="simProvider"></select></div>
+                        <div class="field"><label>客户分类状态</label><input id="simStatus" readonly></div>
+                        <div class="field"><label>客户流转类别（档案自动读取）</label><input id="simFlows" readonly></div>
+                        <div class="field"><label>交易币种 *</label><select id="simCurrency">
+                            <option>USD</option>
+                            <option>HKD</option>
+                            <option>CNH</option>
+                            <option>EUR</option>
+                            <option>AUD</option>
+                        </select></div>
+                        <div class="field"><label>受益行国家 *</label><select id="simCountry">
+                            <option>KG</option>
+                            <option>CN</option>
+                            <option>HK</option>
+                            <option>US</option>
+                            <option>SG</option>
+                        </select></div>
+                        <div class="field"><label>本笔金额 USD *</label><input type="number" min="0" step="0.01" id="simAmount"
+                                                                               value="150000"></div>
+                        <div class="field"><label>路径配置版本（按已发布版本校验时使用）</label><select id="simVersion"></select></div>
+                    </div>
+                    <div id="simVariables"></div>
+                    <div class="actions" style="margin-top:14px">
+                        <button type="button" class="btn" id="simRunPublished">▶ 按已发布版本校验</button>
+                        <button type="button" class="btn secondary" id="simRunDraft">▶ 按当前页面草稿试算</button>
+                    </div>
+                    <div class="notice">试算只读：不写任何数据、不占用 MTD。「按已发布版本校验」与 C1–C10 Check 用的是同一份已发布版本；「按当前页面草稿试算」用「合作方路径配置」页签上现在的内容（不必先保存），结果里的规则版本显示为草稿。</div>
+                </div>
+                <div class="panel">
+                    <div class="ptitle">校验结果</div>
+                    <div id="simStale" class="notice warn hidden" role="status">路径配置或试算要素在出结果之后有修改，下面的结果<b>需要重新试算</b>，已不代表当前配置。
+                    </div>
+                    <div id="simResult" class="notice" role="status">填写要素后点击「按已发布版本校验」或「按当前页面草稿试算」，这里会展示命中的路径、路径条件、分类、排除、每个流转类别的准入匹配、审批与
+                        MTD，以及最终原因码。</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tabHistory" class="hidden">
+            <div class="panel">
+                <div class="rowbetween"><div class="ptitle" style="margin:0">当前生效的已发布版本</div><span class="muted">C1
+                    没有生效时间：最新已发布版本即生效；回放历史决策时按决策记录里的版本号取版本</span></div>
+                <div id="c1Published"></div>
+            </div>
+            <div class="panel">
+                <div class="ptitle">历史版本（不可变）</div>
+                <div class="tablewrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>版本</th>
+                            <th>发布时间 / 发布人</th>
+                            <th>路径</th>
+                            <th>说明</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="c1History"></tbody>
+                    </table>
+                </div>
+                <div class="notice">已发布版本只插入、不更新、不删除：执行、回放和审计都读这里的快照。「用此版本试算」只读取该版本，不改变当前生效版本，也不碰页面上的草稿；结果显示在「模拟试算」页签并标明所用版本。</div>
+            </div>
+            <div class="panel">
+                <div class="ptitle">版本明细 <span class="muted" id="c1VersionTitle"></span></div>
+                <div id="c1VersionDetail"></div>
+            </div>
+            <div class="panel">
+                <div class="ptitle">操作审计</div>
+                <div class="tablewrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>操作</th>
+                            <th>操作人</th>
+                            <th>变更</th>
+                        </tr>
+                        </thead>
+                        <tbody id="c1Audits"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <datalist id="c1PathOptions"></datalist>
+        <div class="modalback" id="c1FunctionPicker" role="dialog" aria-modal="true" aria-labelledby="c1FunctionPickerTitle"
+             onclick="if(event.target===this)c1CloseFunctionPicker()">
+            <div class="modal" style="width:min(1100px,100%)">
+                <div class="rowbetween"><h2 id="c1FunctionPickerTitle">ƒ 添加函数</h2><button type="button" class="btn secondary tiny"
+                                                                                           onclick="c1CloseFunctionPicker()">✕ 关闭</button>
+                </div>
+                <div class="muted">选择函数，配置参数绑定、比较方式和期望值，再加入当前条件组。参数可引用受控取值路径（$ 开头，输入框有候选）或填写字面量；集合类函数（如
+                    collectionContains）的参数按「来源 + 绑定」显式选择：集合字段取元数据字段（如合作方有效排除客户集合），比较元素取本笔交易 / 候选合作方 /
+                    规则上下文。保存时由服务端校验。</div>
+                <div class="notice" id="c1FunctionSample"></div>
+                <div class="c1-cards" id="c1FunctionCards"></div>
+            </div>
+        </div>
+        <div class="footer">HSG RELAY C1 Demo · Java 17 · Spring Boot · JPA · AviatorScript · 非生产环境</div>
+    </div>
     </main>
-</div>
+    </div>
 <script>
 const $=id=>document.getElementById(id),esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-let providers=[],clients=[],allRules=[],fieldDefs=[];
+let providers=[],clients=[],fieldDefs=[];
 async function api(path,opt={}){const response=await fetch('/api'+path,{...opt,headers:{'Content-Type':'application/json',...(opt.headers||{})}});const body=await response.json();if(!response.ok)throw Error(body.error||response.statusText);return body;}
 function syncClient(){const client=clients.find(x=>x.clientId===$('simClient').value);$('simStatus').value=client?.classificationStatus||'';$('simFlows').value=client?.flowCategories||'STANDARD';}
-async function init(){[providers,clients]=await Promise.all([api('/providers'),api('/clients')]);$('simProvider').innerHTML=providers.map(p=>`<option value="${esc(p.code)}" ${p.code==='PROV-HO'?'selected':''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');$('simClient').innerHTML=clients.map(c=>`<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');const query=new URLSearchParams(location.search);if(query.has('client')&&clients.some(c=>c.clientId===query.get('client')))$('simClient').value=query.get('client');$('simClient').onchange=syncClient;document.querySelector('.rightPanel').addEventListener('input',c1ResetSimResult);document.querySelector('.rightPanel').addEventListener('change',c1ResetSimResult);syncClient();await c1LoadConditionRules();}
-function c1ResetSimResult(){$('simResult').textContent='填写交易数据后点击「执行 C1 校验」，这里会展示每个步骤及命中准入规则。';}
-// 客户排除不在这里提供取值：需要时在全局准入条件里加 clientExcluded 函数节点，或把 clientProviderExcluded 字段绑定到该函数（取值来自规则执行，页面提交的同名取值不采用）
-function c1AutomaticVariables(){const client=clients.find(c=>c.clientId===$('simClient').value);return {clientClassificationStatus:client?.classificationStatus||''};}
-async function simulate(){try{const result=await api('/c1/simulate',{method:'POST',body:JSON.stringify({clientId:$('simClient').value,providerCode:$('simProvider').value,paymentCurrency:$('simCurrency').value,beneficiaryBankCountry:$('simCountry').value,amountUsd:$('simAmount').value,variables:c1AutomaticVariables()})});const missing=result.reasonCode==='APPETITE_NOT_SET'?`<div class="notice" style="margin-top:12px">${esc($('simProvider').value)} / ${esc(result.steps.findLast(x=>x.status==='FAIL')?.detail?.split(' ')[0]||'客户流转类别')} / ${esc($('simCurrency').value)} / ${esc($('simCountry').value)}：未命中有效准入规则（也可能是附加条件未命中）。请到 <a href="/provider-detail.html?code=${encodeURIComponent($('simProvider').value)}&tab=appetites">合作方详情</a> 配置。</div>`:'';$('simResult').innerHTML=`<div class="result ${result.passed?'':'error'}">${result.passed?'✓ C1 校验通过':'✕ C1 校验失败'}</div><p class="caps">原因码：${esc(result.reasonCode)}</p><div class="code">命中规则ID：${esc(result.matchedRuleId||'—')}<br>准入动作：${esc(result.matchedRuleAction||'—')}</div>${missing}<h2 style="margin:15px 0 4px">校验过程</h2>${result.steps.map(x=>`<div class="trace"><span class="badge ${x.status==='PASS'?'pass':x.status==='SKIP'?'pending':'fail'}">${esc(x.status)}</span><b style="margin-left:8px">${esc(x.step)}</b><div class="muted" style="margin-top:4px">${esc(x.detail)}</div></div>`).join('')}${c1FunctionCallsHtml(result.functionCalls)}`;}catch(error){$('simResult').innerHTML='<div class="result error">'+esc(error.message)+'</div>';}}
-init().catch(error=>{$('c1ConditionError').textContent=error.message;});
+async function init(){
+    [providers,clients]=await Promise.all([api('/providers'),api('/clients')]);
+    $('simProvider').innerHTML=providers.map(p=>`<option value="${esc(p.code)}" ${p.code==='PROV-HO'?'selected':''}>${esc(p.code)} · ${esc(p.name)}</option>`).join('');
+    $('simClient').innerHTML=clients.map(c=>`<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');
+    const query=new URLSearchParams(location.search);
+    if(query.has('client')&&clients.some(c=>c.clientId===query.get('client')))$('simClient').value=query.get('client');
+    if(query.has('provider')&&providers.some(p=>p.code===query.get('provider')))$('simProvider').value=query.get('provider');
+    $('simClient').onchange=syncClient;
+    syncClient();
+    await c1LoadPathConfig();
+    if(C1_TABS[query.get('tab')])c1ShowTab(query.get('tab'));
+}
+init().catch(error=>{$('c1PageError').textContent=error.message;});
 </script>
 <script src="/c1-conditions.js"></script>
+<script src="/c1-paths.js"></script>
 </body>
 </html>

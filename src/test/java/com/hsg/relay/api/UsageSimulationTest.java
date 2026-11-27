@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hsg.relay.domain.ProviderUsage;
 import com.hsg.relay.repo.ProviderUsageRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 import com.hsg.relay.service.C1Service;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +34,14 @@ class UsageSimulationTest {
     RuleAuditRepository audit;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    C1PathConfigService pathConfig;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        // C1 只执行已发布的路径配置：先发布基线（只有 DEFAULT 路径，条件恒成立）
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
 
     private ProviderUsage put(String provider, String flow, String month, String amount) {
         return api.saveUsage(new RelayController.UsageInput(provider, flow, month, new BigDecimal(amount)));

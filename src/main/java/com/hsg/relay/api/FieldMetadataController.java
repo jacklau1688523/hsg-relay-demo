@@ -13,8 +13,11 @@ import com.hsg.relay.function.field.FieldResolverRegistry;
 import com.hsg.relay.function.field.FieldValueService;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import com.hsg.relay.service.C1PathConfigService;
 import com.hsg.relay.repo.AppetiteRepository;
 import com.hsg.relay.repo.C1ConditionConfigRepository;
+import com.hsg.relay.repo.C1PathConfigRepository;
+import com.hsg.relay.repo.C1PathVersionRepository;
 import com.hsg.relay.c2.RegulatoryRuleRepository;
 import com.hsg.relay.c2.C2ConditionConfigRepository;
 import com.hsg.relay.routing.C3ConditionConfigRepository;
@@ -35,6 +38,8 @@ public class FieldMetadataController {
     private final ObjectMapper json;
     private final AppetiteRepository appetites;
     private final C1ConditionConfigRepository c1Conditions;
+    private final C1PathConfigRepository c1PathConfigs;
+    private final C1PathVersionRepository c1PathVersions;
     private final RegulatoryRuleRepository regulatoryRules;
     private final C2ConditionConfigRepository c2Conditions;
     private final C3ConditionConfigRepository c3Conditions;
@@ -43,6 +48,7 @@ public class FieldMetadataController {
 
     public FieldMetadataController(FieldDefinitionRepository fields, RuleAuditRepository audit, ObjectMapper json,
                                    AppetiteRepository appetites, C1ConditionConfigRepository c1Conditions,
+                                   C1PathConfigRepository c1PathConfigs, C1PathVersionRepository c1PathVersions,
                                    RegulatoryRuleRepository regulatoryRules,
                                    C2ConditionConfigRepository c2Conditions, C3ConditionConfigRepository c3Conditions,
                                    FunctionMetadataService functionMetadata, FieldResolverRegistry resolvers) {
@@ -51,6 +57,8 @@ public class FieldMetadataController {
         this.json = json;
         this.appetites = appetites;
         this.c1Conditions = c1Conditions;
+        this.c1PathConfigs = c1PathConfigs;
+        this.c1PathVersions = c1PathVersions;
         this.regulatoryRules = regulatoryRules;
         this.c2Conditions = c2Conditions;
         this.c3Conditions = c3Conditions;
@@ -163,6 +171,9 @@ public class FieldMetadataController {
         c1Conditions.findById(1L).ifPresent(row -> {
             if (usesField(row.conditionJson, code)) references.add("C1 全局过滤条件");
         });
+        // 路径草稿和每一个已发布版本的路径条件树都算引用：历史决策按版本回放，任何版本引用了的字段都不能删
+        c1PathConfigs.findById(1L).ifPresent(row -> pathReferences(row.draftJson, code, references, null));
+        c1PathVersions.findAllByOrderByVersionAsc().forEach(row -> pathReferences(row.payloadJson, code, references, row.version));
         appetites.findAll().forEach(row -> { if (usesField(row.conditionJson, code)) references.add("C1 准入规则 #" + row.id); });
         regulatoryRules.findAll().forEach(row -> {
             if (usesField(row.conditionJson, code) || usesField(row.triggerConditionJson, code))
@@ -180,6 +191,13 @@ public class FieldMetadataController {
         if (conditionJson == null || conditionJson.isBlank()) return false;
         try { return usesField(json.readTree(conditionJson), code); }
         catch (Exception e) { throw new IllegalStateException("已保存的规则条件无法读取，请先修复规则配置", e); }
+    }
+
+    private void pathReferences(String payloadJson, String code, List<String> references, Integer version) {
+        if (payloadJson == null || payloadJson.isBlank()) return;
+        for (C1PathConfigService.PathNode path : C1PathConfigService.pathTrees(payloadJson, json))
+            if (usesField(path.conditionAst(), code))
+                references.add(version == null ? "C1 路径草稿 " + path.pathCode() : "C1 路径已发布 v" + version + " " + path.pathCode());
     }
 
     private boolean usesField(com.fasterxml.jackson.databind.JsonNode node, String code) {

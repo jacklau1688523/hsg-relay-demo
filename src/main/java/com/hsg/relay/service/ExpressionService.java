@@ -40,6 +40,16 @@ public class ExpressionService {
     public static final int MAX_FUNCTION_NODES = 20;
     /** 编译期给函数返回值变量的临时名；拓扑排序后换成 __fnN。两侧的双下划线保证替换时不会前缀误伤。 */
     private static final String TEMP_VARIABLE = "__t";
+    /**
+     * 旧版 C1 全局准入条件里的两个布尔字段（合作方准入是否覆盖该币种 / 国家）：取值由 C1 执行器按旧语义注入（C1Service.legacyEnabled）。
+     * 它们已由 APPETITE_MATCH 取代，新的路径配置不能再引用（C1PathConfigService 的结构校验）；但迁移产生的 v1 原样保留着这两个条件，
+     * 已发生的决策按它回放，所以规则 C1 把它们当作内置的 BOOLEAN 字段（EQ / NE），不读字段库：字段库里没有它们、已停用或被改动，
+     * 回放的结果都不变。清单只在这里定义一份，C1Service / C1PathConfigService 引用的都是它。
+     */
+    public static final List<String> LEGACY_BOOLEAN_FIELDS = List.of("appetiteCurrencyEnabled", "appetiteCountryEnabled");
+    /** 内置字段适用的规则。 */
+    private static final String LEGACY_RULE = "C1";
+    private static final Map<String, FieldDefinition> LEGACY_BOOLEANS = legacyBooleans();
 /** 求值过程日志：DEBUG 级别，每次 {@link #evaluate(Compiled, Map, RuleExecutionContext, String)} 输出一个多行块；开关见 application.yml 的 logging.level。 */
     private static final Logger log = LoggerFactory.getLogger(ExpressionService.class);
 
@@ -55,6 +65,30 @@ public class ExpressionService {
         this.functions = functions;
         this.fieldResolver = fieldResolver;
         this.fieldValues = fieldValues;
+    }
+
+    /** 两个旧版布尔字段的内置定义：BOOLEAN、EQ / NE、只适用于 C1、请求取值（不绑定函数，不由字段解析器取数）。只存在于内存，不写字段库。 */
+    private static Map<String, FieldDefinition> legacyBooleans() {
+        Map<String, FieldDefinition> builtIns = new LinkedHashMap<>();
+        for (String code : LEGACY_BOOLEAN_FIELDS)
+            builtIns.put(code, new FieldDefinition(code, "旧版：合作方准入是否覆盖该" + ("appetiteCurrencyEnabled".equals(code) ? "币种" : "国家"),
+                    "BOOLEAN", "EQ,NE", LEGACY_RULE));
+        return Collections.unmodifiableMap(builtIns);
+    }
+
+    /** 规则 C1 的旧版布尔字段（按内置定义处理，不读字段库）；其它规则、其它字段都不是。 */
+    private static boolean isLegacyBoolean(String fieldCode, String ruleCode) {
+        return LEGACY_RULE.equals(ruleCode) && LEGACY_BOOLEANS.containsKey(fieldCode == null ? "" : fieldCode);
+    }
+
+    /**
+     * 字段条件编译、代入取值用的字段定义：规则 C1 的旧版布尔字段用内置定义，其余字段读字段库（没有时为空）。
+     * 判断取值来源的方法（isFunctionBound / isDataResolved / requiresInput）只有 C1 的执行器在用，按规则 C1 取定义。
+     */
+    private Optional<FieldDefinition> definition(String fieldCode, String ruleCode) {
+        String code = fieldCode == null ? "" : fieldCode;
+        FieldDefinition builtIn = LEGACY_RULE.equals(ruleCode) ? LEGACY_BOOLEANS.get(code) : null;
+        return builtIn != null ? Optional.of(builtIn) : fields.findById(code);
     }
 
     /**
@@ -270,14 +304,14 @@ public class ExpressionService {
         return fieldCode == null ? null : fields.findById(fieldCode).orElse(null);
     }
 
-    /** 字段是否绑定了业务函数（取值由函数计算，不需要请求提供）。 */
+    /** 字段是否绑定了业务函数（取值由函数计算，不需要请求提供）。C1 的旧版布尔字段按内置定义：请求取值。 */
     public boolean isFunctionBound(String fieldCode) {
-        return fieldResolver.isFunctionBound(fields.findById(fieldCode == null ? "" : fieldCode).orElse(null));
+        return fieldResolver.isFunctionBound(definition(fieldCode, LEGACY_RULE).orElse(null));
     }
 
     /** 字段是否由字段解析器取数（valueSource = DATA_RESOLVER，如集合字段）。 */
     public boolean isDataResolved(String fieldCode) {
-        return FieldResolver.isDataResolved(fields.findById(fieldCode == null ? "" : fieldCode).orElse(null));
+        return FieldResolver.isDataResolved(definition(fieldCode, LEGACY_RULE).orElse(null));
     }
 
     /**
@@ -337,6 +371,8 @@ public class ExpressionService {
         Map<String, Object> vars = new HashMap<>();
         try {
             for (FieldDefinition field : fields.findAll()) {
+                // 规则 C1 的旧版布尔字段按内置定义代入（循环之后统一处理），不采用字段库里同名字段的定义
+                if (isLegacyBoolean(field.fieldCode, compiled.ruleCode())) continue;
                 FunctionExecutionService.Validated bound = compiled.boundFields().get(field.fieldCode);
                 if (bound != null) {
                     // 绑定了函数的字段取值来自函数，请求里提交的同名字段取值不采用
@@ -350,6 +386,10 @@ public class ExpressionService {
                     vars.put(field.fieldCode, fieldResolver.variable(field, variables.get(field.fieldCode)));
                 }
             }
+            // 规则 C1 的旧版布尔字段：内置定义，取值来自请求变量（C1 执行器按旧语义注入）；没有取值时不代入，Aviator 按 nil 比较
+            for (String name : referenced)
+                if (isLegacyBoolean(name, compiled.ruleCode()) && variables.containsKey(name))
+                    vars.put(name, fieldResolver.variable(LEGACY_BOOLEANS.get(name), variables.get(name)));
             for (FunctionSlot slot : compiled.functions())
                 vars.put(slot.variable(), functionValue(invoke(slot.function(), context, trace, slot.variable()).value()));
             Object value = exp.execute(vars);
@@ -398,7 +438,8 @@ if (n.children() != null && !n.children().isEmpty()) {
             return new Text("(" + String.join(delimiter, parts.stream().map(Text::expression).toList()) + ")",
                     "(" + String.join(delimiter, parts.stream().map(Text::readable).toList()) + ")");
         }
-        FieldDefinition f = fields.findById(n.field() == null ? "" : n.field()).orElseThrow(() -> new IllegalArgumentException("非法字段: " + n.field()));
+        // 规则 C1 的旧版布尔字段用内置定义（迁移产生的 v1 回放时不依赖字段库），其余字段必须在字段库里
+        FieldDefinition f = definition(n.field(), ruleCode).orElseThrow(() -> new IllegalArgumentException("非法字段: " + n.field()));
         // 字符串集合 / 字符串清单可以做「是否包含这个元素」的条件；其它集合、分组和对象类型只能作为函数的参数，不能直接比较
         boolean stringCollection = FieldValueService.STRING_SET.equals(f.dataType) || RuleList.STRING_LIST.equals(f.dataType);
         if (!stringCollection && (FunctionTypes.isCollection(f.dataType) || FunctionTypes.MAP.equals(f.dataType) || FunctionTypes.OBJECT.equals(f.dataType)))
@@ -672,9 +713,12 @@ leaves.add(new Leaf(text.expression(), text.readable()));
             }
         }
 
-        /** 变量取值的来源：函数绑定字段由函数计算，函数节点的返回值以 __fnN 变量代入，其余是请求取值。 */
+        /** 变量取值的来源：函数绑定字段由函数计算，函数节点的返回值以 __fnN 变量代入，旧版布尔字段由 C1 执行器注入，其余是请求取值。 */
         private String source(String name, FunctionExecutionService.Validated function) {
-            if (function == null) return compiled.resolvedFields().contains(name) ? "字段解析器取值" : "请求取值";
+            if (function == null) {
+                if (isLegacyBoolean(name, compiled.ruleCode())) return "C1 执行器注入（旧版布尔字段）";
+                return compiled.resolvedFields().contains(name) ? "字段解析器取值" : "请求取值";
+            }
             return "函数 " + function.functionCode() + (compiled.boundFields().containsKey(name) ? " 计算" : " 返回值");
         }
 

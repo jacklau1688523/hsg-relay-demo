@@ -2,6 +2,7 @@ package com.hsg.relay.routing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +13,8 @@ import java.time.ZonedDateTime;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.*;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 
 @SpringBootTest
 @Transactional
@@ -22,6 +25,16 @@ class C9ServiceTest {
     RoutingService routing;
     @Autowired
     ObjectMapper json;
+
+    @Autowired
+    C1PathConfigService pathConfig;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        // C1 只执行已发布的路径配置：先发布基线（只有 DEFAULT 路径，条件恒成立），结果由必检和准入规则决定
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
+
     private static final ZonedDateTime AT = ZonedDateTime.parse("2026-11-20T10:00:00+08:00"); // 第20/30天，金额基准3,333,333.33
 
     private C9Service.RowView row(String provider) {

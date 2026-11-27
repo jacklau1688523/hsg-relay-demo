@@ -10,7 +10,10 @@ import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
 import com.hsg.relay.routing.RoutingScoreWeightService.*;
 import com.hsg.relay.routing.ScoreWeightMatcher.Step;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,6 +48,15 @@ class RoutingScoreWeightServiceTest extends ScoreWeightCleanSlate {
     ObjectMapper json;
     @Autowired
     PlatformTransactionManager tx;
+
+    @Autowired
+    C1PathConfigService pathConfig;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        // C1 只执行已发布的路径配置：先发布基线（只有 DEFAULT 路径，条件恒成立），结果由必检和准入规则决定
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
     /** 本用例的模拟产生的决策记录，结束时删除。 */
     final List<String> decisions = new ArrayList<>();
 

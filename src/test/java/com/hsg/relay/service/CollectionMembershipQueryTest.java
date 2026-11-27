@@ -4,6 +4,8 @@ import com.hsg.relay.domain.ClientExclusion;
 import com.hsg.relay.function.RuleExecutionContext;
 import com.hsg.relay.function.field.RuleCollection;
 import com.hsg.relay.repo.ClientExclusionRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.AdditionalAnswers;
 import org.mockito.Mockito;
@@ -49,6 +51,15 @@ class CollectionMembershipQueryTest {
     ClientExclusionRepository exclusions;
     @Autowired
     C1ConditionService c1Conditions;
+    @Autowired
+    C1PathConfigService pathConfig;
+    @Autowired
+    ObjectMapper json;
+
+    @BeforeEach
+    void publishBaselinePaths() {
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
+    }
 
     private static RuleExecutionContext context(String provider, String client) {
         return RuleExecutionContext.c1(provider, client, "USD", "KG", new BigDecimal("100"), LocalDateTime.now(ZoneId.of("Asia/Hong_Kong")));
@@ -133,17 +144,27 @@ class CollectionMembershipQueryTest {
         assertThat(handler.execute(Map.of("leftCollection", left, "rightCollection", loaded), context).value()).isEqualTo(true);
     }
 
-    // 执行器不再单独检查排除记录；C1 通过条件树里的集合条件使用成员查询模式，命中记录随函数调用返回
+    // C1 的客户排除检查在成员查询模式下照常工作：必检与路径条件树里的集合条件都走成员查询，命中记录随函数调用返回
     @Test
-    void c1UsesMembershipQueriesThroughTheConfiguredCondition() {
+    void c1UsesMembershipQueriesForTheMandatoryCheckAndThePathCondition() {
         twoRecords("PROV-GD");
         var request = new C1Service.Simulation("C10001", "PROV-GD", "USD", "KG", new BigDecimal("100"));
-        assertThat(c1.evaluate(request).reasonCode()).isEqualTo("APPETITE_NOT_SET");
-        assertThat(c1.evaluate(request).functionCalls()).isEmpty();
+        // 必检：客户在排除名单里 → CLIENT_EXCLUDED
+        var mandatory = c1.evaluate(request);
+        assertThat(mandatory.reasonCode()).isEqualTo("CLIENT_EXCLUDED");
+        assertThat(mandatory.exclusionRecordId()).isNotBlank();
+        assertThat(mandatory.functionCalls()).singleElement().satisfies(call -> {
+            assertThat(call.functionCode()).isEqualTo("clientExcluded");
+            assertThat(call.value()).isEqualTo(true);
+            assertThat(call.recordId()).isNotBlank();
+        });
 
-        c1Conditions.save(new C1ConditionService.Input(true, contains(false), null));
+        // 路径条件树里的集合条件：同样走成员查询，客户在集合里 → 路径条件不满足
+        pathConfig.saveDraft(json.valueToTree(new C1PathRule("C1", "FIRST_MATCH", List.of(
+                C1PathFixtures.path("DEFAULT", "默认路径", List.of(), 0, true, contains(false))))), null, "tester");
+        pathConfig.publish(new C1PathConfigService.PublishRequest(null, "tester", null));
         var result = c1.evaluate(request);
-        assertThat(result.reasonCode()).isEqualTo("C1_CONDITION_NOT_MATCHED");
+        assertThat(result.reasonCode()).isEqualTo("C1_PATH_DEFAULT_NOT_MATCHED");
         assertThat(result.functionCalls()).singleElement().satisfies(call -> {
             assertThat(call.functionCode()).isEqualTo("collectionContains");
             assertThat(call.value()).isEqualTo(true);

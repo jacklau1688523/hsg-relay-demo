@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hsg.relay.domain.Appetite;
 import com.hsg.relay.domain.RuleAudit;
 import com.hsg.relay.repo.*;
+import com.hsg.relay.service.C1PathConfigService;
+import com.hsg.relay.service.C1PathFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,10 +35,14 @@ class ScoreWeightRoutingTest {
     RuleAuditRepository audits;
     @Autowired
     ProviderRepository providers;
+    @Autowired
+    C1PathConfigService pathConfig;
     ObjectNode req;
 
     @BeforeEach
     void setup() throws Exception {
+        // C1 只执行已发布的路径配置：先发布基线（只有 DEFAULT 路径，条件恒成立），结果由必检和准入规则决定
+        C1PathFixtures.publishDefaultOnly(pathConfig, json);
         req = (ObjectNode) json.readTree("""
                 {"paymentId":"SW-1","clientId":"C10002","debitCurrency":"USD","paymentCurrency":"USD","amount":10000,
                 "beneficiaryBankCountry":"US","beneficiaryAddressCountry":"US","beneficiaryBankBic":"CHASUS33","chargeOption":"SHA",

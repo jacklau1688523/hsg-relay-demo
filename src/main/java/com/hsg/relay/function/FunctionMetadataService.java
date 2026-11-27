@@ -6,6 +6,7 @@ import com.hsg.relay.domain.Appetite;
 import com.hsg.relay.domain.BusinessFunctionDefinition;
 import com.hsg.relay.domain.FieldDefinition;
 import com.hsg.relay.domain.RuleAudit;
+import com.hsg.relay.domain.C1PathVersion;
 import com.hsg.relay.function.FieldResolver;
 import com.hsg.relay.function.collection.CollectionFunction;
 import com.hsg.relay.function.field.ElementSchema;
@@ -15,8 +16,11 @@ import com.hsg.relay.function.field.RuleList;
 import com.hsg.relay.repo.AppetiteRepository;
 import com.hsg.relay.repo.BusinessFunctionRepository;
 import com.hsg.relay.repo.C1ConditionConfigRepository;
+import com.hsg.relay.repo.C1PathConfigRepository;
+import com.hsg.relay.repo.C1PathVersionRepository;
 import com.hsg.relay.repo.FieldDefinitionRepository;
 import com.hsg.relay.repo.RuleAuditRepository;
+import com.hsg.relay.service.C1PathConfigService;
 import com.hsg.relay.service.ExpressionService;
 import jakarta.transaction.Transactional;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -132,6 +136,8 @@ public class FunctionMetadataService {
     private final FieldDefinitionRepository fields;
     private final AppetiteRepository appetites;
     private final C1ConditionConfigRepository c1Conditions;
+    private final C1PathConfigRepository c1PathConfigs;
+    private final C1PathVersionRepository c1PathVersions;
     private final RuleAuditRepository audit;
     private final ObjectMapper json;
     private final FieldResolverRegistry resolvers;
@@ -141,6 +147,7 @@ public class FunctionMetadataService {
                                    List<RequiredFunctionProvider> executors, FunctionExecutionService execution,
                                    ExpressionService expressions, FieldDefinitionRepository fields,
                                    AppetiteRepository appetites, C1ConditionConfigRepository c1Conditions,
+                                   C1PathConfigRepository c1PathConfigs, C1PathVersionRepository c1PathVersions,
                                    RuleAuditRepository audit, ObjectMapper json, FieldResolverRegistry resolvers,
                                     ElementSchemaRegistry schemas) {
         this.definitions = definitions;
@@ -151,6 +158,8 @@ public class FunctionMetadataService {
         this.fields = fields;
         this.appetites = appetites;
         this.c1Conditions = c1Conditions;
+        this.c1PathConfigs = c1PathConfigs;
+        this.c1PathVersions = c1PathVersions;
         this.audit = audit;
         this.json = json;
         this.resolvers = resolvers;
@@ -581,7 +590,7 @@ public class FunctionMetadataService {
         return arguments;
     }
 
-    /** 引用了某个函数的配置：绑定了该函数的字段、条件树里含该函数节点的 C1 准入规则。 */
+    /** 引用了某个函数的配置：绑定了该函数的字段、旧版 C1 全局过滤条件、C1 路径草稿与全部已发布版本的路径条件树、准入规则的附加条件。 */
     public List<String> references(String functionCode) {
         List<String> references = new ArrayList<>();
         for (FieldDefinition field : fields.findAll())
@@ -589,9 +598,20 @@ public class FunctionMetadataService {
         c1Conditions.findById(1L).ifPresent(row -> {
             if (row.conditionJson != null && usesFunction(row.conditionJson, functionCode)) references.add("C1 全局过滤条件");
         });
+        // 路径草稿和每一个已发布版本都要查：历史决策按版本回放，任何版本引用了的函数都不能删
+        c1PathConfigs.findById(1L).ifPresent(row -> pathReferences(row.draftJson, functionCode, references, null));
+        for (C1PathVersion version : c1PathVersions.findAllByOrderByVersionAsc())
+            pathReferences(version.payloadJson, functionCode, references, version.version);
         for (Appetite rule : appetites.findAll())
             if (rule.conditionJson != null && usesFunction(rule.conditionJson, functionCode)) references.add("C1 准入规则 #" + rule.id);
         return references;
+    }
+
+    private void pathReferences(String payloadJson, String functionCode, List<String> references, Integer version) {
+        if (payloadJson == null || payloadJson.isBlank()) return;
+        for (C1PathConfigService.PathNode path : C1PathConfigService.pathTrees(payloadJson, json))
+            if (usesFunction(path.conditionAst(), functionCode))
+                references.add(version == null ? "C1 路径草稿 " + path.pathCode() : "C1 路径已发布 v" + version + " " + path.pathCode());
     }
 
     private boolean usesFunction(String conditionJson, String functionCode) {

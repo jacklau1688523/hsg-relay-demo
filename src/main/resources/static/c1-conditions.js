@@ -1,6 +1,12 @@
 'use strict';
+// 当前挂在编辑器上的条件树（C1 合作方路径配置：所选路径自己的 conditionAst，见 c1-paths.js 的 c1SelectPath）
 let c1ConditionTree = null;
-let c1ConditionConfig = null;
+// 路径模式下允许把根条件组删空：没有条件树的路径草稿可以保存，发布时启用的路径必须有条件（空条件树不等于通过）
+let c1AllowEmptyRoot = false;
+// 条件树每次重绘后的回调：路径配置页用它把编辑器里的树写回当前路径的草稿
+let c1OnTreeRendered = null;
+// 条件树被修改（不重绘的修改：条件值、参数绑定）后的回调，同上
+let c1OnTreeChanged = null;
 // 函数库数据（GET /function-metadata/available?ruleCode=C1）：受控取值路径、系统必检清单、可添加到条件的函数。
 // 打开页面和打开「添加函数」时读取；读取失败不影响字段条件的配置，函数条件显示为不可用并说明原因。
 let c1FunctionCatalog = null, c1FunctionCatalogError = '', c1FunctionTarget = null, c1FunctionDrafts = {}, c1FunctionResults = {};
@@ -8,11 +14,13 @@ const c1Operators = {EQ:'等于 =',NE:'不等于 ≠',IN:'属于 IN',GT:'大于 
 const c1Sources = {CANDIDATE:'候选合作方',TRANSACTION:'本笔交易',CONTEXT:'规则上下文',FIELD:'元数据字段'};
 const c1Split = value => String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
 // 节点类型与服务端一致：有子条件的是条件组 GROUP；带 functionCode 的是函数条件 FUNCTION；其余是字段条件 FIELD。
-// 旧版保存的 JSON 不带 type，按同样的规则识别。
-const c1IsGroup = node => Array.isArray(node.children)&&node.children.length>0;
+// 旧版保存的 JSON 不带 type，按同样的规则识别；写了 type=GROUP 的节点即使暂时没有子条件也是条件组（路径模式下根条件组可以删空）。
+const c1IsGroup = node => node.type==='GROUP'||(node.type!=='FUNCTION'&&Array.isArray(node.children)&&node.children.length>0);
 const c1IsFunction = node => !c1IsGroup(node)&&(node.type==='FUNCTION'||!!node.functionCode);
-// 可选字段完全由元数据中心决定：已启用且适用规则含 C1 的字段全部进入下拉，运算符和可选值随字段定义走
-function c1Fields(){return fieldDefs.filter(f=>f.enabled&&c1Split(f.allowedRules).includes('C1'));}
+// 不进入字段下拉的字段：路径配置页把它设成两个旧版布尔字段（新配置不能引用，服务端结构校验也会拦下）
+let c1HiddenFields=[];
+// 可选字段完全由元数据中心决定：已启用且适用规则含 C1 的字段全部进入下拉（c1HiddenFields 里的除外），运算符和可选值随字段定义走
+function c1Fields(){return fieldDefs.filter(f=>f.enabled&&c1Split(f.allowedRules).includes('C1')&&!c1HiddenFields.includes(f.fieldCode));}
 function c1DefaultValue(f){return c1Split(f?.valueOptions)[0]||(f?.dataType==='BOOLEAN'?'true':['DECIMAL','INTEGER'].includes(f?.dataType)?'0':f?.fieldCode==='flowCategory'?'STANDARD':'');}
 function c1DefaultLeaf(){const f=c1Fields()[0];return {type:'FIELD',field:f?.fieldCode||'',operator:c1Split(f?.allowedOperators)[0]||'EQ',value:c1DefaultValue(f)};}
 const c1Function = code => c1FunctionCatalog?.functions.find(f=>f.functionCode===code)||null;
@@ -32,22 +40,16 @@ const c1CollectionView=v=>`集合 ${v.source||'—'}（${v.materialized?`${v.siz
 const c1Show = value => value===undefined||value===null?'—':typeof value==='object'?(c1IsCollection(value)?c1CollectionView(value):JSON.stringify(value)):String(value);
 // 读取已保存的条件树：补上节点类型（旧 JSON 不带 type），函数条件的参数补成对象，页面内部统一使用同一种形态
 function c1Normalize(node){
-  if(c1IsGroup(node)){node.type='GROUP';node.children.forEach(c1Normalize);}
+  if(c1IsGroup(node)){node.type='GROUP';node.children=node.children||[];node.children.forEach(c1Normalize);}
   else if(c1IsFunction(node)){node.type='FUNCTION';node.arguments={...(node.arguments||{})};}
   else node.type='FIELD';
   return node;
 }
-function c1InitCondition(json){
-  let saved=null;
-  try{saved=json?JSON.parse(json):null;}catch(_){saved=null;}
-  c1ConditionTree=c1Normalize(saved||{logic:'AND',children:[c1DefaultLeaf()]});
-  c1RenderTree();
-  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
-}
 function c1Node(path){let n=c1ConditionTree;for(const part of path.split('.').filter(Boolean))n=n.children[Number(part)];return n;}
 function c1Remove(path){
   const parts=path.split('.'),index=Number(parts.pop()),parent=c1Node(parts.join('.'));
-  if(parent.children.length===1){alert('条件组至少保留一项');return;}
+  // 路径模式下根条件组的最后一项也可以删：这条路径就没有条件树了（子条件组至少保留一项，空的条件组不能保存）
+  if(parent.children.length===1&&!(c1AllowEmptyRoot&&parts.length===0)){alert('条件组至少保留一项');return;}
   const node=parent.children[index];
   // 系统必检函数从条件树删除后，C1 执行器每次判定仍会执行这项检查；删除前说明清楚，避免误以为是在取消检查
   const fn=c1IsFunction(node)?c1Function(node.functionCode):null;
@@ -64,12 +66,13 @@ function c1Add(path,kind){
 // c1Shown：上一次重绘时展示给操作员的提示（字段被停用 / 条件值失效），用于判断改值后是否需要重绘
 let c1Notices=[],c1Shown=[];
 function c1HasOptions(node){const f=c1Fields().find(x=>x.fieldCode===node.field);return node.operator!=='IN'&&(f?.dataType==='BOOLEAN'||c1Split(f?.valueOptions).length>0);}
-function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();}
+function c1Change(path,key,value){const node=c1Node(path);node[key]=value;if(key==='field'){const f=c1Fields().find(x=>x.fieldCode===value);node.operator=c1Split(f?.allowedOperators)[0]||'EQ';node.value=c1DefaultValue(f);}if(key==='field'||key==='operator'||key==='logic'||(key==='value'&&c1Shown.length&&c1HasOptions(node)))c1RenderTree();else if(c1OnTreeChanged)c1OnTreeChanged();}
 // 参数绑定：使用「来源 + 绑定」控件的参数保存为对象（{source, fieldCode}），其余沿用字符串（受控路径 / 字面量）
 function c1SetArgument(path,code,value){
   const node=c1Node(path),p=c1Function(node.functionCode)?.parameters.find(x=>x.code===code);
   const mapping=c1Mapping(p,node.arguments?.[code])||(c1UnboundMapping(p,node.arguments?.[code])?c1DefaultMapping(p):null);
   node.arguments={...(node.arguments||{}),[code]:mapping?{...mapping,fieldCode:value}:value};
+  if(c1OnTreeChanged)c1OnTreeChanged();
 }
 // 改来源：可绑定项随来源变化（字段 ↔ 受控路径），取该来源下第一个类型一致的项
 function c1SetArgumentSource(path,code,source){
@@ -77,7 +80,7 @@ function c1SetArgumentSource(path,code,source){
   node.arguments={...(node.arguments||{}),[code]:{source,fieldCode:c1BindingOptions(p,source)[0]?.value||''}};
   c1RenderTree();
 }
-function c1RemoveArgument(path,code){const node=c1Node(path);delete node.arguments[code];c1RenderTree();}
+function c1RemoveArgument(path,code){const node=c1Node(path);delete node.arguments[code];if(c1OnTreeChanged)c1OnTreeChanged();c1RenderTree();}
 function c1RenderLeaf(node,path){
   const fields=c1Fields(),f=fields.find(x=>x.fieldCode===node.field)||fields[0];if(!f)return '<div class="err">请先在元数据中心启用 C1 字段</div>';
   // 已保存条件引用的字段在元数据中心停用或不再适用 C1 时，换成当前首个可用字段，并在表达式区提示
@@ -171,7 +174,7 @@ function c1RenderStaleFunction(node,path){
   const code=node.functionCode||'';
   c1Notices.push(c1FunctionCatalog
     ?`函数 ${code||'（空）'} 在函数库中已停用、不再适用 C1 或后端实现未注册，引用它的条件无法执行，请删除后按需重新添加`
-    :'函数库数据未加载，函数条件暂不能编辑；请点击「↻ 刷新规则 / 字段库」重试');
+    :'函数库数据未加载，函数条件暂不能编辑；请点击「↻ 刷新」重试');
   return `<div class="c1-fn stale"><div class="c1-line"><span class="c1-fnname">ƒ <b>${esc(c1FunctionName(code))}</b> <span class="muted">${esc(code)}</span><span class="badge fail">不可用</span></span><span>${esc(c1Operators[node.operator]||node.operator||'')} ${esc(String(node.value??''))}</span><button type="button" class="btn secondary tiny" onclick="c1Remove('${path}')" aria-label="删除函数条件">✕</button></div></div>`;
 }
 // 函数节点的条件摘要：集合字段 ← … ｜ 比较元素 ← … ｜ 函数 … ｜ 比较条件 …
@@ -206,6 +209,7 @@ function c1RenderTree(){
   c1Shown=[...new Set(c1Notices)];c1Notices=[];
   $('c1Compiled').textContent=(c1Shown.length?c1Shown.join('\n')+'\n':'')+'条件已修改，请重新校验';
   c1RenderRequired();
+  if(c1OnTreeRendered)c1OnTreeRendered();
 }
 // 系统必检清单：只读展示 C1 执行器在代码里强制执行的检查，不提供删除
 function c1RenderRequired(){
@@ -224,25 +228,10 @@ async function c1LoadFunctionCatalog(){
   catch(error){c1FunctionCatalog=null;c1FunctionCatalogError=error.message;}
   c1RenderPathOptions();
 }
-async function c1CompileCondition(){try{const out=await api('/c1/condition/compile',{method:'POST',body:JSON.stringify({tree:c1ConditionTree})});$('c1Compiled').textContent=out.expression;$('c1ConditionError').textContent='';}catch(error){$('c1Compiled').textContent='条件校验失败';$('c1ConditionError').textContent=error.message;}}
-async function c1LoadConditionRules(){
-  try{
-   // 左侧是 C1 全局过滤条件，与右侧模拟选择及具体合作方准入规则相互独立
-   await Promise.all([api('/c1/condition'),api('/field-metadata')]).then(([config,defs])=>{c1ConditionConfig=config;fieldDefs=defs;});
-   await c1LoadFunctionCatalog();
-   c1InitCondition(c1ConditionConfig?.conditionJson||null);
-   $('c1SaveButton').disabled=false;
-   $('c1SaveButton').textContent='保存 C1 准入条件';
-   $('c1SaveButton').title='';
-  }catch(error){$('c1ConditionError').textContent=error.message;}
-}
-async function c1SaveCondition(){
-  $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
-  try{
-   const saved=await api('/c1/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree,versionNo:c1ConditionConfig?.versionNo})});
-   c1ConditionConfig=saved;
-   $('c1ConditionGood').textContent=`C1 全局准入条件已保存 · 版本 ${saved.versionNo}`;
-  }catch(error){$('c1ConditionError').textContent=error.message;}
+// 编辑器的两份数据源：元数据字段（字段下拉、可选值）与函数库（函数条件、受控取值路径）。字段元数据读取失败直接抛出，由调用方显示
+async function c1LoadEditorSources(){
+  fieldDefs=await api('/field-metadata');
+  await c1LoadFunctionCatalog();
 }
 
 // ---------- 「添加函数」选择器 ----------
@@ -288,7 +277,7 @@ function c1FunctionCard(fn){
     ${fn.usagePolicy==='REQUIRED'?`<div class="notice">系统必检：${esc(fn.requiredNote||'')} C1 执行器每次判定都会执行这项检查，与是否加入条件树无关；加入后只是把它的返回值作为一个可选条件参与比较。</div>`:''}
     <div class="c1-args">${c1ArgumentControls(fn,draft.arguments,argument=>`oninput="c1DraftArgument('${esc(code)}','${esc(argument)}',this.value)"`,null,{source:argument=>`c1DraftArgumentSource('${esc(code)}','${esc(argument)}',this.value)`})}</div>
     <div class="c1-args"><div class="c1-arg"><label>比较方式</label>${c1OperatorControl(fn,draft.operator,`c1Draft('${esc(code)}','operator',this.value)`)}</div><div class="c1-arg"><label>期望值</label>${c1ValueControl(fn,draft.value,`c1Draft('${esc(code)}','value',this.value)`)}</div></div>
-    <div class="actions"><button type="button" class="btn tiny" onclick="c1AddFunction('${esc(code)}')">＋ 添加到条件</button><button type="button" class="btn secondary tiny" onclick="c1SimulateFunction('${esc(code)}')">▶ 用右侧模拟数据试算</button></div>
+    <div class="actions"><button type="button" class="btn tiny" onclick="c1AddFunction('${esc(code)}')">＋ 添加到条件</button><button type="button" class="btn secondary tiny" onclick="c1SimulateFunction('${esc(code)}')">▶ 用试算数据试算</button></div>
     <div class="c1-sim" id="c1Sim-${esc(code)}">${c1SimulationState(code)}</div>
   </div>`;
 }
@@ -300,14 +289,14 @@ function c1RenderFunctionPicker(){
   // 参数输入框的候选路径直接引用页面上的 #c1PathOptions，不在弹层里再放一份（避免重复 ID）
   box.innerHTML=c1FunctionCatalog.functions.map(c1FunctionCard).join('');
 }
-// 试算用右侧模拟面板的要素（客户、合作方、币种、国家、金额、首个流转类别）构造一次上下文
+// 试算用「模拟试算」页签的要素（客户、合作方、币种、国家、金额、首个流转类别）构造一次上下文
 function c1FunctionSample(){
   return {providerCode:$('simProvider').value,clientId:$('simClient').value,paymentCurrency:$('simCurrency').value,beneficiaryBankCountry:$('simCountry').value,amountUsd:$('simAmount').value,flowCategory:c1Split($('simFlows').value)[0]||''};
 }
-// 选择器打开期间右侧面板被弹层遮住：把试算会取到的数据显示在选择器顶部，改数据需先关闭窗口
+// 选择器打开期间页面被弹层遮住：把试算会取到的数据显示在选择器顶部，改数据需先关闭窗口
 function c1RenderFunctionSample(){
   const s=c1FunctionSample();
-  $('c1FunctionSample').textContent=`试算数据取自右侧「C1 规则模拟校验」面板当前填写的要素：客户 ${s.clientId||'—'} · 合作方 ${s.providerCode||'—'} · ${s.paymentCurrency||'—'} / ${s.beneficiaryBankCountry||'—'} / ${s.amountUsd||'—'} USD。要换数据请先关闭本窗口。`;
+  $('c1FunctionSample').textContent=`试算数据取自「模拟试算」页签当前填写的要素：客户 ${s.clientId||'—'} · 合作方 ${s.providerCode||'—'} · ${s.paymentCurrency||'—'} / ${s.beneficiaryBankCountry||'—'} / ${s.amountUsd||'—'} USD。要换数据请先关闭本窗口，再到「模拟试算」页签修改。`;
 }
 // 试算结果保存在选择器的状态里，卡片按状态渲染：函数库重载重绘卡片时，已显示的结果不会丢
 async function c1SimulateFunction(code){

@@ -1,9 +1,10 @@
 -- HSG RELAY C1 Demo schema, MySQL 8.0+
 -- 与 Java Entity 对应；也可直接使用 spring.jpa.hibernate.ddl-auto=update 在开发环境自动建表。
+-- 用 mysql / mariadb 命令行执行时整份脚本导入：mysql -u<用户> -p < sql/schema-mysql.sql（USE 必须与库名写在同一行，否则客户端报
+-- 「USE must be followed by a database name」）。
 CREATE
 DATABASE IF NOT EXISTS hsg_relay CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE
-hsg_relay;
+USE hsg_relay;
 CREATE TABLE IF NOT EXISTS relay_provider
 (
     code
@@ -268,6 +269,44 @@ CREATE TABLE IF NOT EXISTS relay_rule_audit
     6
 ) NOT NULL,
     before_json LONGTEXT, after_json LONGTEXT
+    ) ENGINE=InnoDB;
+
+-- C1: 合作方动态规则路径配置。按候选合作方（candidate.providerCode）选路径（P1 / P2 / … / DEFAULT），只执行所选路径自己的条件树，
+-- 再执行对所有路径都生效的全局必检。两张表都只由 C1 路径配置页面（/api/c1/paths）读写。
+-- relay_c1_path_config  全局一行（id = 1）：草稿 + 「最新已发布版本」指针。草稿不参与执行。
+--   draft_json             C1PathRule JSON：{"ruleCode":"C1","branchMode":"FIRST_MATCH","paths":[{pathCode,pathName,providerCodes,priority,
+--                          enabled,conditionAst,failureReasonCode,version}]}；conditionAst 是条件树（条件组 {type:"GROUP",logic,children}、
+--                          字段条件 {type:"FIELD",field,operator,value}、函数条件 {type:"FUNCTION",functionCode,arguments,operator,value}）
+--   migration_hints_json   系统迁移（旧版全局准入条件 → 路径配置）写入的提示 JSON 数组 [{code,message}]，首次发布后清空
+-- 列类型必须与实体映射完全一致（开启 ddl-auto=update 时 Hibernate 只在不一致时 ALTER）：三个 JSON 列在实体上都是 @Lob，
+--   MariaDB / MySQL = longtext（relay_c1_path_version.payloadJson 另加 length = Integer.MAX_VALUE + nullable = false），
+--   H2 = clob；唯一约束名 uk_c1_path_version 与实体 @UniqueConstraint(name) 相同，不要改。
+-- relay_c1_path_version  已发布版本：只插入，不更新、不删除；某一时刻生效的是最新版本，回放按 version 取。
+CREATE TABLE IF NOT EXISTS relay_c1_path_config
+(
+    id BIGINT PRIMARY KEY,
+    draft_version INT NOT NULL,
+    draft_json LONGTEXT,
+    draft_updated_by VARCHAR(64),
+    draft_updated_at DATETIME(6),
+    published_version INT,
+    published_at DATETIME(6),
+    published_by VARCHAR(64),
+    migration_hints_json LONGTEXT,
+    CHECK (JSON_VALID(draft_json)),
+    CHECK (JSON_VALID(migration_hints_json))
+    ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS relay_c1_path_version
+(
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    `version` INT NOT NULL,
+    branch_mode VARCHAR(20) NOT NULL,
+    payload_json LONGTEXT NOT NULL,
+    published_at DATETIME(6) NOT NULL,
+    published_by VARCHAR(64) NOT NULL,
+    note VARCHAR(500),
+    UNIQUE KEY uk_c1_path_version (`version`),
+    CHECK (JSON_VALID(payload_json))
     ) ENGINE=InnoDB;
 
 -- C2: GLOBAL 监管路由规则。condition_json 为适用范围的标准条件树：
