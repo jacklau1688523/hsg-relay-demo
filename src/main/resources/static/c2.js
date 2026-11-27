@@ -151,7 +151,7 @@ async function c2Simulate() {
     c2$('c2SimResult').innerHTML = '<div class="notice">模拟计算中...</div>';
     try {
         const res = await c2Api('/simulate', {method: 'POST', body: JSON.stringify(req)});
-        let html = `<div class="result ${res.passed ? '' : 'error'}">${res.passed ? '✓ C2 校验通过' : '✕ C2 校验失败'}</div>
+        let html = `<div class="result ${res.passed ? '' : 'error'}">${res.reasonCode === 'SKIPPED' ? '↷ C2 已跳过' : res.passed ? '✓ C2 校验通过' : '✕ C2 校验失败'}</div>
  <p class="caps">返回原因码：<b>${c2Esc(res.reasonCode)}</b></p><p class="muted">${c2Esc(res.note)}</p>${c2RenderChecks(res)}`;
         if (res.hits.length) {
             html += '<h2>命中限制（按 C2 序号排序）</h2>';

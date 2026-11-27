@@ -276,6 +276,29 @@ class C1ServiceTest {
 
     @Test
     @Transactional
+    void appetiteSwitchSkipsOnlyProviderRuleValidationAndKeepsGlobalCondition() {
+        var tree = new ExpressionService.Node("AND", List.of(
+                new ExpressionService.Node(null, null, "paymentCurrency", "EQ", "USD")), null, null, null);
+        assertThat(globalConditions.appetiteCheckEnabled()).isTrue(); // existing rows with a null flag keep the original behavior
+        var disabled = globalConditions.save(new C1ConditionService.Input(true, tree, null, false));
+        assertThat(disabled.appetiteCheckEnabled).isFalse();
+        var bypassed = service.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "USD", "KG", new BigDecimal("100")));
+        assertThat(bypassed.reasonCode()).isEqualTo("PASS");
+        assertThat(bypassed.matchedRuleId()).isNull();
+        assertThat(bypassed.steps()).anySatisfy(step -> {
+            assertThat(step.status()).isEqualTo("SKIP");
+            assertThat(step.detail()).contains("跳过规则匹配、个案审批和 MTD 校验");
+        });
+        assertThat(service.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "HKD", "KG", new BigDecimal("100"))).reasonCode())
+                .isEqualTo("C1_CONDITION_NOT_MATCHED");
+
+        globalConditions.save(new C1ConditionService.Input(true, tree, disabled.versionNo, true));
+        assertThat(service.evaluate(new C1Service.Simulation("C10001", "PROV-T1", "USD", "KG", new BigDecimal("100"))).reasonCode())
+                .isEqualTo("APPETITE_EXCLUDED");
+    }
+
+    @Test
+    @Transactional
     void candidateProviderBranchUsesActualProviderAndLeavesOthersUnaffected() {
         assertThat(metadata.list().stream().filter(field -> "candidateProviderCode".equals(field.fieldCode)).toList())
                 .singleElement().satisfies(field -> {

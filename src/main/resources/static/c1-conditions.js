@@ -49,9 +49,9 @@ function c1Remove(path){
   const parts=path.split('.'),index=Number(parts.pop()),parent=c1Node(parts.join('.'));
   if(parent.children.length===1){alert('条件组至少保留一项');return;}
   const node=parent.children[index];
-  // 系统必检函数从条件树删除后，C1 执行器每次判定仍会执行这项检查；删除前说明清楚，避免误以为是在取消检查
+  // 开启准入规则校验时，系统必检函数从条件树删除后仍按命中规则执行。
   const fn=c1IsFunction(node)?c1Function(node.functionCode):null;
-  if(fn?.usagePolicy==='REQUIRED'&&!confirm(`${fn.functionName} 是系统必检函数：从条件树删除后，C1 执行器每次判定仍会执行这项检查并返回对应原因码（${fn.requiredNote||''}）。\n这里只是不再把它的返回值作为可选条件参与比较。确定删除吗？`))return;
+  if(fn?.usagePolicy==='REQUIRED'&&!confirm(`${fn.functionName} 是准入规则校验开启时的必检函数：从条件树删除后，命中相应规则时仍会执行这项检查（${fn.requiredNote||''}）。\n这里只是不再把它的返回值作为条件参与比较。确定删除吗？`))return;
   parent.children.splice(index,1);c1RenderTree();
 }
 function c1Add(path,kind){
@@ -97,7 +97,7 @@ function c1RenderLeaf(node,path){
 
 // ---------- 函数条件 ----------
 
-const c1UsageBadge = policy => policy==='REQUIRED'?'<span class="c1-badge">系统必检</span>':'<span class="c1-badge optional">可选</span>';
+const c1UsageBadge = policy => policy==='REQUIRED'?'<span class="c1-badge">规则校验开启时必检</span>':'<span class="c1-badge optional">可选</span>';
 // 比较方式下拉；action 为选项变化时执行的脚本
 function c1OperatorControl(fn,operator,action){
   return `<select aria-label="比较方式" onchange="${action}">${fn.operators.map(op=>`<option value="${esc(op)}" ${op===operator?'selected':''}>${esc(c1Operators[op]||op)}</option>`).join('')}</select>`;
@@ -225,7 +225,7 @@ function c1RenderRequired(){
   if(!box)return;
   if(!c1FunctionCatalog){box.innerHTML=`<div class="muted">${esc(c1FunctionCatalogError?'函数库数据未加载：'+c1FunctionCatalogError:'')}</div>`;return;}
   const addable=new Set(c1FunctionCatalog.functions.map(f=>f.functionCode));
-  box.innerHTML=`<div class="tablewrap"><table class="c1-table"><thead><tr><th>函数</th><th>C1 执行器强制落实的检查</th><th>添加到条件树</th></tr></thead><tbody>${c1FunctionCatalog.required.map(r=>`<tr><td><b>${esc(r.functionName)}</b><br><span class="muted">${esc(r.functionCode)}</span></td><td>${esc(r.note)}</td><td>${addable.has(r.functionCode)?'<span class="badge pass">可以</span>':'<span class="muted">当前不可添加（已停用或由执行器内部落实）</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+  box.innerHTML=`<div class="tablewrap"><table class="c1-table"><thead><tr><th>函数</th><th>开启合作方准入规则校验时的检查</th><th>添加到条件树</th></tr></thead><tbody>${c1FunctionCatalog.required.map(r=>`<tr><td><b>${esc(r.functionName)}</b><br><span class="muted">${esc(r.functionCode)}</span></td><td>${esc(r.note)}</td><td>${addable.has(r.functionCode)?'<span class="badge pass">可以</span>':'<span class="muted">当前不可添加（已停用或由执行器内部落实）</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 // 受控取值路径下拉候选（参数绑定输入框共用）
 function c1RenderPathOptions(){
@@ -243,6 +243,7 @@ async function c1LoadConditionRules(){
    await Promise.all([api('/c1/condition'),api('/field-metadata')]).then(([config,defs])=>{c1ConditionConfig=config;fieldDefs=defs;});
    await c1LoadFunctionCatalog();
    c1InitCondition(c1ConditionConfig?.conditionJson||null);
+   $('c1AppetiteCheckEnabled').checked=c1ConditionConfig?.appetiteCheckEnabled!==false;
    $('c1SaveButton').disabled=false;
    $('c1SaveButton').textContent='保存 C1 准入条件';
    $('c1SaveButton').title='';
@@ -251,7 +252,7 @@ async function c1LoadConditionRules(){
 async function c1SaveCondition(){
   $('c1ConditionError').textContent='';$('c1ConditionGood').textContent='';
   try{
-   const saved=await api('/c1/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree,versionNo:c1ConditionConfig?.versionNo})});
+   const saved=await api('/c1/condition',{method:'PUT',body:JSON.stringify({enabled:true,tree:c1ConditionTree,versionNo:c1ConditionConfig?.versionNo,appetiteCheckEnabled:$('c1AppetiteCheckEnabled').checked})});
    c1ConditionConfig=saved;
    $('c1ConditionGood').textContent=`C1 全局准入条件已保存 · 版本 ${saved.versionNo}`;
   }catch(error){$('c1ConditionError').textContent=error.message;}
@@ -297,7 +298,7 @@ function c1FunctionCard(fn){
     <div class="rowbetween"><h3>ƒ ${esc(fn.functionName)} <span class="muted">${esc(code)}</span></h3>${c1UsageBadge(fn.usagePolicy)}</div>
     <div class="muted">返回类型 ${esc(fn.returnType)} · 数据来源 ${esc(fn.dataSource||'—')}${fn.category?` · ${esc(fn.category)}`:''}</div>
     ${fn.description?`<p class="c1-desc">${esc(fn.description)}</p>`:''}
-    ${fn.usagePolicy==='REQUIRED'?`<div class="notice">系统必检：${esc(fn.requiredNote||'')} C1 执行器每次判定都会执行这项检查，与是否加入条件树无关；加入后只是把它的返回值作为一个可选条件参与比较。</div>`:''}
+    ${fn.usagePolicy==='REQUIRED'?`<div class="notice">准入规则校验开启时必检：${esc(fn.requiredNote||'')} 命中相应规则时执行，与是否加入条件树无关；关闭开关后跳过准入规则校验。</div>`:''}
     <div class="c1-args">${c1ArgumentControls(fn,draft.arguments,argument=>`oninput="c1DraftArgument('${esc(code)}','${esc(argument)}',this.value)"`,null,{source:argument=>`c1DraftArgumentSource('${esc(code)}','${esc(argument)}',this.value)`})}</div>
     <div class="c1-args"><div class="c1-arg"><label>比较方式</label>${c1OperatorControl(fn,draft.operator,`c1Draft('${esc(code)}','operator',this.value)`)}</div><div class="c1-arg"><label>期望值</label>${c1ValueControl(fn,draft.value,`c1Draft('${esc(code)}','value',this.value)`)}</div></div>
     <div class="actions"><button type="button" class="btn tiny" onclick="c1AddFunction('${esc(code)}')">＋ 添加到条件</button><button type="button" class="btn secondary tiny" onclick="c1SimulateFunction('${esc(code)}')">▶ 用右侧模拟数据试算</button></div>

@@ -11,5 +11,7 @@ public class C1ConditionConfig {
     public Long id = 1L;
     @Lob
     public String conditionJson;
+    /** null represents the legacy default: partner appetite validation is enabled. */
+    public Boolean appetiteCheckEnabled;
     public int versionNo = 1;
 }

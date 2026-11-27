@@ -37,13 +37,14 @@ public class C1Service implements RequiredFunctionProvider {
     private final FunctionExecutionService functions;
     private final ExpressionService expressions;
     private final C1ConditionService globalConditions;
+    private final CheckSwitchService checkSwitches;
     private final ObjectMapper json;
 
     // 审批和 MTD 的查询在各自的 Handler 里（CaseApprovalChecker / ProviderMtdReader），执行器的系统必检与条件节点共用它们的调用结果
     public C1Service(ProviderRepository p, AppetiteRepository a, ClientProfileRepository c, ExpressionService expressions,
                      ObjectMapper json,
                      CaseApprovalChecker approvalChecker, ProviderMtdReader mtdReader, FunctionExecutionService functions,
-                     C1ConditionService globalConditions) {
+                     C1ConditionService globalConditions, CheckSwitchService checkSwitches) {
         providers = p;
         appetites = a;
         clients = c;
@@ -52,6 +53,7 @@ public class C1Service implements RequiredFunctionProvider {
         this.functions = functions;
         this.expressions = expressions;
         this.globalConditions = globalConditions;
+        this.checkSwitches = checkSwitches;
         this.json = json;
     }
 
@@ -133,6 +135,10 @@ public class C1Service implements RequiredFunctionProvider {
         // C1 自身的判断与合作方 LIVE 过滤分开：这里只做 C1。
         // 请求级上下文：本次判定内相同函数 + 相同参数只查询一次；候选合作方、交易要素、决策时间都来自本次请求
         RuleExecutionContext context = RuleExecutionContext.c1(req.providerCode(), req.clientId(), req.paymentCurrency(), req.beneficiaryBankCountry(), req.amountUsd(), now);
+        if (!checkSwitches.enabled("C1")) {
+            steps.add(new Trace("C1 业务准入", "SKIP", "C1 校验开关已关闭，跳过全部业务准入判断"));
+            return complete(true, "SKIPPED", null, null, steps, context);
+        }
         ClientProfile client = clients.findById(req.clientId()).orElse(null);
         if (client == null)
             return fail("CLIENT_NOT_FOUND", null, null, steps, context, "客户档案不存在");
@@ -170,6 +176,11 @@ public class C1Service implements RequiredFunctionProvider {
                     return fail("C1_CONDITION_NOT_MATCHED", null, null, steps, context,
                             flow + " 不满足 C1 全局准入条件，候选合作方被过滤");
             }
+        }
+        if (!globalConditions.appetiteCheckEnabled()) {
+            steps.add(new Trace("3. 合作方准入规则", "SKIP", "C1 配置已关闭合作方准入规则校验；跳过规则匹配、个案审批和 MTD 校验"));
+            steps.add(new Trace("5. C1 汇总", "PASS", "全局准入条件通过；合作方准入规则校验已关闭"));
+            return complete(true, "PASS", null, null, steps, context);
         }
         Long lastId = null;
         String lastAction = null;

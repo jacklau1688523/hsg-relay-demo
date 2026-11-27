@@ -21,10 +21,12 @@ public class C10Service {
     private static final Set<String> VALID_DAYS = Set.of("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN", "HOLIDAY");
     private final RoutingService routing;
     private final ProviderRepository providers;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
-    public C10Service(RoutingService r, ProviderRepository p) {
+    public C10Service(RoutingService r, ProviderRepository p, com.hsg.relay.service.CheckSwitchService checkSwitches) {
         routing = r;
         providers = p;
+        this.checkSwitches = checkSwitches;
     }
 
     public record WindowRow(int index, FxWindow window) {
@@ -120,6 +122,8 @@ public class C10Service {
         BigDecimal amountHkd = in.amount().multiply(rate(cfg, in.paymentCurrency()), MC);
         BigDecimal usd = amountHkd.divide(rate(cfg, "USD"), MC);
         boolean fx = !in.debitCurrency().equals(in.paymentCurrency());
+        if (!checkSwitches.enabled("C10"))
+            return new Simulation("SKIPPED", cv.revision(), fx, usd, List.of(), null, "C10 校验开关已关闭，跳过外汇窗口校验");
         List<C10Calculator.Channel> channels = new ArrayList<>();
         if (!fx)
             channels.add(C10Calculator.check("NONE", null, in.debitCurrency(), in.paymentCurrency(), cfg.fxWindows(), usd, now, cfg));

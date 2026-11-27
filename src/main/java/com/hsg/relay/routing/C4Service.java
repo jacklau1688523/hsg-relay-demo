@@ -18,10 +18,12 @@ import static com.hsg.relay.routing.RoutingConfig.Balance;
 public class C4Service {
     private final RoutingService routing;
     private final ProviderRepository providers;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
-    public C4Service(RoutingService r, ProviderRepository p) {
+    public C4Service(RoutingService r, ProviderRepository p, com.hsg.relay.service.CheckSwitchService checkSwitches) {
         routing = r;
         providers = p;
+        this.checkSwitches = checkSwitches;
     }
 
     public record BalanceRow(int index, Balance balance) {
@@ -119,6 +121,9 @@ public class C4Service {
         var cfg = cv.config();
         rate(cfg, in.debitCurrency());
         rate(cfg, in.paymentCurrency());
+        if (!checkSwitches.enabled("C4"))
+            return new Simulation("SKIPPED", cv.revision(), p.code, p.fundingCheckEnabled,
+                    !in.debitCurrency().equals(in.paymentCurrency()), List.of(), "C4 校验开关已关闭，跳过头寸资金校验");
         boolean enabled = in.fundingCheckEnabled() == null ? p.fundingCheckEnabled : in.fundingCheckEnabled();
         boolean fx = !in.debitCurrency().equals(in.paymentCurrency());
         // 渠道生成与全流程候选一致：无需换汇为 NONE；换汇时按已配置窗口生成 TREASURY / PROVIDER

@@ -19,10 +19,12 @@ public class C6Service {
     private static final MathContext MC = MathContext.DECIMAL128;
     private final RoutingService routing;
     private final ProviderRepository providers;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
-    public C6Service(RoutingService r, ProviderRepository p) {
+    public C6Service(RoutingService r, ProviderRepository p, com.hsg.relay.service.CheckSwitchService checkSwitches) {
         routing = r;
         providers = p;
+        this.checkSwitches = checkSwitches;
     }
 
     public record LimitRow(int index, Reach reach) {
@@ -108,6 +110,8 @@ public class C6Service {
         if (in.amount() == null || in.amount().signum() <= 0) throw new IllegalArgumentException("交易金额必须大于0");
         var cv = routing.config();
         var cfg = cv.config();
+        if (!checkSwitches.enabled("C6"))
+            return new Simulation("SKIPPED", cv.revision(), null, null, null, "C6 校验开关已关闭，跳过交易限额校验");
         var selected = C3Matcher.select(cfg.reaches(), match).orElse(null);
         if (selected == null)
             return new Simulation("NO_REACH", cv.revision(), null, null, null, "C3 未匹配覆盖行，C6 限额不适用；该候选已被 C3 剔除（NO_REACH）。请先在合作方详情的业务覆盖页签维护。");

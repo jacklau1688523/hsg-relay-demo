@@ -55,6 +55,7 @@ $('simForm').onsubmit = async e => {
             fundingCheckEnabled: $('simSwitch').value === '' ? null : $('simSwitch').value === 'true'
         };
         const r = await api('/c4/simulate', {method: 'POST', body: JSON.stringify(req)});
+        if (r.status === 'SKIPPED') { $('simResult').className = ''; $('simResult').innerHTML = '<div class="verdict"><span>C4 结果</span><b>已跳过</b><small>校验开关已关闭，不执行头寸资金过滤。</small></div>'; return; }
         let verdict;
         if (r.status === 'NO_FX_VENUE') verdict = '<div class="verdict fail"><span>C4 结果</span><b>NO_FX_VENUE</b><small>没有任何外汇渠道配置该货币对窗口：全流程路由不生成候选，C4 不适用，返回 REFER NO_FX_VENUE</small></div>';
         else if (r.status !== 'PASS') verdict = '<div class="verdict fail"><span>C4 结果</span><b>FUNDING_SHORTFALL</b><small>全部渠道可用头寸不足，该合作方候选被剔除；全流程中全部候选仅因 C4 失败时返回 REFER FUNDING_SHORTFALL——运营审核环节，资金部确认补头寸后，运营可人工选用该合作方（示例 6b）</small></div>';

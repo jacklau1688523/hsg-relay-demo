@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hsg.relay.api.FieldMetadataController;
 import com.hsg.relay.repo.*;
 import com.hsg.relay.service.C1Service;
+import com.hsg.relay.service.CheckSwitchService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,6 +28,8 @@ class RoutingServiceTest {
     AppetiteRepository appetites;
     @Autowired
     FieldMetadataController metadata;
+    @Autowired
+    CheckSwitchService checkSwitches;
     ObjectNode req;
 
     @BeforeEach
@@ -77,6 +80,25 @@ class RoutingServiceTest {
         var c = candidate(run(), "PROV-GD");
         assertThat(c.checks).extracting(RoutingService.Check::code).containsExactly("C1", "C2", "C3", "C4", "C6", "C10");
         assertThat(c.checks).filteredOn(x -> !x.passed()).extracting(RoutingService.Check::code).contains("C1", "C3");
+    }
+
+    @Test
+    void stageSwitchesSkipOnlyTheirOwnFilters() {
+        assertThat(checkSwitches.get("C1").enabled()).isTrue();
+        for (String code : List.of("C1", "C2", "C3", "C4", "C6", "C10"))
+            checkSwitches.save(code, false);
+
+        var candidate = candidate(run(), "PROV-GD");
+        assertThat(candidate.checks).allSatisfy(check -> {
+            assertThat(check.passed()).isTrue();
+            assertThat(check.reasons()).isEmpty();
+        });
+        assertThat(candidate.checks.get(0).detail().toString()).contains("SKIPPED");
+        assertThat(candidate.checks.get(2).detail().toString()).contains("SKIPPED");
+        assertThat(checkSwitches.get("C4").enabled()).isFalse();
+        checkSwitches.save("C3", true);
+        assertThat(candidate(run(), "PROV-GD").checks).filteredOn(check -> check.code().equals("C3"))
+                .allSatisfy(check -> assertThat(check.reasons()).contains("NO_REACH"));
     }
 
     @Test

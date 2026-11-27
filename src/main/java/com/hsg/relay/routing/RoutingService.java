@@ -30,9 +30,11 @@ public class RoutingService {
     private final C3ConditionService c3Conditions;
     private final C5ScoreService c5Scoring;
     private final RouteRankingService ranking;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
     public RoutingService(RoutingDocumentRepository d, ObjectMapper j, ProviderRepository p, ClientProfileRepository cl, RuleAuditRepository a, C1Service c1, C2Service c2, C3ConditionService c3Conditions,
-                          C5ScoreService c5Scoring, RouteRankingService ranking) {
+                          C5ScoreService c5Scoring, RouteRankingService ranking,
+                          com.hsg.relay.service.CheckSwitchService checkSwitches) {
         docs = d;
         json = j;
         providers = p;
@@ -43,6 +45,7 @@ public class RoutingService {
         this.c3Conditions = c3Conditions;
         this.c5Scoring = c5Scoring;
         this.ranking = ranking;
+        this.checkSwitches = checkSwitches;
     }
 
     public record ConfigView(long revision, RoutingConfig config) {
@@ -302,17 +305,24 @@ public class RoutingService {
                 var a = c1.evaluate(new C1Service.Simulation(r.clientId(), p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), usd), now.toLocalDateTime());
                 check(c, "C1", a.passed() ? List.of() : List.of(a.reasonCode()), a);
                 var b = c2.simulate(new C2Service.Simulation(p.code, r.paymentCurrency(), r.debitCurrency(), r.beneficiaryBankCountry(), r.beneficiaryAddressCountry(), r.beneficiaryRegion(), r.orderingCountry(), r.clientCountry(), r.intermediaryCountry(), r.purpose(), r.directorUboNationalities()), now.toLocalDateTime());
-                check(c, "C2", b.hits().stream().map(C2Service.RuleHit::reasonCode).distinct().toList(), b);
+                check(c, "C2", b.passed() ? List.of() : b.hits().isEmpty() ? List.of(b.reasonCode())
+                        : b.hits().stream().map(C2Service.RuleHit::reasonCode).distinct().toList(), b);
                 var c3Row = c3Conditions.select(cfg.reaches(), new C3Matcher.Input(p.code, r.paymentCurrency(), r.beneficiaryBankCountry(), r.beneficiaryRegion(), r.beneficiaryBankBic(), r.chargeOption())).orElse(null);
                 Reach reach = c3Row == null ? null : c3Row.reach();
-                check(c, "C3", reach == null ? List.of("NO_REACH") : List.of(), reach);
-                var c4 = C4Calculator.check(p.code, p.fundingCheckEnabled, venue, r.paymentCurrency(), r.debitCurrency(), r.amount(), cfg.hkdRates(), cfg.balances());
-                check(c, "C4", c4.reasons(), c4);
-                var c6 = reach == null ? null : C6Calculator.check(reach, usd, cfg.todayUsd().getOrDefault(p.code, BigDecimal.ZERO));
-                check(c, "C6", reach == null ? List.of() : c6.reasons(), reach == null ? "无覆盖行，限额不适用" : c6);
+                check(c, "C3", !checkSwitches.enabled("C3") || reach != null ? List.of() : List.of("NO_REACH"),
+                        checkSwitches.enabled("C3") ? reach : "SKIPPED：C3 校验开关已关闭；仍查找覆盖行供 C5/C6 使用");
+                if (checkSwitches.enabled("C4")) {
+                    var c4 = C4Calculator.check(p.code, p.fundingCheckEnabled, venue, r.paymentCurrency(), r.debitCurrency(), r.amount(), cfg.hkdRates(), cfg.balances());
+                    check(c, "C4", c4.reasons(), c4);
+                } else check(c, "C4", List.of(), "SKIPPED：C4 校验开关已关闭");
+                if (checkSwitches.enabled("C6")) {
+                    var c6 = reach == null ? null : C6Calculator.check(reach, usd, cfg.todayUsd().getOrDefault(p.code, BigDecimal.ZERO));
+                    check(c, "C6", reach == null ? List.of() : c6.reasons(), reach == null ? "无覆盖行，限额不适用" : c6);
+                } else check(c, "C6", List.of(), "SKIPPED：C6 校验开关已关闭");
                 var c10 = C10Calculator.check(venue, "TREASURY".equals(venue) ? "TREASURY" : p.code, r.debitCurrency(), r.paymentCurrency(), cfg.fxWindows(), usd, now, cfg);
                 c.nextFxWindow = c10.nextWindow();
-                check(c, "C10", fx && !c10.passed() ? List.of(c10.reason()) : List.of(), c10.open() != null ? c10.open() : "NONE".equals(venue) ? "无需换汇" : "无可执行窗口");
+                check(c, "C10", checkSwitches.enabled("C10") && fx && !c10.passed() ? List.of(c10.reason()) : List.of(),
+                        !checkSwitches.enabled("C10") ? "SKIPPED：C10 校验开关已关闭" : c10.open() != null ? c10.open() : "NONE".equals(venue) ? "无需换汇" : "无可执行窗口");
                 c.passed = only(c).isEmpty();
                 if (reach != null) {
                     // C3 最终选中的覆盖行原样交给 C5 评分执行器：先算起息日（每个候选一次），再按已发布的评分规则取分

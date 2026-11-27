@@ -196,6 +196,7 @@ $('simForm').onsubmit = async e => {
             at: $('at').value ? $('at').value + '+08:00' : null
         };
         const r = await api('/c10/simulate', {method: 'POST', body: JSON.stringify(req)});
+        if (r.status === 'SKIPPED') { $('simResult').className = ''; $('simResult').innerHTML = '<div class="verdict"><span>C10 结果</span><b>已跳过</b><small>校验开关已关闭，不执行外汇窗口过滤。</small></div>'; return; }
         const fail = r.status !== 'PASS';
         const verdict = fail && r.status === 'NO_FX_VENUE'
             ? `<div class="verdict fail"><span>C10 结果</span><b>NO_FX_VENUE</b><small>没有任何外汇渠道支持该货币对：全流程路由不生成候选，返回 REFER NO_FX_VENUE（8.1），需新增外汇渠道配置</small></div>`

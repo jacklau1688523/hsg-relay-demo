@@ -30,11 +30,13 @@ public class C2Service {
     private final ExpressionService expressions;
     private final ObjectMapper mapper;
     private final C2ConditionConfigRepository conditionRepo;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
     public C2Service(RegulatoryRuleRepository regulatoryRepo, ProviderRestrictionRepository restrictionRepo,
                      ProviderCapabilityRepository capabilityRepo, CapabilityTagRepository tagRepo, ProviderRepository providerRepo,
                      FieldDefinitionRepository fieldRepo, RuleAuditRepository auditRepo, C2ExpressionCompiler compiler,
-                     ExpressionService expressions, ObjectMapper mapper, C2ConditionConfigRepository conditionRepo) {
+                     ExpressionService expressions, ObjectMapper mapper, C2ConditionConfigRepository conditionRepo,
+                     com.hsg.relay.service.CheckSwitchService checkSwitches) {
         this.regulatoryRepo = regulatoryRepo;
         this.restrictionRepo = restrictionRepo;
         this.capabilityRepo = capabilityRepo;
@@ -46,6 +48,7 @@ public class C2Service {
         this.expressions = expressions;
         this.mapper = mapper;
         this.conditionRepo = conditionRepo;
+        this.checkSwitches = checkSwitches;
     }
 
     public record Requirement(String type, List<String> requiredTags) {
@@ -524,6 +527,8 @@ public class C2Service {
             throw new IllegalArgumentException("有效合作方必填");
         if (normalize(req.paymentCurrency()).isEmpty() || normalize(req.beneficiaryBankCountry()).isEmpty())
             throw new IllegalArgumentException("交易币种、受益行国家必填");
+        if (!checkSwitches.enabled("C2"))
+            return new Result(true, "SKIPPED", List.of(), List.of(), List.of(), List.of(), "C2 校验开关已关闭，跳过制裁及监管限制校验");
         List<String> capabilities = providerCapabilities(req.providerCode());
         List<RuleHit> hits = new ArrayList<>();
         // 各叶子命中的限制记录，供校验过程按规则组展示；hits 只记录每条限制记录在组内的首个命中字段，口径不变

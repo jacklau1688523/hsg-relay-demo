@@ -14,11 +14,14 @@ public class C3Service {
     private final RoutingService routing;
     private final ProviderRepository providers;
     private final C3ConditionService conditions;
+    private final com.hsg.relay.service.CheckSwitchService checkSwitches;
 
-    public C3Service(RoutingService r, ProviderRepository p, C3ConditionService conditions) {
+    public C3Service(RoutingService r, ProviderRepository p, C3ConditionService conditions,
+                     com.hsg.relay.service.CheckSwitchService checkSwitches) {
         routing = r;
         providers = p;
         this.conditions = conditions;
+        this.checkSwitches = checkSwitches;
     }
 
     public record RowView(int index, Reach reach) {
@@ -92,6 +95,8 @@ public class C3Service {
         C3Matcher.validateInput(in);
         if (!providers.existsById(in.providerCode())) throw new IllegalArgumentException("合作方不存在");
         var cv = routing.config();
+        if (!checkSwitches.enabled("C3"))
+            return new Simulation(true, "SKIPPED", cv.revision(), null, false, null, List.of());
         var rows = C3Matcher.rows(cv.config().reaches(), in);
         var selected = conditions.select(cv.config().reaches(), in).orElse(null);
         return new Simulation(selected != null, selected == null ? "NO_REACH" : "PASS", cv.revision(), selected == null ? null : selected.index(),

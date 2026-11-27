@@ -22,11 +22,19 @@ public class C1ConditionService {
         this.json = json;
     }
 
-    public record Input(Boolean enabled, ExpressionService.Node tree, Integer versionNo) {}
+    public record Input(Boolean enabled, ExpressionService.Node tree, Integer versionNo, Boolean appetiteCheckEnabled) {
+        public Input(Boolean enabled, ExpressionService.Node tree, Integer versionNo) {
+            this(enabled, tree, versionNo, null);
+        }
+    }
     public record Outcome(boolean configured, boolean matched, String expression, String note) {}
 
     public C1ConditionConfig get() {
         return repository.findById(1L).orElseGet(C1ConditionConfig::new);
+    }
+
+    public boolean appetiteCheckEnabled() {
+        return !Boolean.FALSE.equals(get().appetiteCheckEnabled);
     }
 
     public String compile(Input input) {
@@ -39,6 +47,7 @@ public class C1ConditionService {
         C1ConditionConfig row = get();
         if (input.versionNo() != null && input.versionNo() != row.versionNo)
             throw new IllegalArgumentException("C1 过滤条件已更新，请刷新后重试");
+        if (input.appetiteCheckEnabled() != null) row.appetiteCheckEnabled = input.appetiteCheckEnabled();
         if (Boolean.FALSE.equals(input.enabled())) {
             row.conditionJson = null;
         } else {

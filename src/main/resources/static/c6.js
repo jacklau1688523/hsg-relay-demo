@@ -72,6 +72,7 @@ $('simForm').onsubmit = async e => {
             todayUsd: $('simToday').value === '' ? null : Number($('simToday').value)
         };
         const r = await api('/c6/simulate', {method: 'POST', body: JSON.stringify(req)});
+        if (r.status === 'SKIPPED') { $('simResult').className = ''; $('simResult').innerHTML = '<div class="verdict"><span>C6 结果</span><b>已跳过</b><small>校验开关已关闭，不执行交易限额过滤。</small></div>'; return; }
         const fail = !r.status || r.status !== 'PASS';
         const c = r.calculation;
         let body = '';
