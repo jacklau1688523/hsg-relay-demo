@@ -123,14 +123,14 @@ class FunctionMetadataApiTest {
         assertThat(values(catalog.path("required"), "functionCode")).containsExactly("findBestAppetiteRule",
                 "hasValidCaseApproval", "getProviderMtd");
         assertThat(catalog.path("required").get(0).path("note").asText()).doesNotContain("CLIENT_EXCLUDED");
-        // findBestAppetiteRule 由执行器内部落实，没有独立的 Handler：清单里照常列出（只读），但不能添加为条件节点
-        assertThat(catalog.path("required").get(0).path("implemented").asBoolean()).isFalse();
+        // 最优准入规则有独立 Handler，可作为 C1 条件节点使用。
+        assertThat(catalog.path("required").get(0).path("implemented").asBoolean()).isTrue();
 
         // collectionContains / collectionIntersects 等通用函数为启动时补齐；返回 OBJECT / MAP 的 collectionFirstMatch / collectionGroupBy 没有后置函数接收，不进选择器
         List<String> listed = values(catalog.path("functions"), "functionCode");
         // collectionContains / collectionIntersects 本身就在 SEEDED 里：总数 = 26 个通用函数 + clientExcluded + 两个 C1 评分函数
-        assertThat(listed).hasSize(SEEDED.size() + 3).containsExactlyInAnyOrderElementsOf(plus(SEEDED,
-                "clientExcluded", "getProviderMtd", "hasValidCaseApproval"));
+        assertThat(listed).hasSize(SEEDED.size() + 4).containsExactlyInAnyOrderElementsOf(plus(SEEDED,
+                "clientExcluded", "getProviderMtd", "hasValidCaseApproval", "findBestAppetiteRule"));
         assertThat(listed).doesNotContain("collectionFirstMatch", "collectionGroupBy");
         // 集合函数：分类、参数类型（COLLECTION / PREDICATE / SORT_FIELDS）、返回类型与是否可被后置函数引用
         JsonNode sort = entry(catalog.path("functions"), "functionCode", "collectionSort");
@@ -208,6 +208,58 @@ class FunctionMetadataApiTest {
     }
 
     @Test
+    void bestAppetiteFunctionSelectsMostSpecificActiveRule() throws Exception {
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Hong_Kong"));
+        Appetite broad = appetiteForSelector("ALL", "ALL", "ACCEPT", now);
+        Appetite currency = appetiteForSelector("USD", "ALL", "CASE_BY_CASE", now);
+        Appetite exact = appetiteForSelector("USD", "KG", "EXCLUDE", now);
+        Map<String, Object> bindings = Map.of(
+                "providerCode", "$candidate.providerCode",
+                "flowCategory", "$candidate.flowCategory",
+                "paymentCurrency", "$transaction.paymentCurrency",
+                "beneficiaryBankCountry", "$transaction.beneficiaryBankCountry");
+        Map<String, Object> sample = Map.of("providerCode", "PROV-HO", "clientId", "C10001",
+                "flowCategory", "API-FLOW", "paymentCurrency", "USD", "beneficiaryBankCountry", "KG");
+        String path = "/api/function-metadata/findBestAppetiteRule/simulate";
+        JsonNode selected = send("POST", path, Map.of("arguments", bindings, "operator", "EQ", "value", "EXCLUDE", "sample", sample));
+        assertThat(selected.path("value").asText()).isEqualTo("EXCLUDE");
+        assertThat(selected.path("recordId").asText()).isEqualTo(exact.id.toString());
+        assertThat(selected.path("matched").asBoolean()).isTrue();
+        assertThat(selected.path("dataSource").asText()).isEqualTo("APPETITE");
+
+        exact.enabled = false;
+        appetites.save(exact);
+        JsonNode fallback = send("POST", path, Map.of("arguments", bindings, "sample", sample));
+        assertThat(fallback.path("value").asText()).isEqualTo("CASE_BY_CASE");
+        assertThat(fallback.path("recordId").asText()).isEqualTo(currency.id.toString());
+
+        currency.effectiveTo = now.minusMinutes(1);
+        appetites.save(currency);
+        JsonNode all = send("POST", path, Map.of("arguments", bindings, "sample", sample));
+        assertThat(all.path("value").asText()).isEqualTo("ACCEPT");
+        assertThat(all.path("recordId").asText()).isEqualTo(broad.id.toString());
+
+        JsonNode missing = send("POST", path, Map.of("arguments", bindings, "sample", Map.of(
+                "providerCode", "PROV-HO", "clientId", "C10001", "flowCategory", "NOT-CONFIGURED",
+                "paymentCurrency", "USD", "beneficiaryBankCountry", "KG")));
+        assertThat(missing.path("value").asText()).isEqualTo("NOT_SET");
+        assertThat(missing.path("recordId").isNull()).isTrue();
+    }
+
+    private Appetite appetiteForSelector(String currency, String country, String action, LocalDateTime now) {
+        Appetite row = new Appetite();
+        row.providerCode = "PROV-HO";
+        row.flowCategory = "API-FLOW";
+        row.currency = currency;
+        row.bankCountry = country;
+        row.action = action;
+        row.evidenceDocNo = "API-TEST";
+        row.nextReviewDate = now.toLocalDate().plusYears(1);
+        row.effectiveFrom = now.minusDays(1);
+        return appetites.save(row);
+    }
+
+    @Test
     void simulateRejectsInvalidArgumentsWithBadRequest() throws Exception {
         assertThat(errorOf(jsonRequest("POST", SIMULATE, Map.of("arguments", Map.of("providerCode", "$candidate.providerCode"),
                 "operator", "EQ", "value", true, "sample", SAMPLE)))).isEqualTo("函数 clientExcluded 缺少必填参数：clientId");
@@ -229,8 +281,8 @@ class FunctionMetadataApiTest {
         assertThat(disabled.path("usagePolicy").asText()).as("使用策略来自代码，停用后仍是系统必检").isEqualTo("REQUIRED");
         // 停用后不能再添加为条件节点；系统必检清单仍然列出它（只读），但 implemented 为 false（不能作为节点执行）
         JsonNode catalog = ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C1"));
-        assertThat(values(catalog.path("functions"), "functionCode")).hasSize(SEEDED.size() + 2)
-                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "clientExcluded", "getProviderMtd"))
+        assertThat(values(catalog.path("functions"), "functionCode")).hasSize(SEEDED.size() + 3)
+                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "clientExcluded", "getProviderMtd", "findBestAppetiteRule"))
                 .doesNotContain("hasValidCaseApproval");
         assertThat(values(catalog.path("required"), "functionCode")).containsExactly("findBestAppetiteRule", "hasValidCaseApproval", "getProviderMtd");
         assertThat(entry(catalog.path("required"), "functionCode", "hasValidCaseApproval").path("implemented").asBoolean()).isFalse();
@@ -247,8 +299,8 @@ class FunctionMetadataApiTest {
         assertThat(entry(catalog.path("functions"), "functionCode", "clientExcluded").path("usagePolicy").asText()).isEqualTo("OPTIONAL");
         assertThat(ok(MockMvcRequestBuilders.delete("/api/function-metadata/clientExcluded")).path("deleted").asText()).isEqualTo("clientExcluded");
         assertThat(values(ok(MockMvcRequestBuilders.get("/api/function-metadata/available").param("ruleCode", "C1")).path("functions"), "functionCode"))
-                .hasSize(SEEDED.size() + 2)
-                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "getProviderMtd", "hasValidCaseApproval"))
+                .hasSize(SEEDED.size() + 3)
+                .containsExactlyInAnyOrderElementsOf(plus(SEEDED, "getProviderMtd", "hasValidCaseApproval", "findBestAppetiteRule"))
                 .doesNotContain("clientExcluded");
         assertThat(errorOf(jsonRequest("PUT", "/api/appetites/" + rule().id + "/condition", Map.of("enabled", true,
                 "tree", Map.of("logic", "AND", "children", List.of(functionNode("clientExcluded", EXCLUSION_ARGUMENTS)))))))
@@ -288,7 +340,7 @@ class FunctionMetadataApiTest {
         assertThat(entry(list, "functionCode", "clientExcluded").path("usagePolicy").asText()).isEqualTo("OPTIONAL");
         assertThat(entry(list, "functionCode", "clientExcluded").path("implemented").asBoolean()).isTrue();
         assertThat(entry(list, "functionCode", "findBestAppetiteRule").path("usagePolicy").asText()).isEqualTo("REQUIRED");
-        assertThat(entry(list, "functionCode", "findBestAppetiteRule").path("implemented").asBoolean()).isFalse();
+        assertThat(entry(list, "functionCode", "findBestAppetiteRule").path("implemented").asBoolean()).isTrue();
         assertThat(entry(list, "functionCode", "restrictionHit").path("usagePolicy").asText()).isEqualTo("OPTIONAL");
         assertThat(entry(list, "functionCode", "restrictionHit").path("implemented").asBoolean()).isFalse();
         // 可绑定的 Handler：已规划的一批 + 代码里已注册的

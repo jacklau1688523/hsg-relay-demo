@@ -55,7 +55,7 @@ public class BusinessFunctionController {
         if (functions.count() != 0) return;
         addSeed("clientExcluded", "客户是否被合作方排除", "客户与准入", "BOOLEAN", "C1", "CANDIDATE", "REQUEST", "clientExclusionChecker", "CLIENT_EXCLUSION", "[ {\"code\":\"providerCode\",\"type\":\"STRING\",\"source\":\"CANDIDATE\"}, {\"code\":\"clientId\",\"type\":\"STRING\",\"source\":\"TRANSACTION\"} ]", "查询合作方详情中维护的客户排除记录，按生效时间判断。", true);
         addSeed("hasValidCaseApproval", "是否存在有效个案审批", "客户与准入", "BOOLEAN", "C1", "CANDIDATE", "REQUEST", "caseApprovalChecker", "CASE_APPROVAL", "[]", "按合作方、客户及流转类别查找有效审批。", true);
-        addSeed("findBestAppetiteRule", "查找最优准入规则", "客户与准入", "STRING", "C1", "CANDIDATE", "REQUEST", "appetiteRuleSelector", "APPETITE", "[]", "按币种和国家优先级选择准入规则。", true);
+        addSeed("findBestAppetiteRule", "查找最优准入规则", "客户与准入", "STRING", "C1", "CANDIDATE", "REQUEST", "appetiteRuleSelector", "APPETITE", "[]", "按候选合作方、流转类别、交易币种和受益行国家选择最精确的生效准入规则，返回 ACCEPT / EXCLUDE / CASE_BY_CASE；无匹配返回 NOT_SET。命中规则 ID 在调用记录中展示。", true);
         addSeed("restrictionHit", "合作方限制命中检查", "合规与能力", "BOOLEAN", "C2", "CANDIDATE", "REQUEST", "restrictionMatcher", "PROVIDER_RESTRICTION", "[]", "检查合作方限制配置。", true);
         addSeed("hasProviderCapability", "合作方能力标签检查", "合规与能力", "BOOLEAN", "C2", "CANDIDATE", "REQUEST", "providerCapabilityChecker", "PROVIDER_CAPABILITY", "[]", "检查能力标签。", true);
         addSeed("reachRowMatches", "覆盖行匹配", "覆盖与限额", "BOOLEAN", "C3", "CANDIDATE", "REQUEST", "reachRowMatcher", "REACH_TABLE", "[]", "判断覆盖行是否匹配交易。", true);

@@ -136,7 +136,7 @@ function hkDateTime(offsetDays = 0, length = 16) {
 }
 
 function clientOptions(clients) {
-    return clients.map(c => `<option value="${esc(c.clientId)}">${esc(c.clientId)} · ${esc(c.classificationStatus)}</option>`).join('');
+    return clients.map(c => `<option value="${esc(c.clientId)}">${esc(c.clientId)}</option>`).join('');
 }
 
 function prepareTabEditor(viewId, contentId, title) {
