@@ -163,17 +163,20 @@ class ScoreWeightRoutingTest {
     void hardFilteredCandidatesNeverTakePartInTheRanking() {
         acceptStandard("PROV-GD");
         var r = run();
-        // PROV-GD：C1 通过（补了准入）但 C3 无覆盖行、PROV-HO：C1 不通过——两者 C5 可能有分，也绝不参与排序
+        // 过滤失败仍计算可获得的各项分值，但不参与总分排序。
         RoutingService.Candidate gd = candidate(r, "PROV-GD");
         RoutingService.Candidate ho = candidate(r, "PROV-HO");
         assertThat(gd.passed).isFalse();
         assertThat(ho.passed).isFalse();
         assertThat(ho.c5Score).isEqualTo(100);
+        assertThat(ho.scores).containsKeys("C5", "C7", "C8", "C9");
+        assertThat(ho.estimatedCostHkd).isNotNull();
+        assertThat(gd.scores).containsKeys("C7", "C8", "C9");
+        assertThat(gd.scores).doesNotContainKey("C5"); // 无覆盖行，C5 缺少计算所需的截单与日历数据
         for (RoutingService.Candidate c : List.of(gd, ho)) {
             assertThat(c.rank).isNull();
             assertThat(c.role).isNull();
             assertThat(c.totalScore).isNull();
-            assertThat(c.scores).doesNotContainKeys("C7", "C8", "C9");
         }
         assertThat(r.route().providerCode).isNotEqualTo("PROV-GD");
         assertThat(r.alternatives()).extracting(c -> c.providerCode).doesNotContain("PROV-GD", "PROV-HO");

@@ -341,16 +341,20 @@ public class RoutingService {
                     // 分数来自已发布的 C5 评分规则；不是 SCORED 就没有分数，不伪造 0 分或 100 分
                     if (c5Outcome.scored()) c.scores.put("C5", n(c5Score.score()));
                 }
-                if (c.passed) {
+                // 评分与硬过滤独立：被剔除的候选也保留成本、偏好及履约分，供规则排查。
+                // 缺少手续费配置时不能伪造 C7；已通过过滤的候选仍按原口径报配置错误。
+                try {
                     Fee fee = C7Calculator.feeFor(cfg.fees(), p.code, r.paymentCurrency(), r.chargeOption());
                     BigDecimal spread = c10.open() == null ? BigDecimal.ZERO : c10.open().spreadBps().add(c10.open().extraBps());
                     var c7 = C7Calculator.estimate(fee, amountHkd, rate(cfg, fee.feeCurrency()), spread);
                     c.rawCost = c7.totalHkd();
                     c.estimatedCostHkd = money(c.rawCost);
-                    c.scores.put("C8", n(C8Calculator.scoreFor(cfg.preferences(), p.code, txn)));
-                    int agreement = C9Calculator.score(cfg.agreements().stream().filter(x -> x.provider().equals(p.code)).toList(), cfg.monthUsd().getOrDefault(p.code, BigDecimal.ZERO), cfg.monthCount().getOrDefault(p.code, 0L), now);
-                    c.scores.put("C9", n(agreement));
+                } catch (IllegalStateException missingFee) {
+                    if (c.passed || !missingFee.getMessage().startsWith("缺少手续费配置：")) throw missingFee;
                 }
+                c.scores.put("C8", n(C8Calculator.scoreFor(cfg.preferences(), p.code, txn)));
+                int agreement = C9Calculator.score(cfg.agreements().stream().filter(x -> x.provider().equals(p.code)).toList(), cfg.monthUsd().getOrDefault(p.code, BigDecimal.ZERO), cfg.monthCount().getOrDefault(p.code, 0L), now);
+                c.scores.put("C9", n(agreement));
             }
         }
         // 通过全部过滤但 C5 评分不可计算的候选：保留在 candidates 里（passed = true），不参与加权排序，并在结果消息里逐个说明——这不是 C5 剔除
@@ -359,8 +363,9 @@ public class RoutingService {
         for (Candidate c : unscored)
             messages.add(c.providerCode + "：C5 评分不可计算（" + c.c5Status + " — " + c.c5Message + "），保留在候选清单但不参与排序；这不是 C5 剔除候选");
         List<Candidate> valid = new ArrayList<>(all.stream().filter(c -> c.passed && c.c5Score != null).toList());
-        BigDecimal min = valid.stream().map(c -> c.rawCost).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
-        for (Candidate c : valid) c.scores.put("C7", money(C7Calculator.score(min, c.rawCost)));
+        // C7 相对成本以本次所有可估成本的候选为基准，不随过滤通过与否改变。
+        BigDecimal min = all.stream().map(c -> c.rawCost).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+        for (Candidate c : all) if (c.rawCost != null) c.scores.put("C7", money(C7Calculator.score(min, c.rawCost)));
         // 综合评分与排序：按交易类型 + 客户层级从全局权重配置匹配一套权重（P1 → P2 → P3），全部候选用同一个版本计算、按多级条件排序；
         // 没有合格候选时不匹配权重，保持下面的 REFER 原因码不变；没有生效的权重配置或评分数据异常时抛出异常（不默认 0 权重、不按 0 分）
         var outcome = ranking.rank(r.paymentId(), id, r.paymentType(), r.clientSegment(), valid, now.toLocalDateTime());
